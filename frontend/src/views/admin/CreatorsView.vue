@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue"
 
 import { ApiError, apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
+import SearchableFilter from "../../components/SearchableFilter.vue"
 
 interface CreatorLink {
   name: string
@@ -15,19 +16,22 @@ interface CreatorLinkRow extends CreatorLink {
 }
 
 const creators = ref<CreatorLinkRow[]>([])
-const search = ref("")
+const selectedCreatorName = ref("")
 const loading = ref(true)
 const savingCreator = ref("")
 const errorMessage = ref("")
 const successMessage = ref("")
 
-const filteredCreators = computed(() => {
-  const value = search.value.trim().toLocaleLowerCase()
-  if (!value) return creators.value
-  return creators.value.filter((creator) =>
-    creator.name.toLocaleLowerCase().includes(value),
-  )
-})
+const creatorOptions = computed(() =>
+  creators.value.map((creator) => ({
+    value: creator.name,
+    label: creator.name,
+    count: creator.model_count,
+  })),
+)
+const selectedCreator = computed(() =>
+  creators.value.find((creator) => creator.name === selectedCreatorName.value),
+)
 
 async function loadCreators() {
   loading.value = true
@@ -38,6 +42,12 @@ async function loadCreators() {
       ...creator,
       draft_url: creator.url || "",
     }))
+    if (
+      selectedCreatorName.value &&
+      !creators.value.some((creator) => creator.name === selectedCreatorName.value)
+    ) {
+      selectedCreatorName.value = ""
+    }
   } catch (error) {
     errorMessage.value =
       error instanceof ApiError ? error.message : "Unable to load creators"
@@ -46,7 +56,17 @@ async function loadCreators() {
   }
 }
 
-async function saveCreatorLink(creator: CreatorLinkRow) {
+function creatorChanged() {
+  errorMessage.value = ""
+  successMessage.value = ""
+  creators.value.forEach((creator) => {
+    creator.draft_url = creator.url || ""
+  })
+}
+
+async function saveCreatorLink() {
+  const creator = selectedCreator.value
+  if (!creator) return
   savingCreator.value = creator.name
   errorMessage.value = ""
   successMessage.value = ""
@@ -93,49 +113,64 @@ onMounted(loadCreators)
     <section class="panel creator-links-panel">
       <div class="creator-links-heading">
         <div>
-          <h2>Creator pages</h2>
+          <h2>Creator metadata</h2>
           <p class="muted">{{ creators.length }} creators found</p>
         </div>
-        <label class="creator-search">
-          <span class="sr-only">Search creators</span>
-          <input v-model="search" type="search" placeholder="Search creators">
-        </label>
       </div>
 
       <p v-if="loading" class="muted">Loading…</p>
-      <p v-else-if="!filteredCreators.length" class="muted">No creators found.</p>
-      <div v-else class="creator-link-list">
+      <p v-else-if="!creators.length" class="muted">No creators found.</p>
+      <template v-else>
+        <div class="creator-selector">
+          <SearchableFilter
+            v-model="selectedCreatorName"
+            label="Creator"
+            all-label="Select a creator"
+            search-placeholder="Search creators"
+            :options="creatorOptions"
+            @change="creatorChanged"
+          />
+        </div>
+
         <form
-          v-for="creator in filteredCreators"
-          :key="creator.name"
-          class="creator-link-row"
-          @submit.prevent="saveCreatorLink(creator)"
+          v-if="selectedCreator"
+          class="source-form creator-metadata-form"
+          @submit.prevent="saveCreatorLink"
         >
-          <div class="creator-link-name">
-            <strong>{{ creator.name }}</strong>
+          <div class="creator-metadata-heading">
+            <div>
+              <p class="eyebrow">Selected creator</p>
+              <h3>{{ selectedCreator.name }}</h3>
+            </div>
             <span class="muted">
-              {{ creator.model_count }}
-              {{ creator.model_count === 1 ? "model" : "models" }}
+              {{ selectedCreator.model_count }}
+              {{ selectedCreator.model_count === 1 ? "model" : "models" }}
             </span>
           </div>
           <label>
-            <span class="sr-only">Public page for {{ creator.name }}</span>
+            <span>Public creator page</span>
             <input
-              v-model="creator.draft_url"
+              v-model="selectedCreator.draft_url"
               type="url"
               inputmode="url"
               placeholder="https://example.com/creator"
             >
+            <small>
+              Shown as an external link on model details. Leave empty to remove it.
+            </small>
           </label>
           <button
-            class="secondary-button"
+            class="primary-button"
             type="submit"
-            :disabled="savingCreator === creator.name"
+            :disabled="savingCreator === selectedCreator.name"
           >
-            {{ savingCreator === creator.name ? "Saving…" : "Save" }}
+            {{ savingCreator === selectedCreator.name ? "Saving…" : "Save metadata" }}
           </button>
         </form>
-      </div>
+        <p v-else class="creator-selection-hint muted">
+          Select a creator to edit its metadata.
+        </p>
+      </template>
     </section>
   </main>
 </template>

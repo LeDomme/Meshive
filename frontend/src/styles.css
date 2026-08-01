@@ -393,10 +393,6 @@ h1 {
 }
 
 .creator-links-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1.5rem;
   margin-bottom: 1.5rem;
 }
 
@@ -405,51 +401,41 @@ h1 {
   margin: 0;
 }
 
-.creator-search {
-  width: min(100%, 20rem);
+.creator-selector {
+  max-width: 32rem;
 }
 
-.creator-search input,
-.creator-link-row input {
-  width: 100%;
-  padding: 0.75rem 0.85rem;
-  border: 1px solid #334155;
-  border-radius: 0.6rem;
-  outline: none;
-  color: #f8fafc;
-  background: #0b1220;
-  font: inherit;
+.creator-metadata-form {
+  max-width: 46rem;
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid #28364b;
+  border-radius: 0.8rem;
+  background: rgb(5 14 31 / 42%);
 }
 
-.creator-search input:focus,
-.creator-link-row input:focus {
-  border-color: var(--meshive-cyan);
-}
-
-.creator-link-list {
-  display: grid;
-}
-
-.creator-link-row {
-  display: grid;
-  grid-template-columns: minmax(11rem, 0.7fr) minmax(16rem, 1.5fr) auto;
-  align-items: center;
+.creator-metadata-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
   gap: 1rem;
-  padding: 0.85rem 0;
-  border-top: 1px solid #1e293b;
 }
 
-.creator-link-row label {
-  min-width: 0;
+.creator-metadata-heading .eyebrow {
+  margin-bottom: 0.3rem;
 }
 
-.creator-link-name {
-  display: grid;
-  gap: 0.2rem;
+.creator-metadata-heading h3 {
+  margin: 0;
+  font-size: 1.35rem;
 }
 
-.creator-link-name .muted {
-  font-size: 0.82rem;
+.creator-metadata-form .primary-button {
+  width: fit-content;
+}
+
+.creator-selection-hint {
+  margin: 1.25rem 0 0;
 }
 
 .backup-history {
@@ -1399,7 +1385,7 @@ summary {
 }
 
 .detail-header h1 {
-  margin: 0.25rem 0 0.55rem;
+  margin: 0.25rem 0 0.9rem;
   font-size: clamp(2.25rem, 6vw, 4.5rem);
   line-height: 1.05;
 }
@@ -1917,20 +1903,12 @@ summary {
     grid-template-columns: 1fr;
   }
 
-  .creator-links-heading {
-    align-items: stretch;
+  .creator-metadata-heading {
+    align-items: flex-start;
     flex-direction: column;
   }
 
-  .creator-search {
-    width: 100%;
-  }
-
-  .creator-link-row {
-    grid-template-columns: 1fr;
-  }
-
-  .creator-link-row .secondary-button {
+  .creator-metadata-form .primary-button {
     width: 100%;
   }
 
