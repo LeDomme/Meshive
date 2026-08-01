@@ -8,6 +8,8 @@ from sqlalchemy.pool import StaticPool
 
 from meshive.auth.passwords import hash_password
 from meshive.auth.rate_limit import login_limiter, setup_limiter
+from meshive.auth.sessions import hash_session_token
+from meshive.auth.user_agents import parse_user_agent
 from meshive.config import Settings, get_settings
 from meshive.database import Base, get_session
 from meshive.main import app
@@ -290,6 +292,170 @@ def test_password_change_revokes_other_sessions() -> None:
             assert second_client.get("/api/auth/me").status_code == 401
         finally:
             second_client.close()
+
+
+def test_session_list_describes_clients_and_revokes_one_session() -> None:
+    firefox_windows = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) "
+        "Gecko/20100101 Firefox/128.0"
+    )
+    chrome_android = (
+        "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 "
+        "Chrome/127.0.0.0 Mobile Safari/537.36"
+    )
+    with authenticated_test_client() as (first_client, sessions):
+        add_user(
+            sessions,
+            username="Viewer",
+            password="a sufficiently long password",
+            role="user",
+        )
+        login_payload = {
+            "username": "Viewer",
+            "password": "a sufficiently long password",
+        }
+        first_login = first_client.post(
+            "/api/auth/login",
+            json=login_payload,
+            headers={"User-Agent": firefox_windows},
+        )
+        assert first_login.status_code == 200
+
+        second_client = TestClient(app, base_url="https://testserver")
+        try:
+            second_login = second_client.post(
+                "/api/auth/login",
+                json=login_payload,
+                headers={"User-Agent": chrome_android},
+            )
+            assert second_login.status_code == 200
+
+            response = first_client.get("/api/auth/sessions")
+            assert response.status_code == 200
+            listed = response.json()
+            assert len(listed) == 2
+            current = next(item for item in listed if item["is_current"])
+            other = next(item for item in listed if not item["is_current"])
+            assert current["browser"] == "Mozilla Firefox"
+            assert current["operating_system"] == "Windows"
+            assert current["device_type"] == "Desktop"
+            assert other["browser"] == "Google Chrome"
+            assert other["operating_system"] == "Android"
+            assert other["device_type"] == "Mobile"
+            raw_token = first_client.cookies.get("meshive_session")
+            assert raw_token is not None
+            assert current["id"] != hash_session_token(raw_token)
+
+            revoked = first_client.delete(f"/api/auth/sessions/{other['id']}")
+            assert revoked.status_code == 204
+            assert first_client.get("/api/auth/me").status_code == 200
+            assert second_client.get("/api/auth/me").status_code == 401
+        finally:
+            second_client.close()
+
+
+def test_sign_out_all_other_sessions_preserves_current_session() -> None:
+    with authenticated_test_client() as (first_client, sessions):
+        add_user(
+            sessions,
+            username="Viewer",
+            password="a sufficiently long password",
+            role="user",
+        )
+        login_payload = {
+            "username": "Viewer",
+            "password": "a sufficiently long password",
+        }
+        assert first_client.post("/api/auth/login", json=login_payload).status_code == 200
+
+        second_client = TestClient(app, base_url="https://testserver")
+        third_client = TestClient(app, base_url="https://testserver")
+        try:
+            assert second_client.post("/api/auth/login", json=login_payload).status_code == 200
+            assert third_client.post("/api/auth/login", json=login_payload).status_code == 200
+
+            revoked = first_client.delete("/api/auth/sessions/others")
+            assert revoked.status_code == 200
+            assert revoked.json() == {"revoked_count": 2}
+            assert first_client.get("/api/auth/me").status_code == 200
+            assert second_client.get("/api/auth/me").status_code == 401
+            assert third_client.get("/api/auth/me").status_code == 401
+        finally:
+            second_client.close()
+            third_client.close()
+
+
+def test_user_cannot_revoke_another_users_session() -> None:
+    with authenticated_test_client() as (first_client, sessions):
+        add_user(
+            sessions,
+            username="First Viewer",
+            password="first sufficiently long password",
+            role="user",
+        )
+        add_user(
+            sessions,
+            username="Second Viewer",
+            password="second sufficiently long password",
+            role="user",
+        )
+        assert first_client.post(
+            "/api/auth/login",
+            json={
+                "username": "First Viewer",
+                "password": "first sufficiently long password",
+            },
+        ).status_code == 200
+
+        second_client = TestClient(app, base_url="https://testserver")
+        try:
+            assert second_client.post(
+                "/api/auth/login",
+                json={
+                    "username": "Second Viewer",
+                    "password": "second sufficiently long password",
+                },
+            ).status_code == 200
+            foreign_session = second_client.get("/api/auth/sessions").json()[0]
+
+            response = first_client.delete(
+                f"/api/auth/sessions/{foreign_session['id']}"
+            )
+            assert response.status_code == 404
+            assert second_client.get("/api/auth/me").status_code == 200
+        finally:
+            second_client.close()
+
+
+def test_current_session_can_sign_itself_out() -> None:
+    with authenticated_test_client() as (client, sessions):
+        add_user(
+            sessions,
+            username="Viewer",
+            password="a sufficiently long password",
+            role="user",
+        )
+        assert client.post(
+            "/api/auth/login",
+            json={
+                "username": "Viewer",
+                "password": "a sufficiently long password",
+            },
+        ).status_code == 200
+        current = client.get("/api/auth/sessions").json()[0]
+
+        response = client.delete(f"/api/auth/sessions/{current['id']}")
+
+        assert response.status_code == 204
+        assert client.get("/api/auth/me").status_code == 401
+
+
+def test_user_agent_parser_does_not_require_raw_client_data() -> None:
+    assert parse_user_agent(None).browser is None
+    unknown = parse_user_agent("custom-client")
+    assert unknown.browser is None
+    assert unknown.operating_system is None
+    assert unknown.device_type is None
 
 
 def test_first_run_setup_creates_and_signs_in_initial_admin() -> None:

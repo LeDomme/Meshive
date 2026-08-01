@@ -1,6 +1,6 @@
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -33,6 +33,7 @@ def setup_status(
 @router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def create_initial_admin(
     payload: InitialAdminCreate,
+    request: Request,
     response: Response,
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
@@ -87,7 +88,9 @@ def create_initial_admin(
     session.add(user)
     try:
         session.flush()
-        raw_token, _record = create_user_session(session, user, settings)
+        raw_token, _record = create_user_session(
+            session, user, settings, request.headers.get("user-agent")
+        )
         session.commit()
     except IntegrityError as error:
         session.rollback()

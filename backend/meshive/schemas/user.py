@@ -57,3 +57,18 @@ class UserRead(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str = Field(min_length=1, max_length=1024)
     new_password: str = Field(min_length=12, max_length=1024)
+
+
+class UserSessionRead(BaseModel):
+    id: str
+    created_at: datetime
+    last_used_at: datetime
+    expires_at: datetime
+    browser: str | None
+    operating_system: str | None
+    device_type: str | None
+    is_current: bool
+
+
+class SessionRevocationResult(BaseModel):
+    revoked_count: int

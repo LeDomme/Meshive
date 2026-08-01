@@ -1,19 +1,34 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import delete
+import secrets
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from meshive.auth.dependencies import (
+    get_current_session_allow_password_change,
     get_current_user_allow_password_change,
 )
 from meshive.auth.passwords import DUMMY_HASH, hash_password, verify_password
 from meshive.auth.rate_limit import login_limiter
-from meshive.auth.sessions import create_user_session, hash_session_token, utc_now
+from meshive.auth.sessions import (
+    create_user_session,
+    hash_session_token,
+    public_session_id,
+    utc_now,
+)
 from meshive.config import Settings, get_settings
 from meshive.database import get_session
 from meshive.models.session import UserSession
 from meshive.models.user import User
 from meshive.repositories.users import get_user_by_username, normalize_username
-from meshive.schemas.user import LoginRequest, PasswordChange, UserRead
+from meshive.schemas.user import (
+    LoginRequest,
+    PasswordChange,
+    SessionRevocationResult,
+    UserRead,
+    UserSessionRead,
+)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -21,6 +36,7 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 @router.post("/login", response_model=UserRead)
 def login(
     payload: LoginRequest,
+    request: Request,
     response: Response,
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
@@ -52,7 +68,9 @@ def login(
         )
 
     login_limiter.clear(rate_limit_key)
-    raw_token, _record = create_user_session(session, user, settings)
+    raw_token, _record = create_user_session(
+        session, user, settings, request.headers.get("user-agent")
+    )
     user.last_login_at = utc_now()
     session.commit()
 
@@ -101,6 +119,101 @@ def current_user(
     user: User = Depends(get_current_user_allow_password_change),
 ) -> User:
     return user
+
+
+@router.get("/sessions", response_model=list[UserSessionRead])
+def list_sessions(
+    current: UserSession = Depends(get_current_session_allow_password_change),
+    session: Session = Depends(get_session),
+) -> list[UserSessionRead]:
+    now = utc_now()
+    session.execute(
+        delete(UserSession).where(
+            UserSession.user_id == current.user_id,
+            UserSession.expires_at <= now,
+        )
+    )
+    records = session.scalars(
+        select(UserSession)
+        .where(UserSession.user_id == current.user_id)
+        .order_by(UserSession.last_used_at.desc(), UserSession.created_at.desc())
+    ).all()
+    session.commit()
+    return [_session_response(record, current.token_hash) for record in records]
+
+
+@router.delete("/sessions/others", response_model=SessionRevocationResult)
+def revoke_other_sessions(
+    current: UserSession = Depends(get_current_session_allow_password_change),
+    session: Session = Depends(get_session),
+) -> SessionRevocationResult:
+    result = session.execute(
+        delete(UserSession).where(
+            UserSession.user_id == current.user_id,
+            UserSession.token_hash != current.token_hash,
+        )
+    )
+    session.commit()
+    return SessionRevocationResult(revoked_count=result.rowcount or 0)
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_session(
+    session_id: Annotated[
+        str, Path(min_length=24, max_length=24, pattern=r"^[0-9a-f]{24}$")
+    ],
+    response: Response,
+    current: UserSession = Depends(get_current_session_allow_password_change),
+    session: Session = Depends(get_session),
+) -> Response:
+    records = session.scalars(
+        select(UserSession).where(UserSession.user_id == current.user_id)
+    ).all()
+    record = next(
+        (
+            candidate
+            for candidate in records
+            if secrets.compare_digest(
+                public_session_id(candidate.token_hash), session_id
+            )
+        ),
+        None,
+    )
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
+        )
+
+    is_current = record.token_hash == current.token_hash
+    session.delete(record)
+    session.commit()
+    if is_current:
+        settings = get_settings()
+        response.delete_cookie(
+            key=settings.session_cookie_name,
+            path="/",
+            secure=settings.secure_cookies,
+            httponly=True,
+            samesite="strict",
+        )
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
+
+
+def _session_response(
+    record: UserSession, current_token_hash: str
+) -> UserSessionRead:
+    return UserSessionRead(
+        id=public_session_id(record.token_hash),
+        created_at=record.created_at,
+        last_used_at=record.last_used_at,
+        expires_at=record.expires_at,
+        browser=record.browser,
+        operating_system=record.operating_system,
+        device_type=record.device_type,
+        is_current=record.token_hash == current_token_hash,
+    )
 
 
 @router.post("/change-password", response_model=UserRead)
