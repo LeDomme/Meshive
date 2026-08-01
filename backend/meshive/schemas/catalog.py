@@ -61,6 +61,7 @@ class ModelDetail(BaseModel):
     id: int
     name: str
     creator: str | None
+    creator_url: str | None
     franchise: str | None
     series: str | None
     collection: str | None

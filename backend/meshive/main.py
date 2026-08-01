@@ -12,6 +12,7 @@ from meshive.api.auth import router as auth_router
 from meshive.api.backups import router as backups_router
 from meshive.api.catalog import admin_router as catalog_admin_router
 from meshive.api.catalog import router as catalog_router
+from meshive.api.creator_links import router as creator_links_router
 from meshive.api.library_sources import router as library_sources_router
 from meshive.api.scans import router as scans_router
 from meshive.api.setup import router as setup_router
@@ -88,6 +89,7 @@ app.include_router(system_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
 app.include_router(catalog_admin_router, prefix="/api")
+app.include_router(creator_links_router, prefix="/api")
 app.include_router(library_sources_router, prefix="/api")
 app.include_router(setup_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")

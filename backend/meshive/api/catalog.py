@@ -19,6 +19,7 @@ from meshive.models.catalog import (
     ModelImage,
     ScanIssue,
 )
+from meshive.models.creator import CreatorLink
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import ModelTag, Tag
 from meshive.schemas.catalog import (
@@ -260,6 +261,13 @@ def model_detail(
             status_code=status.HTTP_404_NOT_FOUND, detail="Model not found"
         )
     model, source_name = row
+    creator_url = (
+        session.scalar(
+            select(CreatorLink.url).where(CreatorLink.creator_name == model.creator)
+        )
+        if model.creator
+        else None
+    )
     images = session.scalars(
         select(ModelImage)
         .where(
@@ -310,6 +318,7 @@ def model_detail(
         id=model.id,
         name=model.name,
         creator=model.creator,
+        creator_url=creator_url,
         franchise=model.franchise,
         series=model.series,
         collection=model.collection,
