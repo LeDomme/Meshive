@@ -56,6 +56,7 @@ admin_router = APIRouter(
 @router.get("", response_model=ModelPage)
 def list_models(
     search: str | None = Query(default=None, max_length=200),
+    model_name: str | None = Query(default=None, alias="model", max_length=255),
     creator: str | None = Query(default=None, max_length=255),
     franchise: str | None = Query(default=None, max_length=255),
     series: str | None = Query(default=None, max_length=255),
@@ -79,6 +80,7 @@ def list_models(
 ) -> ModelPage:
     filters = _model_filters(
         search=search,
+        model_name=model_name,
         creator=creator,
         franchise=franchise,
         series=series,
@@ -164,6 +166,7 @@ def list_models(
 @router.get("/filters", response_model=CatalogueFilters)
 def catalogue_filters(
     search: str | None = Query(default=None, max_length=200),
+    model_name: str | None = Query(default=None, alias="model", max_length=255),
     creator: str | None = Query(default=None, max_length=255),
     franchise: str | None = Query(default=None, max_length=255),
     series: str | None = Query(default=None, max_length=255),
@@ -175,6 +178,7 @@ def catalogue_filters(
 ) -> CatalogueFilters:
     values = {
         "search": search,
+        "model_name": model_name,
         "creator": creator,
         "franchise": franchise,
         "series": series,
@@ -190,6 +194,9 @@ def catalogue_filters(
         )
 
     return CatalogueFilters(
+        models=_text_filter_options(
+            session, LibraryModel.name, facet_filters("model_name")
+        ),
         creators=_text_filter_options(
             session, LibraryModel.creator, facet_filters("creator")
         ),
@@ -590,6 +597,7 @@ def _delete_model_records(session: Session, model_ids: list[int]) -> list[str]:
 def _model_filters(
     *,
     search: str | None,
+    model_name: str | None,
     creator: str | None,
     franchise: str | None,
     series: str | None,
@@ -609,6 +617,8 @@ def _model_filters(
                 .params(fts_query=fts_query)
             )
             filters.append(LibraryModel.id.in_(matching_ids))
+    if model_name:
+        filters.append(LibraryModel.name == model_name)
     if creator:
         filters.append(LibraryModel.creator == creator)
     if franchise:

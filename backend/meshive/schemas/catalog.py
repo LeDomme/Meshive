@@ -86,6 +86,7 @@ class SourceFilterOption(BaseModel):
 
 
 class CatalogueFilters(BaseModel):
+    models: list[FilterOption]
     creators: list[FilterOption]
     franchises: list[FilterOption]
     series: list[FilterOption]

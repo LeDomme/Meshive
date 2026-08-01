@@ -172,8 +172,18 @@ def test_lists_searches_filters_and_downloads_models(tmp_path) -> None:
         assert filtered_out.status_code == 200
         assert filtered_out.json()["total"] == 0
 
+        exact_model = client.get("/api/models", params={"model": model.name})
+        assert exact_model.status_code == 200
+        assert exact_model.json()["total"] == 1
+        assert exact_model.json()["items"][0]["name"] == model.name
+
+        partial_model = client.get("/api/models", params={"model": "Neon"})
+        assert partial_model.status_code == 200
+        assert partial_model.json()["total"] == 0
+
         filters = client.get("/api/models/filters")
         assert filters.status_code == 200
+        assert filters.json()["models"] == [{"value": model.name, "count": 1}]
         assert filters.json()["creators"] == [{"value": "Aoae", "count": 1}]
         assert filters.json()["series"] == [{"value": "Moikaloop", "count": 1}]
 
@@ -370,8 +380,23 @@ def test_filter_options_follow_other_selected_facets() -> None:
         assert [item["value"] for item in for_creator.json()["series"]] == [
             "X-Men"
         ]
+        assert [item["value"] for item in for_creator.json()["models"]] == [
+            "Abe Model"
+        ]
 
         for_franchise = client.get("/api/models/filters", params={"franchise": "Ado"})
         assert [item["value"] for item in for_franchise.json()["creators"]] == [
             "Other Creator"
+        ]
+
+        for_model = client.get("/api/models/filters", params={"model": "Ado Model"})
+        assert [item["value"] for item in for_model.json()["creators"]] == [
+            "Other Creator"
+        ]
+        assert [item["value"] for item in for_model.json()["franchises"]] == [
+            "Ado"
+        ]
+        assert [item["value"] for item in for_model.json()["models"]] == [
+            "Abe Model",
+            "Ado Model",
         ]

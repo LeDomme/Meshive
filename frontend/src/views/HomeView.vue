@@ -5,6 +5,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router"
 import { ApiError, apiRequest } from "../api"
 import AccountMenu from "../components/AccountMenu.vue"
 import BrandLogo from "../components/BrandLogo.vue"
+import SearchableFilter from "../components/SearchableFilter.vue"
 import { useAuthStore } from "../stores/auth"
 
 interface ModelSummary {
@@ -44,6 +45,7 @@ interface SourceOption {
 }
 
 interface CatalogueFilters {
+  models: FilterOption[]
   creators: FilterOption[]
   franchises: FilterOption[]
   series: FilterOption[]
@@ -60,6 +62,7 @@ const loading = ref(true)
 const errorMessage = ref("")
 const page = ref<ModelPage>({ items: [], total: 0, page: 1, page_size: 48 })
 const filters = ref<CatalogueFilters>({
+  models: [],
   creators: [],
   franchises: [],
   series: [],
@@ -70,6 +73,7 @@ const filters = ref<CatalogueFilters>({
 })
 const defaultQuery = {
   search: "",
+  model: "",
   creator: "",
   franchise: "",
   series: "",
@@ -98,6 +102,26 @@ const initialPage = Number(route.query.page || storedState.page || 1)
 const missingCount = computed(
   () => filters.value.statuses.find((item) => item.value === "missing")?.count ?? 0,
 )
+const sourceOptions = computed(() =>
+  filters.value.sources.map((item) => ({
+    value: String(item.id),
+    label: item.name,
+    count: item.count,
+  })),
+)
+const tagOptions = computed(() =>
+  filters.value.tags.map((tag) => ({ value: String(tag.id), label: tag.name })),
+)
+const sortOptions = [
+  { value: "meshive_newest", label: "Meshive: newest added" },
+  { value: "meshive_oldest", label: "Meshive: oldest added" },
+  { value: "files_newest", label: "Files: newest modified" },
+  { value: "files_oldest", label: "Files: oldest modified" },
+  { value: "name_asc", label: "Name: A–Z" },
+  { value: "name_desc", label: "Name: Z–A" },
+  { value: "creator_asc", label: "Creator: A–Z" },
+  { value: "creator_desc", label: "Creator: Z–A" },
+]
 
 async function loadCatalogue(targetPage = 1) {
   loading.value = true
@@ -128,7 +152,14 @@ async function loadCatalogue(targetPage = 1) {
 }
 
 let filterRequest = 0
-type FacetKey = "creator" | "franchise" | "series" | "collection" | "source_id" | "tag_id"
+type FacetKey =
+  | "model"
+  | "creator"
+  | "franchise"
+  | "series"
+  | "collection"
+  | "source_id"
+  | "tag_id"
 let lastChangedFacet: FacetKey | null = null
 
 function facetChanged(key: FacetKey) {
@@ -138,6 +169,7 @@ function facetChanged(key: FacetKey) {
 function reconcileFacets(result: CatalogueFilters) {
   if (!lastChangedFacet) return
   const validValues: Record<FacetKey, Set<string>> = {
+    model: new Set(result.models.map((item) => item.value)),
     creator: new Set(result.creators.map((item) => item.value)),
     franchise: new Set(result.franchises.map((item) => item.value)),
     series: new Set(result.series.map((item) => item.value)),
@@ -178,6 +210,7 @@ async function loadFilterOptions() {
 function clearFilters() {
   Object.assign(query, {
     search: "",
+    model: "",
     creator: "",
     franchise: "",
     series: "",
@@ -305,66 +338,80 @@ onMounted(async () => {
         >
       </label>
 
-      <select v-model="query.creator" aria-label="Creator" @change="facetChanged('creator')">
-        <option value="">All creators</option>
-        <option v-for="item in filters.creators" :key="item.value" :value="item.value">
-          {{ item.value }} ({{ item.count }})
-        </option>
-      </select>
+      <SearchableFilter
+        v-model="query.model"
+        label="Model"
+        all-label="All models"
+        search-placeholder="Search models"
+        :options="filters.models"
+        @change="facetChanged('model')"
+      />
 
-      <select v-model="query.franchise" aria-label="Franchise" @change="facetChanged('franchise')">
-        <option value="">All franchises</option>
-        <option
-          v-for="item in filters.franchises"
-          :key="item.value"
-          :value="item.value"
-        >
-          {{ item.value }} ({{ item.count }})
-        </option>
-      </select>
+      <SearchableFilter
+        v-model="query.creator"
+        label="Creator"
+        all-label="All creators"
+        search-placeholder="Search creators"
+        :options="filters.creators"
+        @change="facetChanged('creator')"
+      />
 
-      <select v-model="query.series" aria-label="Series" @change="facetChanged('series')">
-        <option value="">All series</option>
-        <option
-          v-for="item in filters.series"
-          :key="item.value"
-          :value="item.value"
-        >
-          {{ item.value }} ({{ item.count }})
-        </option>
-      </select>
+      <SearchableFilter
+        v-model="query.franchise"
+        label="Franchise"
+        all-label="All franchises"
+        search-placeholder="Search franchises"
+        :options="filters.franchises"
+        @change="facetChanged('franchise')"
+      />
 
-      <select v-model="query.collection" aria-label="Collection" @change="facetChanged('collection')">
-        <option value="">All collections</option>
-        <option v-for="item in filters.collections" :key="item.value" :value="item.value">
-          {{ item.value }} ({{ item.count }})
-        </option>
-      </select>
+      <SearchableFilter
+        v-model="query.series"
+        label="Series"
+        all-label="All series"
+        search-placeholder="Search series"
+        :options="filters.series"
+        @change="facetChanged('series')"
+      />
 
-      <select v-model="query.source_id" aria-label="Library source" @change="facetChanged('source_id')">
-        <option value="">All sources</option>
-        <option v-for="item in filters.sources" :key="item.id" :value="String(item.id)">
-          {{ item.name }} ({{ item.count }})
-        </option>
-      </select>
+      <SearchableFilter
+        v-model="query.collection"
+        label="Collection"
+        all-label="All collections"
+        search-placeholder="Search collections"
+        :options="filters.collections"
+        @change="facetChanged('collection')"
+      />
 
-      <select v-model="query.tag_id" aria-label="Tag" @change="facetChanged('tag_id')">
-        <option value="">All tags</option>
-        <option v-for="tag in filters.tags" :key="tag.id" :value="String(tag.id)">
-          {{ tag.name }}
-        </option>
-      </select>
+      <SearchableFilter
+        v-model="query.source_id"
+        label="Library source"
+        all-label="All sources"
+        search-placeholder="Search sources"
+        align="end"
+        :options="sourceOptions"
+        @change="facetChanged('source_id')"
+      />
 
-      <select v-model="query.sort" aria-label="Sort models">
-        <option value="meshive_newest">Meshive: newest added</option>
-        <option value="meshive_oldest">Meshive: oldest added</option>
-        <option value="files_newest">Files: newest modified</option>
-        <option value="files_oldest">Files: oldest modified</option>
-        <option value="name_asc">Name: A–Z</option>
-        <option value="name_desc">Name: Z–A</option>
-        <option value="creator_asc">Creator: A–Z</option>
-        <option value="creator_desc">Creator: Z–A</option>
-      </select>
+      <SearchableFilter
+        v-model="query.tag_id"
+        label="Tag"
+        all-label="All tags"
+        search-placeholder="Search tags"
+        align="end"
+        :options="tagOptions"
+        @change="facetChanged('tag_id')"
+      />
+
+      <SearchableFilter
+        v-model="query.sort"
+        label="Sort models"
+        all-label="Default sorting"
+        search-placeholder="Search sorting"
+        align="end"
+        :show-all-option="false"
+        :options="sortOptions"
+      />
 
       <button class="secondary-button" type="button" @click="clearFilters">Clear</button>
     </div>
