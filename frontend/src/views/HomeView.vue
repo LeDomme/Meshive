@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue"
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
 
 import { ApiError, apiRequest } from "../api"
@@ -98,6 +98,8 @@ for (const key of Object.keys(defaultQuery) as Array<keyof typeof defaultQuery>)
 }
 if (query.sort === "newest") query.sort = "meshive_newest"
 if (query.sort === "oldest") query.sort = "meshive_oldest"
+const catalogueSearchOpen = ref(Boolean(query.search))
+const catalogueSearchInput = ref<HTMLInputElement | null>(null)
 const initialPage = Number(route.query.page || storedState.page || 1)
 const missingCount = computed(
   () => filters.value.statuses.find((item) => item.value === "missing")?.count ?? 0,
@@ -218,6 +220,21 @@ function clearFilters() {
     source_id: "",
     tag_id: "",
   })
+  catalogueSearchOpen.value = false
+}
+
+async function toggleCatalogueSearch() {
+  catalogueSearchOpen.value = !catalogueSearchOpen.value
+  if (catalogueSearchOpen.value) {
+    await nextTick()
+    catalogueSearchInput.value?.focus()
+  }
+}
+
+async function clearCatalogueSearch() {
+  query.search = ""
+  await nextTick()
+  catalogueSearchInput.value?.focus()
 }
 
 async function deleteMissingModel(model: ModelSummary) {
@@ -329,14 +346,47 @@ onMounted(async () => {
     </header>
 
     <div class="catalogue-filters">
-      <label class="search-field">
-        <span class="sr-only">Search models</span>
-        <input
-          v-model="query.search"
-          type="search"
-          placeholder="Search"
+      <div
+        class="catalogue-search"
+        :class="{
+          'catalogue-search--open': catalogueSearchOpen,
+          'catalogue-search--active': Boolean(query.search),
+        }"
+      >
+        <button
+          class="catalogue-search-toggle"
+          type="button"
+          :aria-expanded="catalogueSearchOpen"
+          :aria-label="catalogueSearchOpen ? 'Close catalogue search' : 'Open catalogue search'"
+          title="Search catalogue"
+          @click="toggleCatalogueSearch"
         >
-      </label>
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <circle cx="10.75" cy="10.75" r="6.75" />
+            <path d="m16 16 4 4" />
+          </svg>
+        </button>
+        <label v-if="catalogueSearchOpen" class="catalogue-search-field">
+          <span class="sr-only">Search catalogue</span>
+          <input
+            ref="catalogueSearchInput"
+            v-model="query.search"
+            type="search"
+            placeholder="Search catalogue"
+            @keydown.esc="catalogueSearchOpen = false"
+          >
+        </label>
+        <button
+          v-if="catalogueSearchOpen && query.search"
+          class="catalogue-search-clear"
+          type="button"
+          aria-label="Clear catalogue search"
+          title="Clear catalogue search"
+          @click="clearCatalogueSearch"
+        >
+          &times;
+        </button>
+      </div>
 
       <SearchableFilter
         v-model="query.model"

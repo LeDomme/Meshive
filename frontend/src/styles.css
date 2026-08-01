@@ -943,13 +943,111 @@ summary {
 }
 
 .catalogue-filters {
-  display: grid;
-  grid-template-columns: minmax(16rem, 2fr) repeat(8, minmax(9rem, 1fr)) auto;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 0.75rem;
   padding: 1rem;
   border: 1px solid var(--meshive-border);
   border-radius: 1rem;
   background: var(--meshive-panel);
+}
+
+.catalogue-filters > .searchable-filter {
+  flex: 1 1 8rem;
+}
+
+.catalogue-filters > .secondary-button {
+  flex: 0 0 auto;
+  min-height: 2.65rem;
+}
+
+.catalogue-search {
+  position: relative;
+  display: flex;
+  flex: 0 0 2.65rem;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.catalogue-search--open {
+  flex: 2 1 16rem;
+}
+
+.catalogue-search-toggle {
+  position: relative;
+  display: grid;
+  flex: 0 0 2.65rem;
+  width: 2.65rem;
+  height: 2.65rem;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #334155;
+  border-radius: 0.6rem;
+  color: #e5e7eb;
+  background: #0b1220;
+  cursor: pointer;
+}
+
+.catalogue-search-toggle svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+
+.catalogue-search--active .catalogue-search-toggle {
+  border-color: var(--meshive-cyan);
+  color: var(--meshive-cyan);
+}
+
+.catalogue-search--active .catalogue-search-toggle::after {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  background: var(--meshive-cyan);
+  content: "";
+}
+
+.catalogue-search-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.catalogue-search-field input {
+  padding-right: 2.5rem;
+}
+
+.catalogue-search-field input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.catalogue-search-clear {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  width: 2.5rem;
+  height: 2.65rem;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  color: #bfdbfe;
+  background: transparent;
+  font: inherit;
+  font-size: 1.35rem;
+  cursor: pointer;
+}
+
+.catalogue-search-toggle:focus-visible,
+.catalogue-search-clear:focus-visible {
+  outline: 2px solid var(--meshive-cyan);
+  outline-offset: 2px;
 }
 
 .catalogue-filters input,
@@ -1702,7 +1800,18 @@ summary {
   }
 
   .catalogue-filters {
-    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .catalogue-search,
+  .catalogue-search--open,
+  .catalogue-filters > .searchable-filter,
+  .catalogue-filters > .secondary-button {
+    flex-basis: 100%;
+  }
+
+  .catalogue-search-toggle {
+    flex-grow: 0;
   }
 
   .searchable-filter-panel,
@@ -1734,16 +1843,6 @@ summary {
   .lightbox-toolbar > div {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (min-width: 761px) and (max-width: 1200px) {
-  .catalogue-filters {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .search-field {
-    grid-column: span 2;
   }
 }
 
