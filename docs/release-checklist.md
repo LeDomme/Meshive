@@ -29,7 +29,8 @@ Use this checklist for every stable Meshive release.
 3. Push the tag. CI publishes semantic GHCR tags, an SBOM/provenance
    attestation, and the GitHub Release.
 4. Deploy the immutable version tag and complete the production smoke test.
-5. Confirm the release notes, semantic image tags, and image digest are visible.
+5. Confirm the release notes, semantic image tags, `latest`, and image digest
+   are visible. The `edge` tag must remain the development channel from `main`.
 
 ## Rollback readiness
 
