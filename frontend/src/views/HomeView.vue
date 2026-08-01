@@ -139,8 +139,16 @@ const storedState = (() => {
   }
 })()
 const query = reactive({ ...defaultQuery })
-for (const key of Object.keys(defaultQuery) as Array<keyof typeof defaultQuery>) {
-  const storedValue = storedState.query?.[key]
+const catalogueQueryKeys = Object.keys(defaultQuery) as Array<
+  keyof typeof defaultQuery
+>
+const routeDefinesCatalogueState =
+  catalogueQueryKeys.some((key) => typeof route.query[key] === "string") ||
+  typeof route.query.page === "string"
+for (const key of catalogueQueryKeys) {
+  const storedValue = routeDefinesCatalogueState
+    ? undefined
+    : storedState.query?.[key]
   if (typeof storedValue === "string") Object.assign(query, { [key]: storedValue })
   const value = route.query[key]
   if (typeof value === "string") Object.assign(query, { [key]: value })

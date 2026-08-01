@@ -64,6 +64,15 @@ interface ArchiveTreeNode {
   children: ArchiveTreeNode[]
 }
 
+type CatalogueFilterKey =
+  | "model"
+  | "creator"
+  | "franchise"
+  | "series"
+  | "collection"
+  | "source_id"
+  | "tag_id"
+
 const route = useRoute()
 const auth = useAuthStore()
 const model = ref<ModelDetail | null>(null)
@@ -207,6 +216,16 @@ function formatBytes(value: number | null) {
   return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
 }
 
+function catalogueFilterLink(
+  key: CatalogueFilterKey,
+  value: string | number | null,
+) {
+  return {
+    name: "home",
+    query: { [key]: String(value) },
+  }
+}
+
 async function addTag() {
   if (!model.value || !selectedTagId.value) return
   await apiRequest<void>(
@@ -269,38 +288,6 @@ onBeforeUnmount(() => {
           {{ model.status }}
         </span>
       </header>
-      <section class="detail-tags">
-        <div class="tag-list">
-          <span
-            v-for="tag in model.tags"
-            :key="tag.id"
-            class="tag-chip"
-            :style="{ '--tag-color': tag.color || '#5eead4' }"
-          >
-            {{ tag.name }}
-            <button
-              v-if="auth.user?.role === 'admin'"
-              type="button"
-              aria-label="Remove tag"
-              @click="removeTag(tag)"
-            >×</button>
-          </span>
-        </div>
-        <form
-          v-if="auth.user?.role === 'admin' && availableTags.length"
-          class="tag-assignment"
-          @submit.prevent="addTag"
-        >
-          <select v-model="selectedTagId" required>
-            <option value="">Add tag…</option>
-            <option v-for="tag in availableTags" :key="tag.id" :value="String(tag.id)">
-              {{ tag.name }}
-            </option>
-          </select>
-          <button class="secondary-button" type="submit">Add</button>
-        </form>
-      </section>
-
       <section class="detail-grid">
         <div class="panel image-gallery">
           <div class="detail-image-frame" :style="imageFrameStyle">
@@ -336,21 +323,108 @@ onBeforeUnmount(() => {
         <aside class="panel model-facts">
           <h2>Details</h2>
           <dl>
+            <dt>Model</dt>
+            <dd>
+              <RouterLink
+                class="model-fact-link"
+                :to="catalogueFilterLink('model', model.name)"
+              >
+                {{ model.name }}
+              </RouterLink>
+            </dd>
             <template v-if="model.creator">
-              <dt>Creator</dt><dd>{{ model.creator }}</dd>
+              <dt>Creator</dt>
+              <dd>
+                <RouterLink
+                  class="model-fact-link"
+                  :to="catalogueFilterLink('creator', model.creator)"
+                >
+                  {{ model.creator }}
+                </RouterLink>
+              </dd>
             </template>
             <template v-if="model.franchise">
-              <dt>Franchise</dt><dd>{{ model.franchise }}</dd>
+              <dt>Franchise</dt>
+              <dd>
+                <RouterLink
+                  class="model-fact-link"
+                  :to="catalogueFilterLink('franchise', model.franchise)"
+                >
+                  {{ model.franchise }}
+                </RouterLink>
+              </dd>
             </template>
             <template v-if="model.series">
-              <dt>Series</dt><dd>{{ model.series }}</dd>
+              <dt>Series</dt>
+              <dd>
+                <RouterLink
+                  class="model-fact-link"
+                  :to="catalogueFilterLink('series', model.series)"
+                >
+                  {{ model.series }}
+                </RouterLink>
+              </dd>
             </template>
             <template v-if="model.collection">
-              <dt>Collection</dt><dd>{{ model.collection }}</dd>
+              <dt>Collection</dt>
+              <dd>
+                <RouterLink
+                  class="model-fact-link"
+                  :to="catalogueFilterLink('collection', model.collection)"
+                >
+                  {{ model.collection }}
+                </RouterLink>
+              </dd>
             </template>
-            <dt>Source</dt><dd>{{ model.source_name }}</dd>
+            <dt>Source</dt>
+            <dd>
+              <RouterLink
+                class="model-fact-link"
+                :to="catalogueFilterLink('source_id', model.source_id)"
+              >
+                {{ model.source_name }}
+              </RouterLink>
+            </dd>
+            <dt>Tags</dt>
+            <dd class="model-fact-tags">
+              <div v-if="model.tags.length" class="tag-list">
+                <span
+                  v-for="tag in model.tags"
+                  :key="tag.id"
+                  class="tag-chip"
+                  :style="{ '--tag-color': tag.color || '#5eead4' }"
+                >
+                  <RouterLink
+                    class="tag-chip-link"
+                    :to="catalogueFilterLink('tag_id', tag.id)"
+                  >
+                    {{ tag.name }}
+                  </RouterLink>
+                  <button
+                    v-if="auth.user?.role === 'admin'"
+                    type="button"
+                    :aria-label="`Remove ${tag.name} tag`"
+                    @click="removeTag(tag)"
+                  >×</button>
+                </span>
+              </div>
+              <span v-else class="muted">None</span>
+            </dd>
             <dt>Folder</dt><dd class="path-value">{{ model.relative_path }}</dd>
           </dl>
+          <form
+            v-if="auth.user?.role === 'admin' && availableTags.length"
+            class="tag-assignment model-fact-tag-assignment"
+            @submit.prevent="addTag"
+          >
+            <select v-model="selectedTagId" required aria-label="Tag to add">
+              <option value="">Add tag…</option>
+              <option v-for="tag in availableTags" :key="tag.id" :value="String(tag.id)">
+                {{ tag.name }}
+              </option>
+            </select>
+            <button class="secondary-button" type="submit">Add</button>
+          </form>
         </aside>
       </section>
 
