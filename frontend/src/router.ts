@@ -11,6 +11,7 @@ import SourcesView from "./views/admin/SourcesView.vue"
 import TagsView from "./views/admin/TagsView.vue"
 import UsersView from "./views/admin/UsersView.vue"
 import BackupsView from "./views/admin/BackupsView.vue"
+import CreatorsView from "./views/admin/CreatorsView.vue"
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -54,6 +55,12 @@ export const router = createRouter({
       path: "/admin/users",
       name: "users",
       component: UsersView,
+      meta: { requiresAuth: true, requiresAdmin: true },
+    },
+    {
+      path: "/admin/creators",
+      name: "creators",
+      component: CreatorsView,
       meta: { requiresAuth: true, requiresAdmin: true },
     },
     {
