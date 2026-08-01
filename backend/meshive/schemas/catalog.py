@@ -1,4 +1,6 @@
 from pydantic import BaseModel, Field
+
+from meshive.schemas.creator import CreatorMetadataLinkRead
 from meshive.schemas.tag import TagRead
 
 
@@ -62,6 +64,7 @@ class ModelDetail(BaseModel):
     name: str
     creator: str | None
     creator_url: str | None
+    creator_links: list[CreatorMetadataLinkRead]
     franchise: str | None
     series: str | None
     collection: str | None

@@ -55,44 +55,96 @@ def test_creator_links_are_managed_and_exposed_on_model_details() -> None:
             initial = client.get("/api/admin/creator-links")
             assert initial.status_code == 200
             assert initial.json() == [
-                {"name": "Aoae", "url": None, "model_count": 1}
+                {"name": "Aoae", "model_count": 1, "links": []}
             ]
 
-            invalid = client.put(
+            invalid = client.post(
                 "/api/admin/creator-links",
-                json={"creator_name": "Aoae", "url": "javascript:alert(1)"},
+                json={
+                    "creator_name": "Aoae",
+                    "kind": "website",
+                    "url": "javascript:alert(1)",
+                },
             )
             assert invalid.status_code == 422
 
-            unknown = client.put(
+            unknown = client.post(
                 "/api/admin/creator-links",
-                json={"creator_name": "Unknown", "url": "https://example.com/unknown"},
+                json={
+                    "creator_name": "Unknown",
+                    "kind": "website",
+                    "url": "https://example.com/unknown",
+                },
             )
             assert unknown.status_code == 404
 
-            saved = client.put(
+            website = client.post(
                 "/api/admin/creator-links",
-                json={"creator_name": "aoae", "url": "https://example.com/aoae"},
+                json={
+                    "creator_name": "aoae",
+                    "kind": "website",
+                    "url": "https://example.com/aoae",
+                },
             )
-            assert saved.status_code == 204
+            assert website.status_code == 201
+            assert website.json()["label"] == "Website"
+
+            patreon = client.post(
+                "/api/admin/creator-links",
+                json={
+                    "creator_name": "Aoae",
+                    "kind": "patreon",
+                    "url": "https://patreon.com/aoae",
+                },
+            )
+            assert patreon.status_code == 201
+
+            missing_other_label = client.post(
+                "/api/admin/creator-links",
+                json={
+                    "creator_name": "Aoae",
+                    "kind": "other",
+                    "url": "https://example.com/store",
+                },
+            )
+            assert missing_other_label.status_code == 422
+
+            duplicate = client.post(
+                "/api/admin/creator-links",
+                json={
+                    "creator_name": "Aoae",
+                    "kind": "website",
+                    "url": "https://example.com/second",
+                },
+            )
+            assert duplicate.status_code == 409
 
             detail = client.get(f"/api/models/{model.id}")
             assert detail.status_code == 200
             assert detail.json()["creator_url"] == "https://example.com/aoae"
-            assert client.get("/api/admin/creator-links").json() == [
-                {
-                    "name": "Aoae",
-                    "url": "https://example.com/aoae",
-                    "model_count": 1,
-                }
+            assert [link["label"] for link in detail.json()["creator_links"]] == [
+                "Patreon",
+                "Website",
             ]
 
-            removed = client.put(
-                "/api/admin/creator-links",
-                json={"creator_name": "Aoae", "url": None},
+            updated = client.put(
+                f"/api/admin/creator-links/{patreon.json()['id']}",
+                json={
+                    "kind": "cults3d",
+                    "url": "https://cults3d.com/en/users/aoae",
+                },
+            )
+            assert updated.status_code == 200
+            assert updated.json()["label"] == "Cults3D"
+
+            removed = client.delete(
+                f"/api/admin/creator-links/{website.json()['id']}"
             )
             assert removed.status_code == 204
-            assert client.get(f"/api/models/{model.id}").json()["creator_url"] is None
+            remaining_detail = client.get(f"/api/models/{model.id}").json()
+            assert [link["label"] for link in remaining_detail["creator_links"]] == [
+                "Cults3D"
+            ]
     finally:
         app.dependency_overrides.clear()
         Base.metadata.drop_all(engine)

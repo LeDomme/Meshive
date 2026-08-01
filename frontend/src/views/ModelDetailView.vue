@@ -42,7 +42,12 @@ interface ModelDetail {
   id: number
   name: string
   creator: string | null
-  creator_url: string | null
+  creator_links: Array<{
+    id: number
+    kind: string
+    label: string
+    url: string
+  }>
   franchise: string | null
   series: string | null
   collection: string | null
@@ -344,16 +349,18 @@ onBeforeUnmount(() => {
                 </RouterLink>
               </dd>
             </template>
-            <template v-if="model.creator_url">
-              <dt>Creator page</dt>
-              <dd>
+            <template v-if="model.creator_links.length">
+              <dt>Creator links</dt>
+              <dd class="model-fact-external-links">
                 <a
+                  v-for="link in model.creator_links"
+                  :key="link.id"
                   class="model-fact-link"
-                  :href="model.creator_url"
+                  :href="link.url"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Open external page <span aria-hidden="true">↗</span>
+                  {{ link.label }} <span aria-hidden="true">↗</span>
                 </a>
               </dd>
             </template>
