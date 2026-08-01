@@ -5,6 +5,8 @@ import { ApiError, apiRequest } from "../api"
 export interface CurrentUser {
   id: number
   username: string
+  email: string | null
+  email_verified: boolean
   role: "admin" | "user"
   is_active: boolean
   must_change_password: boolean
@@ -51,6 +53,11 @@ export const useAuthStore = defineStore("auth", {
       this.initialized = true
     },
 
+    async refreshUser() {
+      this.user = await apiRequest<CurrentUser>("/api/auth/me")
+      return this.user
+    },
+
     async completeSetup(setupToken: string, username: string, password: string) {
       this.user = await apiRequest<CurrentUser>("/api/setup", {
         method: "POST",
@@ -82,6 +89,13 @@ export const useAuthStore = defineStore("auth", {
           current_password: currentPassword,
           new_password: newPassword,
         }),
+      })
+    },
+
+    async changeRecoveryEmail(email: string, currentPassword: string) {
+      this.user = await apiRequest<CurrentUser>("/api/auth/email", {
+        method: "POST",
+        body: JSON.stringify({ email, current_password: currentPassword }),
       })
     },
   },

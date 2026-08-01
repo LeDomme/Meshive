@@ -2,11 +2,14 @@ import { createRouter, createWebHistory } from "vue-router"
 
 import { useAuthStore } from "./stores/auth"
 import HomeView from "./views/HomeView.vue"
+import ForgotPasswordView from "./views/ForgotPasswordView.vue"
 import LoginView from "./views/LoginView.vue"
 import ModelDetailView from "./views/ModelDetailView.vue"
 import NotFoundView from "./views/NotFoundView.vue"
 import PasswordView from "./views/PasswordView.vue"
+import ResetPasswordView from "./views/ResetPasswordView.vue"
 import SetupView from "./views/SetupView.vue"
+import VerifyEmailView from "./views/VerifyEmailView.vue"
 import SourcesView from "./views/admin/SourcesView.vue"
 import TagsView from "./views/admin/TagsView.vue"
 import UsersView from "./views/admin/UsersView.vue"
@@ -39,6 +42,23 @@ export const router = createRouter({
       path: "/login",
       name: "login",
       component: LoginView,
+    },
+    {
+      path: "/forgot-password",
+      name: "forgot-password",
+      component: ForgotPasswordView,
+    },
+    {
+      path: "/reset-password",
+      name: "reset-password",
+      component: ResetPasswordView,
+      meta: { allowsPasswordChange: true },
+    },
+    {
+      path: "/verify-email",
+      name: "verify-email",
+      component: VerifyEmailView,
+      meta: { allowsPasswordChange: true },
     },
     {
       path: "/setup",

@@ -64,6 +64,8 @@ the target host instead of copying values from another installation:
 | `MESHIVE_ENVIRONMENT` | `development` for direct HTTP; `production` behind HTTPS |
 | `MESHIVE_PORT` | Host port for the standalone example |
 | `MESHIVE_HOST` | Public DNS name for the Traefik example |
+| `MESHIVE_PUBLIC_URL` | Public base URL used in optional recovery emails |
+| `MESHIVE_SMTP_*` | Optional SMTP account and TLS mode for password recovery |
 | `TRAEFIK_NETWORK` | Existing reverse-proxy container network |
 | `TRAEFIK_ENTRYPOINTS` | HTTPS entrypoint configured on the proxy |
 | `TRAEFIK_CERT_RESOLVER` | Certificate resolver configured on the proxy |

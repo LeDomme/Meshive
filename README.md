@@ -146,6 +146,9 @@ docker compose exec meshive \
   sh -lc 'gosu "$PUID:$PGID" meshive create-admin --username admin'
 ```
 
+Optional verified-email password recovery and the container-side emergency
+reset command are documented in [Password recovery](docs/password-recovery.md).
+
 ## License
 
 Meshive is licensed under the [GNU Affero General Public License version 3

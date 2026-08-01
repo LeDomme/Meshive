@@ -4,6 +4,7 @@ from meshive.models.session import UserSession
 from meshive.models.tag import FolderTagRule, ModelTag, Tag
 from meshive.models.backup import BackupRun, BackupSchedule
 from meshive.models.user import User
+from meshive.models.user_token import UserActionToken
 
 __all__ = [
     "Archive",
@@ -16,6 +17,7 @@ __all__ = [
     "ScanRun",
     "User",
     "UserSession",
+    "UserActionToken",
     "Tag",
     "ModelTag",
     "FolderTagRule",

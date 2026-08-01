@@ -60,3 +60,4 @@ class AttemptRateLimiter:
 
 login_limiter = AttemptRateLimiter()
 setup_limiter = AttemptRateLimiter()
+recovery_limiter = AttemptRateLimiter()

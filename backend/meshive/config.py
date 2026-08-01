@@ -19,6 +19,16 @@ class Settings(BaseSettings):
     session_lifetime_days: int = Field(default=7, ge=1, le=365)
     auth_rate_limit_attempts: int = Field(default=5, ge=1, le=100)
     auth_rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
+    public_url: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str | None = None
+    smtp_security: Literal["ssl", "starttls", "none"] = "starttls"
+    smtp_timeout_seconds: int = Field(default=15, ge=1, le=120)
+    password_reset_lifetime_minutes: int = Field(default=30, ge=5, le=1440)
+    email_verification_lifetime_hours: int = Field(default=24, ge=1, le=168)
     setup_token: SecretStr | None = None
     archive_command: str = "7z"
     archive_timeout_seconds: int = Field(default=120, ge=1, le=3600)
@@ -64,6 +74,25 @@ class Settings(BaseSettings):
             return None
         value = self.setup_token.get_secret_value().strip()
         return value or None
+
+    @property
+    def email_delivery_enabled(self) -> bool:
+        values = (
+            self.public_url,
+            self.smtp_host,
+            self.smtp_username,
+            self.smtp_from,
+        )
+        if not all(value and value.strip() for value in values):
+            return False
+        assert self.public_url is not None
+        if not self.public_url.strip().startswith(("https://", "http://")):
+            return False
+        if any("\r" in value or "\n" in value for value in values if value):
+            return False
+        if self.smtp_password is None:
+            return False
+        return bool(self.smtp_password.get_secret_value())
 
 
 @lru_cache

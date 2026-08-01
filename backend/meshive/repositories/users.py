@@ -8,6 +8,10 @@ def normalize_username(username: str) -> str:
     return username.strip().casefold()
 
 
+def normalize_email(email: str) -> str:
+    return email.strip().casefold()
+
+
 def get_user(session: Session, user_id: int) -> User | None:
     return session.get(User, user_id)
 
@@ -17,6 +21,21 @@ def get_user_by_username(session: Session, username: str) -> User | None:
         User.normalized_username == normalize_username(username)
     )
     return session.scalar(statement)
+
+
+def get_user_by_recovery_identifier(
+    session: Session, identifier: str
+) -> User | None:
+    normalized = identifier.strip().casefold()
+    user = session.scalar(
+        select(User).where(
+            User.normalized_email == normalized,
+            User.email_verified_at.is_not(None),
+        )
+    )
+    if user is not None:
+        return user
+    return session.scalar(select(User).where(User.normalized_username == normalized))
 
 
 def list_users(session: Session) -> list[User]:
