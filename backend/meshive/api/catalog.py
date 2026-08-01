@@ -33,6 +33,7 @@ from meshive.schemas.catalog import (
     ModelSummary,
     SourceFilterOption,
 )
+from meshive.schemas.creator import CreatorMetadataLinkRead
 from meshive.schemas.tag import TagRead
 from meshive.services.archive_bundle import BundleArchive, stream_archive_bundle
 from meshive.services.download_limiter import claim_download, release_download
@@ -261,12 +262,20 @@ def model_detail(
             status_code=status.HTTP_404_NOT_FOUND, detail="Model not found"
         )
     model, source_name = row
-    creator_url = (
-        session.scalar(
-            select(CreatorLink.url).where(CreatorLink.creator_name == model.creator)
+    creator_links = (
+        list(
+            session.scalars(
+                select(CreatorLink)
+                .where(CreatorLink.creator_name == model.creator)
+                .order_by(CreatorLink.label.collate("NOCASE"))
+            )
         )
         if model.creator
-        else None
+        else []
+    )
+    creator_url = next(
+        (link.url for link in creator_links if link.kind == "website"),
+        creator_links[0].url if creator_links else None,
     )
     images = session.scalars(
         select(ModelImage)
@@ -319,6 +328,15 @@ def model_detail(
         name=model.name,
         creator=model.creator,
         creator_url=creator_url,
+        creator_links=[
+            CreatorMetadataLinkRead(
+                id=link.id,
+                kind=link.kind,
+                label=link.label,
+                url=link.url,
+            )
+            for link in creator_links
+        ],
         franchise=model.franchise,
         series=model.series,
         collection=model.collection,
