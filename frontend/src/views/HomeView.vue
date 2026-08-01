@@ -55,6 +55,55 @@ interface CatalogueFilters {
   tags: Tag[]
 }
 
+interface PaginationItem {
+  key: string
+  page: number
+}
+
+function buildPaginationItems(
+  currentPage: number,
+  pageCount: number,
+  siblingCount: number,
+): PaginationItem[] {
+  const visiblePages = new Set([1, pageCount])
+  for (
+    let pageNumber = currentPage - siblingCount;
+    pageNumber <= currentPage + siblingCount;
+    pageNumber += 1
+  ) {
+    if (pageNumber >= 1 && pageNumber <= pageCount) visiblePages.add(pageNumber)
+  }
+
+  const edgeRange = siblingCount * 2 + 3
+  if (currentPage <= siblingCount + 2) {
+    for (let pageNumber = 1; pageNumber <= Math.min(pageCount, edgeRange); pageNumber += 1) {
+      visiblePages.add(pageNumber)
+    }
+  }
+  if (currentPage >= pageCount - siblingCount - 1) {
+    for (
+      let pageNumber = Math.max(1, pageCount - edgeRange + 1);
+      pageNumber <= pageCount;
+      pageNumber += 1
+    ) {
+      visiblePages.add(pageNumber)
+    }
+  }
+
+  const orderedPages = [...visiblePages].sort((left, right) => left - right)
+  const items: PaginationItem[] = []
+  orderedPages.forEach((pageNumber, index) => {
+    const previousPage = orderedPages[index - 1]
+    if (previousPage !== undefined && pageNumber - previousPage === 2) {
+      items.push({ key: `page-${previousPage + 1}`, page: previousPage + 1 })
+    } else if (previousPage !== undefined && pageNumber - previousPage > 2) {
+      items.push({ key: `ellipsis-${previousPage}-${pageNumber}`, page: 0 })
+    }
+    items.push({ key: `page-${pageNumber}`, page: pageNumber })
+  })
+  return items
+}
+
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
@@ -101,6 +150,15 @@ if (query.sort === "oldest") query.sort = "meshive_oldest"
 const catalogueSearchOpen = ref(Boolean(query.search))
 const catalogueSearchInput = ref<HTMLInputElement | null>(null)
 const initialPage = Number(route.query.page || storedState.page || 1)
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(page.value.total / page.value.page_size)),
+)
+const paginationItems = computed(() =>
+  buildPaginationItems(page.value.page, totalPages.value, 2),
+)
+const compactPaginationItems = computed(() =>
+  buildPaginationItems(page.value.page, totalPages.value, 1),
+)
 const missingCount = computed(
   () => filters.value.statuses.find((item) => item.value === "missing")?.count ?? 0,
 )
@@ -551,24 +609,92 @@ onMounted(async () => {
       <p>Run a source scan or adjust the active filters.</p>
     </section>
 
-    <nav v-if="page.total > page.page_size" class="pagination" aria-label="Pagination">
-      <button
-        class="secondary-button"
-        type="button"
-        :disabled="page.page <= 1"
-        @click="loadCatalogue(page.page - 1)"
-      >
-        Previous
-      </button>
-      <span>Page {{ page.page }}</span>
-      <button
-        class="secondary-button"
-        type="button"
-        :disabled="page.page * page.page_size >= page.total"
-        @click="loadCatalogue(page.page + 1)"
-      >
-        Next
-      </button>
+    <nav v-if="totalPages > 1" class="pagination" aria-label="Catalogue pages">
+      <span class="sr-only" aria-live="polite">
+        Page {{ page.page }} of {{ totalPages }}
+      </span>
+
+      <div class="pagination-controls pagination-controls--previous">
+        <button
+          class="secondary-button pagination-button"
+          type="button"
+          :disabled="page.page <= 1"
+          aria-label="Go to first page"
+          title="First page"
+          @click="loadCatalogue(1)"
+        >
+          <span aria-hidden="true">&laquo;</span>
+        </button>
+        <button
+          class="secondary-button pagination-button"
+          type="button"
+          :disabled="page.page <= 1"
+          aria-label="Go to previous page"
+          title="Previous page"
+          @click="loadCatalogue(page.page - 1)"
+        >
+          <span aria-hidden="true">&lsaquo;</span>
+        </button>
+      </div>
+
+      <div class="pagination-pages pagination-pages--wide">
+        <template v-for="item in paginationItems" :key="item.key">
+          <button
+            v-if="item.page"
+            class="secondary-button pagination-button"
+            :class="{ 'pagination-page--current': item.page === page.page }"
+            type="button"
+            :disabled="item.page === page.page"
+            :aria-current="item.page === page.page ? 'page' : undefined"
+            :aria-label="`Go to page ${item.page}`"
+            @click="loadCatalogue(item.page)"
+          >
+            {{ item.page }}
+          </button>
+          <span v-else class="pagination-ellipsis" aria-hidden="true">&hellip;</span>
+        </template>
+      </div>
+
+      <div class="pagination-pages pagination-pages--compact">
+        <template v-for="item in compactPaginationItems" :key="item.key">
+          <button
+            v-if="item.page"
+            class="secondary-button pagination-button"
+            :class="{ 'pagination-page--current': item.page === page.page }"
+            type="button"
+            :disabled="item.page === page.page"
+            :aria-current="item.page === page.page ? 'page' : undefined"
+            :aria-label="`Go to page ${item.page}`"
+            @click="loadCatalogue(item.page)"
+          >
+            {{ item.page }}
+          </button>
+          <span v-else class="pagination-ellipsis" aria-hidden="true">&hellip;</span>
+        </template>
+      </div>
+
+      <div class="pagination-controls pagination-controls--next">
+        <button
+          class="secondary-button pagination-button"
+          type="button"
+          :disabled="page.page >= totalPages"
+          aria-label="Go to next page"
+          title="Next page"
+          @click="loadCatalogue(page.page + 1)"
+        >
+          <span aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button
+          class="secondary-button pagination-button"
+          type="button"
+          :disabled="page.page >= totalPages"
+          aria-label="Go to last page"
+          title="Last page"
+          @click="loadCatalogue(totalPages)"
+        >
+          <span aria-hidden="true">&raquo;</span>
+        </button>
+      </div>
     </nav>
   </main>
 </template>

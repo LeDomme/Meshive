@@ -247,6 +247,61 @@ def test_admin_can_only_delete_missing_models() -> None:
             assert [model.id for model in remaining] == [available_id]
 
 
+def test_catalogue_pagination_boundaries() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(
+                name="Pagination",
+                root_path="/models/pagination",
+                directory_pattern="{model}",
+                archive_formats=["7z"],
+                image_formats=["jpg"],
+                is_active=True,
+                scan_enabled=True,
+            )
+            session.add(source)
+            session.flush()
+            session.add_all(
+                [
+                    LibraryModel(
+                        library_source_id=source.id,
+                        relative_path=f"Model {index}",
+                        name=f"Model {index}",
+                        status="available",
+                    )
+                    for index in range(1, 6)
+                ]
+            )
+            session.commit()
+
+        first_page = client.get("/api/models", params={"page": 1, "page_size": 2})
+        middle_page = client.get("/api/models", params={"page": 2, "page_size": 2})
+        last_page = client.get("/api/models", params={"page": 3, "page_size": 2})
+        page_after_last = client.get(
+            "/api/models", params={"page": 4, "page_size": 2}
+        )
+
+        assert all(
+            response.status_code == 200
+            for response in (first_page, middle_page, last_page, page_after_last)
+        )
+        first_payload = first_page.json()
+        assert first_payload["total"] == 5
+        assert first_payload["page"] == 1
+        assert first_payload["page_size"] == 2
+        assert [item["name"] for item in first_payload["items"]] == [
+            "Model 1",
+            "Model 2",
+        ]
+        assert [item["name"] for item in middle_page.json()["items"]] == [
+            "Model 3",
+            "Model 4",
+        ]
+        assert [item["name"] for item in last_page.json()["items"]] == ["Model 5"]
+        assert page_after_last.json()["items"] == []
+        assert client.get("/api/models", params={"page": 0}).status_code == 422
+
+
 def test_catalogue_sorting_applies_before_pagination() -> None:
     with catalog_client() as (client, sessions):
         with sessions() as session:
