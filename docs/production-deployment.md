@@ -117,7 +117,7 @@ address reports the running release.
 Expected response for this release:
 
 ```json
-{"status":"ok","version":"1.0.0"}
+{"status":"ok","version":"1.0.1"}
 ```
 
 Also verify login, source scanning, thumbnails, archive trees, individual and

@@ -1,4 +1,4 @@
-FROM node:22-alpine AS frontend-build
+FROM node:25-alpine AS frontend-build
 
 WORKDIR /build/frontend
 COPY frontend/package*.json ./
@@ -7,7 +7,7 @@ COPY frontend/ ./
 COPY resources/ /build/resources/
 RUN npm run build
 
-FROM python:3.13-slim-trixie AS runtime
+FROM python:3.14-slim-trixie AS runtime
 
 LABEL org.opencontainers.image.source="https://github.com/ledomme/meshive" \
       org.opencontainers.image.licenses="AGPL-3.0-only"

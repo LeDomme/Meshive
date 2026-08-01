@@ -4,18 +4,18 @@ build-backend = "hatchling.build"
 
 [project]
 name = "meshive"
-version = "1.0.0"
+version = "1.0.1"
 description = "Self-hosted catalogue for archived 3D-print models"
 license = "AGPL-3.0-only"
 requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.14,<2",
-  "fastapi>=0.115,<1",
+  "fastapi>=0.140.13,<1",
   "pillow>=11,<13",
   "pwdlib[argon2]>=0.2,<1",
-  "pydantic-settings>=2.7,<3",
+  "pydantic-settings>=2.14.2,<3",
   "sqlalchemy>=2.0,<3",
-  "uvicorn[standard]>=0.34,<1",
+  "uvicorn[standard]>=0.51.0,<1",
 ]
 
 [project.urls]
@@ -27,10 +27,10 @@ meshive = "meshive.cli:main"
 
 [project.optional-dependencies]
 dev = [
-  "httpx>=0.28,<1",
+  "httpx>=0.28.1,<1",
   "pip-audit==2.10.0",
-  "pytest>=8,<9",
-  "pytest-cov>=6,<7",
+  "pytest>=9.1.1,<10",
+  "pytest-cov>=7.1.0,<8",
   "ruff>=0.9,<1",
 ]
 

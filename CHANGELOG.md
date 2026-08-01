@@ -3,6 +3,22 @@
 All notable changes to Meshive are documented in this file. Releases follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-08-01
+
+### Changed
+
+- Updated the FastAPI, Uvicorn, pydantic-settings, HTTPX, pytest, and
+  pytest-cov dependency ranges.
+- Updated the container build environments to Python 3.14 and Node.js 25.
+- Updated the pinned major versions of the GitHub Actions used by CI.
+- Grouped routine Dependabot updates while continuing to monitor all update
+  levels.
+
+### CI
+
+- Added complete pull-request validation, including the container build and a
+  runtime health smoke test without publishing the test image.
+
 ## [1.0.0] - 2026-08-01
 
 ### Added
@@ -38,4 +54,5 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
+[1.0.1]: ../../compare/v1.0.0...v1.0.1
 [1.0.0]: ../../releases/tag/v1.0.0

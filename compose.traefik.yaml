@@ -1,7 +1,7 @@
 # Deployment behind an existing Traefik reverse proxy.
 services:
   meshive:
-    image: ${MESHIVE_IMAGE:-ghcr.io/ledomme/meshive:1.0.0}
+    image: ${MESHIVE_IMAGE:-ghcr.io/ledomme/meshive:1.0.1}
     container_name: meshive
     restart: unless-stopped
     init: true

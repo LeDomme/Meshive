@@ -1,25 +1,100 @@
 version: 2
+
 updates:
   - package-ecosystem: npm
     directory: /frontend
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    versioning-strategy: increase-if-necessary
+    open-pull-requests-limit: 2
+    groups:
+      frontend-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      frontend-compatible:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      frontend-major:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - major
 
   - package-ecosystem: pip
     directory: /backend
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    versioning-strategy: increase
+    open-pull-requests-limit: 2
+    groups:
+      backend-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      backend-compatible:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      backend-major:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - major
 
   - package-ecosystem: docker
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      container-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      container-patches:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - patch
+      container-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - major
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      actions-compatible:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      actions-major:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - major
