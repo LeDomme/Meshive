@@ -10,9 +10,9 @@ from meshive.models.session import UserSession
 from meshive.models.user import User
 
 
-def get_current_user_allow_password_change(
+def get_current_session_allow_password_change(
     request: Request, session: Session = Depends(get_session)
-) -> User:
+) -> UserSession:
     settings = get_settings()
     raw_token = request.cookies.get(settings.session_cookie_name)
     if not raw_token:
@@ -30,6 +30,12 @@ def get_current_user_allow_password_change(
         record.last_used_at = now
         session.commit()
 
+    return record
+
+
+def get_current_user_allow_password_change(
+    record: UserSession = Depends(get_current_session_allow_password_change),
+) -> User:
     return record.user
 
 

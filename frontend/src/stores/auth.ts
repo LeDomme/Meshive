@@ -70,6 +70,11 @@ export const useAuthStore = defineStore("auth", {
       this.initialized = true
     },
 
+    clearLocalSession() {
+      this.user = null
+      this.initialized = true
+    },
+
     async changePassword(currentPassword: string, newPassword: string) {
       this.user = await apiRequest<CurrentUser>("/api/auth/change-password", {
         method: "POST",

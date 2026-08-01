@@ -992,7 +992,8 @@ summary {
 }
 
 .account-profile,
-.account-security {
+.account-security,
+.account-sessions {
   padding: 1.25rem;
   border: 1px solid rgb(45 100 166 / 42%);
   border-radius: 0.9rem;
@@ -1000,7 +1001,8 @@ summary {
 }
 
 .account-profile h2,
-.account-security h2 {
+.account-security h2,
+.account-sessions h2 {
   margin-top: 0;
 }
 
@@ -1031,6 +1033,97 @@ summary {
 
 .account-security .login-form {
   max-width: 32rem;
+}
+
+.account-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.account-section-heading .panel-copy {
+  margin-bottom: 0;
+}
+
+.account-section-heading > .danger-button {
+  flex: 0 0 auto;
+}
+
+.session-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid rgb(45 100 166 / 38%);
+  border-radius: 0.8rem;
+  background: rgb(2 11 28 / 52%);
+}
+
+.session-summary {
+  min-width: 0;
+}
+
+.session-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.session-title-row h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.session-current {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid rgb(48 213 255 / 42%);
+  border-radius: 999px;
+  color: #67e8f9;
+  font-size: 0.75rem;
+}
+
+.session-summary > p {
+  margin: 0.3rem 0 0;
+  color: #93c5fd;
+}
+
+.session-summary dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  margin: 0.7rem 0 0;
+  color: #b7c7df;
+  font-size: 0.85rem;
+}
+
+.session-summary dl div {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.session-summary dt {
+  color: #7694bd;
+}
+
+.session-summary dd {
+  margin: 0;
+}
+
+@media (max-width: 38rem) {
+  .account-section-heading,
+  .session-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 .catalogue-filters {

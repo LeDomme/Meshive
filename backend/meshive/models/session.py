@@ -20,5 +20,8 @@ class UserSession(Base):
     last_used_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    browser: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    operating_system: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    device_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="sessions")  # noqa: F821
