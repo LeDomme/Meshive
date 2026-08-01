@@ -12,6 +12,13 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(120))
     normalized_username: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    normalized_email: Mapped[str | None] = mapped_column(
+        String(320), unique=True, index=True, nullable=True
+    )
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     password_hash: Mapped[str] = mapped_column(Text)
     role: Mapped[str] = mapped_column(String(20), default="user", index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -29,3 +36,10 @@ class User(Base):
     sessions: Mapped[list["UserSession"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"
     )
+    action_tokens: Mapped[list["UserActionToken"]] = relationship(  # noqa: F821
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+    @property
+    def email_verified(self) -> bool:
+        return self.email is not None and self.email_verified_at is not None

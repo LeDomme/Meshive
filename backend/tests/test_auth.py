@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from meshive.auth.passwords import hash_password
-from meshive.auth.rate_limit import login_limiter, setup_limiter
+from meshive.auth.rate_limit import login_limiter, recovery_limiter, setup_limiter
 from meshive.auth.sessions import hash_session_token
 from meshive.auth.user_agents import parse_user_agent
 from meshive.config import Settings, get_settings
@@ -19,6 +19,7 @@ from meshive.models.user import User
 @contextmanager
 def authenticated_test_client() -> Generator[tuple[TestClient, sessionmaker], None, None]:
     login_limiter.reset()
+    recovery_limiter.reset()
     setup_limiter.reset()
     engine = create_engine(
         "sqlite://",
@@ -38,6 +39,7 @@ def authenticated_test_client() -> Generator[tuple[TestClient, sessionmaker], No
             yield client, test_session
     finally:
         login_limiter.reset()
+        recovery_limiter.reset()
         setup_limiter.reset()
         app.dependency_overrides.clear()
         Base.metadata.drop_all(engine)

@@ -4,13 +4,16 @@ import json
 import sys
 from pathlib import Path
 
+from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 
+from meshive.backup import create_backup, restore_backup
+from meshive.auth.action_tokens import delete_user_action_tokens
 from meshive.auth.passwords import hash_password
 from meshive.database import SessionLocal
+from meshive.models.session import UserSession
 from meshive.models.user import User
-from meshive.repositories.users import normalize_username
-from meshive.backup import create_backup, restore_backup
+from meshive.repositories.users import get_user_by_username, normalize_username
 
 
 def main() -> None:
@@ -26,6 +29,15 @@ def main() -> None:
         action="store_true",
         help="Read the password from standard input instead of prompting",
     )
+    reset_password = commands.add_parser(
+        "reset-password", help="Reset a local user's password and revoke all sessions"
+    )
+    reset_password.add_argument("--username", required=True)
+    reset_password.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="Read the new password from standard input instead of prompting",
+    )
     backup = commands.add_parser("backup", help="Create a consistent online SQLite backup")
     backup.add_argument("--output", type=Path)
     restore = commands.add_parser("restore", help="Restore a validated SQLite backup")
@@ -38,6 +50,8 @@ def main() -> None:
     arguments = parser.parse_args()
     if arguments.command == "create-admin":
         _create_admin(arguments.username, arguments.password_stdin)
+    elif arguments.command == "reset-password":
+        _reset_password(arguments.username, arguments.password_stdin)
     elif arguments.command == "backup":
         try:
             path = create_backup(arguments.output)
@@ -99,16 +113,7 @@ def _create_admin(username: str, password_stdin: bool) -> None:
     if not username:
         raise SystemExit("Username cannot be blank")
 
-    if password_stdin:
-        password = sys.stdin.readline().rstrip("\r\n")
-    else:
-        password = getpass.getpass("Password: ")
-        confirmation = getpass.getpass("Confirm password: ")
-        if password != confirmation:
-            raise SystemExit("Passwords do not match")
-
-    if len(password) < 12:
-        raise SystemExit("Password must contain at least 12 characters")
+    password = _read_password(password_stdin)
 
     with SessionLocal() as session:
         user = User(
@@ -126,6 +131,38 @@ def _create_admin(username: str, password_stdin: bool) -> None:
             raise SystemExit(f"User {username!r} already exists") from error
 
     print(f"Administrator {username!r} created.")
+
+
+def _reset_password(username: str, password_stdin: bool) -> None:
+    username = username.strip()
+    if not username:
+        raise SystemExit("Username cannot be blank")
+    password = _read_password(password_stdin)
+
+    with SessionLocal() as session:
+        user = get_user_by_username(session, username)
+        if user is None:
+            raise SystemExit(f"User {username!r} was not found")
+        user.password_hash = hash_password(password)
+        user.must_change_password = False
+        session.execute(delete(UserSession).where(UserSession.user_id == user.id))
+        delete_user_action_tokens(session, user.id)
+        session.commit()
+
+    print(f"Password for {user.username!r} reset; all sessions were revoked.")
+
+
+def _read_password(password_stdin: bool) -> str:
+    if password_stdin:
+        password = sys.stdin.readline().rstrip("\r\n")
+    else:
+        password = getpass.getpass("Password: ")
+        confirmation = getpass.getpass("Confirm password: ")
+        if password != confirmation:
+            raise SystemExit("Passwords do not match")
+    if len(password) < 12:
+        raise SystemExit("Password must contain at least 12 characters")
+    return password
 
 
 if __name__ == "__main__":

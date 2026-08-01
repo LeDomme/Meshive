@@ -8,6 +8,8 @@ import { useAuthStore } from "../../stores/auth"
 interface User {
   id: number
   username: string
+  email: string | null
+  email_verified: boolean
   role: "admin" | "user"
   is_active: boolean
   created_at: string
@@ -23,6 +25,7 @@ const successMessage = ref("")
 const busyUserId = ref<number | null>(null)
 const form = reactive({
   username: "",
+  email: "",
   password: "",
   role: "user" as "admin" | "user",
   is_active: true,
@@ -39,9 +42,9 @@ async function createUser() {
   try {
     await apiRequest<User>("/api/admin/users", {
       method: "POST",
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, email: form.email.trim() || null }),
     })
-    Object.assign(form, { username: "", password: "", role: "user", is_active: true, must_change_password: true })
+    Object.assign(form, { username: "", email: "", password: "", role: "user", is_active: true, must_change_password: true })
     await loadUsers()
     successMessage.value = "User created successfully."
   } catch (error) {
@@ -59,6 +62,7 @@ async function saveUser(user: User) {
       method: "PUT",
       body: JSON.stringify({
         username: user.username,
+        email: user.email?.trim() || null,
         password: temporaryPassword,
         role: user.role,
         is_active: user.is_active,
@@ -72,6 +76,8 @@ async function saveUser(user: User) {
     await loadUsers()
     if (user.id === auth.user?.id) {
       auth.user.username = saved.username
+      auth.user.email = saved.email
+      auth.user.email_verified = saved.email_verified
       auth.user.role = saved.role
       auth.user.is_active = saved.is_active
       auth.user.must_change_password = saved.must_change_password
@@ -82,6 +88,27 @@ async function saveUser(user: User) {
   } catch (error) {
     showError(error)
     await loadUsers()
+  } finally {
+    busyUserId.value = null
+  }
+}
+
+async function sendVerification(user: User) {
+  errorMessage.value = ""
+  successMessage.value = ""
+  busyUserId.value = user.id
+  try {
+    const result = await apiRequest<{ message: string }>(
+      `/api/admin/users/${user.id}/email-verification`,
+      {
+        method: "POST",
+        body: JSON.stringify({ email: user.email }),
+      },
+    )
+    await loadUsers()
+    successMessage.value = result.message
+  } catch (error) {
+    showError(error)
   } finally {
     busyUserId.value = null
   }
@@ -129,6 +156,7 @@ onMounted(loadUsers)
       <h2>Create user</h2>
       <form class="user-form" @submit.prevent="createUser">
         <label><span>Username</span><input v-model="form.username" required></label>
+        <label><span>Recovery email</span><input v-model="form.email" type="email" autocomplete="off" placeholder="Optional"></label>
         <label><span>Password</span><input v-model="form.password" type="password" minlength="12" required></label>
         <label><span>Role</span><select v-model="form.role"><option value="user">User</option><option value="admin">Admin</option></select></label>
         <label class="inline-check"><input v-model="form.is_active" type="checkbox"> Active</label>
@@ -141,10 +169,25 @@ onMounted(loadUsers)
       <h2>Existing users</h2>
       <div class="user-table-wrap">
         <table class="user-table">
-          <thead><tr><th>Username</th><th>Role</th><th>Temporary password</th><th>Active</th><th>Require change</th><th>Last login</th><th></th></tr></thead>
+          <thead><tr><th>Username</th><th>Recovery email</th><th>Role</th><th>Temporary password</th><th>Active</th><th>Require change</th><th>Last login</th><th></th></tr></thead>
           <tbody>
             <tr v-for="user in users" :key="user.id">
               <td><input v-model="user.username"></td>
+              <td class="user-email-cell">
+                <input v-model="user.email" type="email" autocomplete="off" placeholder="Not configured">
+                <span v-if="user.email" :class="user.email_verified ? 'email-verified' : 'email-unverified'">
+                  {{ user.email_verified ? "Verified" : "Not verified" }}
+                </span>
+                <button
+                  v-if="user.email && !user.email_verified"
+                  class="text-button"
+                  type="button"
+                  :disabled="busyUserId === user.id"
+                  @click="sendVerification(user)"
+                >
+                  Send verification
+                </button>
+              </td>
               <td><select v-model="user.role"><option value="user">User</option><option value="admin">Admin</option></select></td>
               <td><input v-model="passwords[user.id]" type="password" minlength="12" autocomplete="new-password" placeholder="Leave unchanged" title="Setting a temporary password requires the user to change it at next login"></td>
               <td><input v-model="user.is_active" type="checkbox" :disabled="user.id === auth.user?.id"></td>

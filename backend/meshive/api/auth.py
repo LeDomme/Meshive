@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from meshive.auth.action_tokens import delete_user_action_tokens
 from meshive.auth.dependencies import (
     get_current_session_allow_password_change,
     get_current_user_allow_password_change,
@@ -235,6 +236,7 @@ def change_password(
         )
     user.password_hash = hash_password(payload.new_password)
     user.must_change_password = False
+    delete_user_action_tokens(session, user.id)
     settings = get_settings()
     current_token = request.cookies.get(settings.session_cookie_name)
     current_token_hash = hash_session_token(current_token) if current_token else None

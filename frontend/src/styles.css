@@ -562,7 +562,7 @@ h1 {
 
 .user-form {
   display: grid;
-  grid-template-columns: 1.3fr 1.3fr minmax(8rem, 0.6fr) auto auto auto;
+  grid-template-columns: 1.2fr 1.4fr 1.2fr minmax(8rem, 0.6fr) auto auto auto;
   align-items: end;
   gap: 1rem;
 }
@@ -610,6 +610,22 @@ h1 {
 
 .user-table th {
   color: #94a3b8;
+}
+
+.user-email-cell {
+  min-width: 15rem;
+}
+
+.user-email-cell .email-verified,
+.user-email-cell .email-unverified {
+  margin-top: 0.4rem;
+  margin-left: 0;
+}
+
+.user-email-cell .text-button {
+  margin-left: 0.25rem;
+  color: #7dd3fc;
+  font-size: 0.8rem;
 }
 
 .admin-grid {
@@ -992,6 +1008,7 @@ summary {
 }
 
 .account-profile,
+.account-email,
 .account-security,
 .account-sessions {
   padding: 1.25rem;
@@ -1001,6 +1018,7 @@ summary {
 }
 
 .account-profile h2,
+.account-email h2,
 .account-security h2,
 .account-sessions h2 {
   margin-top: 0;
@@ -1025,6 +1043,7 @@ summary {
 .account-profile dd {
   margin: 0;
   color: #f8fafc;
+  overflow-wrap: anywhere;
 }
 
 .role-value {
@@ -1033,6 +1052,44 @@ summary {
 
 .account-security .login-form {
   max-width: 32rem;
+}
+
+.account-email .login-form {
+  max-width: 32rem;
+}
+
+.account-email-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.email-verified,
+.email-unverified {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+}
+
+.email-verified {
+  color: #99f6e4;
+  background: rgb(13 148 136 / 22%);
+}
+
+.email-unverified {
+  color: #fde68a;
+  background: rgb(202 138 4 / 20%);
+}
+
+.login-secondary-link {
+  justify-self: center;
+}
+
+.verification-link {
+  display: inline-flex;
+  margin-top: 1rem;
 }
 
 .account-section-heading {

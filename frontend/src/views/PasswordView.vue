@@ -18,6 +18,11 @@ const sessionsLoading = ref(true)
 const sessionActionId = ref("")
 const sessionError = ref("")
 const sessionMessage = ref("")
+const recoveryEmail = ref(auth.user?.email ?? "")
+const emailPassword = ref("")
+const emailError = ref("")
+const emailMessage = ref("")
+const emailSubmitting = ref(false)
 
 interface UserSession {
   id: string
@@ -113,6 +118,39 @@ async function revokeOtherSessions() {
   }
 }
 
+async function saveRecoveryEmail() {
+  emailError.value = ""
+  emailMessage.value = ""
+  emailSubmitting.value = true
+  try {
+    await auth.changeRecoveryEmail(recoveryEmail.value, emailPassword.value)
+    emailPassword.value = ""
+    emailMessage.value = "Recovery email saved. Check your inbox for the verification link."
+  } catch (error) {
+    emailError.value = error instanceof ApiError ? error.message : "Unable to save the recovery email"
+    await auth.refreshUser().catch(() => undefined)
+    recoveryEmail.value = auth.user?.email ?? recoveryEmail.value
+  } finally {
+    emailSubmitting.value = false
+  }
+}
+
+async function resendVerification() {
+  emailError.value = ""
+  emailMessage.value = ""
+  emailSubmitting.value = true
+  try {
+    const result = await apiRequest<{ message: string }>("/api/auth/email/resend", {
+      method: "POST",
+    })
+    emailMessage.value = result.message
+  } catch (error) {
+    emailError.value = error instanceof ApiError ? error.message : "Unable to send the verification email"
+  } finally {
+    emailSubmitting.value = false
+  }
+}
+
 async function submit() {
   errorMessage.value = ""
   successMessage.value = ""
@@ -161,7 +199,43 @@ onMounted(loadSessions)
         <dl>
           <div><dt>Username</dt><dd>{{ auth.user?.username }}</dd></div>
           <div><dt>Role</dt><dd class="role-value">{{ auth.user?.role }}</dd></div>
+          <div>
+            <dt>Recovery email</dt>
+            <dd>
+              {{ auth.user?.email || "Not configured" }}
+              <span v-if="auth.user?.email" :class="auth.user.email_verified ? 'email-verified' : 'email-unverified'">
+                {{ auth.user.email_verified ? "Verified" : "Not verified" }}
+              </span>
+            </dd>
+          </div>
         </dl>
+      </section>
+
+      <section class="account-email" aria-labelledby="email-heading">
+        <h2 id="email-heading">Recovery email</h2>
+        <p class="panel-copy">
+          A verified address lets you reset a forgotten password. Changing it requires your current password.
+        </p>
+        <form class="login-form" @submit.prevent="saveRecoveryEmail">
+          <label><span>Email address</span><input v-model="recoveryEmail" type="email" autocomplete="email" required></label>
+          <label><span>Current password</span><input v-model="emailPassword" type="password" autocomplete="current-password" required></label>
+          <p v-if="emailError" class="form-error" role="alert">{{ emailError }}</p>
+          <p v-if="emailMessage" class="success-panel" role="status">{{ emailMessage }}</p>
+          <div class="account-email-actions">
+            <button class="primary-button" type="submit" :disabled="emailSubmitting">
+              {{ emailSubmitting ? "Saving…" : "Save and verify email" }}
+            </button>
+            <button
+              v-if="auth.user?.email && !auth.user.email_verified"
+              class="secondary-button"
+              type="button"
+              :disabled="emailSubmitting"
+              @click="resendVerification"
+            >
+              Resend verification
+            </button>
+          </div>
+        </form>
       </section>
 
       <section class="account-security" aria-labelledby="security-heading">
