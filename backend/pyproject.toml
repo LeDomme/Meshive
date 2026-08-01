@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "meshive"
+version = "1.0.0"
+description = "Self-hosted catalogue for archived 3D-print models"
+license = "AGPL-3.0-only"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.14,<2",
+  "fastapi>=0.115,<1",
+  "pillow>=11,<13",
+  "pwdlib[argon2]>=0.2,<1",
+  "pydantic-settings>=2.7,<3",
+  "sqlalchemy>=2.0,<3",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[project.urls]
+Source = "https://github.com/ledomme/meshive"
+License = "https://github.com/ledomme/meshive/blob/main/LICENSE"
+
+[project.scripts]
+meshive = "meshive.cli:main"
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.28,<1",
+  "pip-audit==2.10.0",
+  "pytest>=8,<9",
+  "pytest-cov>=6,<7",
+  "ruff>=0.9,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["meshive"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

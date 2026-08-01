@@ -1,0 +1,644 @@
+import os
+import threading
+from datetime import datetime
+from pathlib import Path, PurePosixPath
+
+from sqlalchemy import delete, inspect, or_, select, update
+from sqlalchemy.orm import Session
+
+from meshive.archives.sevenzip_cli import ArchiveReadError, list_archive
+from meshive.auth.sessions import utc_now
+from meshive.config import get_settings
+from meshive.database import SessionLocal
+from meshive.models.catalog import (
+    Archive,
+    ArchiveEntry,
+    LibraryModel,
+    ModelImage,
+    ScanIssue,
+    ScanRun,
+)
+from meshive.models.library_source import LibrarySource
+from meshive.services.library_paths import PathPatternError, parse_library_path
+from meshive.services.thumbnails import (
+    ThumbnailError,
+    generate_thumbnail,
+    remove_cached_thumbnail,
+)
+from meshive.services.tags import recompute_inherited_tags
+
+_active_sources: set[int] = set()
+_active_sources_lock = threading.Lock()
+
+
+def claim_source(source_id: int) -> bool:
+    with _active_sources_lock:
+        if (
+            source_id in _active_sources
+            or len(_active_sources) >= get_settings().max_concurrent_scans
+        ):
+            return False
+        _active_sources.add(source_id)
+        return True
+
+
+def release_source(source_id: int) -> None:
+    with _active_sources_lock:
+        _active_sources.discard(source_id)
+
+
+def create_scan_run(
+    session: Session, source_id: int, *, trigger: str = "manual"
+) -> ScanRun:
+    scan = ScanRun(
+        library_source_id=source_id,
+        status="pending",
+        trigger=trigger,
+        models_found=0,
+        models_added=0,
+        models_updated=0,
+        models_missing=0,
+        issues_count=0,
+    )
+    session.add(scan)
+    session.commit()
+    session.refresh(scan)
+    return scan
+
+
+def has_queued_or_running_scan(session: Session, source_id: int) -> bool:
+    return session.scalar(
+        select(ScanRun.id)
+        .where(
+            ScanRun.library_source_id == source_id,
+            ScanRun.status.in_(("pending", "running")),
+        )
+        .limit(1)
+    ) is not None
+
+
+def dispatch_pending_scans() -> None:
+    with SessionLocal() as session:
+        if not inspect(session.get_bind()).has_table(ScanRun.__tablename__):
+            return
+        pending = list(
+            session.scalars(
+                select(ScanRun)
+                .where(ScanRun.status == "pending")
+                .order_by(ScanRun.created_at, ScanRun.id)
+            )
+        )
+        for scan in pending:
+            if not claim_source(scan.library_source_id):
+                continue
+            threading.Thread(
+                target=execute_scan,
+                args=(scan.library_source_id, scan.id),
+                name=f"meshive-scan-{scan.library_source_id}",
+                daemon=True,
+            ).start()
+
+
+def execute_scan(source_id: int, scan_run_id: int) -> None:
+    try:
+        with SessionLocal() as session:
+            _execute_scan(session, source_id, scan_run_id)
+    finally:
+        release_source(source_id)
+        dispatch_pending_scans()
+
+
+def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
+    scan = session.get(ScanRun, scan_run_id)
+    source = session.get(LibrarySource, source_id)
+    if scan is None:
+        return
+    scan.status = "running"
+    scan.started_at = utc_now()
+    session.commit()
+
+    try:
+        if source is None:
+            raise RuntimeError("Library source no longer exists")
+        root = _validated_source_root(source)
+        depths = {
+            len(PurePosixPath(pattern).parts)
+            for pattern in source.directory_pattern.splitlines()
+            if pattern.strip()
+        }
+        model_directories = {
+            directory
+            for depth in depths
+            for directory in _directories_at_depth(root, depth)
+        }
+
+        for model_directory in sorted(
+            model_directories, key=lambda path: path.as_posix().casefold()
+        ):
+            relative_path = model_directory.relative_to(root).as_posix()
+            try:
+                is_candidate = _is_model_candidate(model_directory, source)
+            except OSError as error:
+                _add_issue(
+                    session,
+                    scan,
+                    relative_path,
+                    "error",
+                    "directory_unreadable",
+                    str(error),
+                )
+                session.commit()
+                continue
+            if not is_candidate:
+                _delete_empty_placeholder(
+                    session, source.id, relative_path
+                )
+                continue
+            try:
+                normalized_path, values = parse_library_path(
+                    directory_pattern=source.directory_pattern,
+                    model_pattern=source.model_pattern,
+                    relative_path=relative_path,
+                    defaults={
+                        "creator": source.default_creator,
+                        "franchise": source.default_franchise,
+                        "collection": source.default_collection,
+                    },
+                )
+            except PathPatternError as error:
+                _add_issue(
+                    session,
+                    scan,
+                    relative_path,
+                    "warning",
+                    "path_pattern_mismatch",
+                    str(error),
+                )
+                session.commit()
+                continue
+
+            try:
+                _scan_model(
+                    session,
+                    scan,
+                    source,
+                    root,
+                    model_directory,
+                    normalized_path,
+                    values,
+                )
+                session.commit()
+            except Exception as error:
+                session.rollback()
+                scan = session.get(ScanRun, scan_run_id)
+                if scan is None:
+                    raise
+                _add_issue(
+                    session,
+                    scan,
+                    normalized_path,
+                    "error",
+                    "model_scan_failed",
+                    str(error),
+                )
+                session.commit()
+
+        missing_result = session.execute(
+            update(LibraryModel)
+            .where(
+                LibraryModel.library_source_id == source.id,
+                or_(
+                    LibraryModel.last_seen_scan_id.is_(None),
+                    LibraryModel.last_seen_scan_id != scan.id,
+                ),
+            )
+            .values(status="missing")
+        )
+        scan.models_missing = missing_result.rowcount or 0
+        recompute_inherited_tags(session, source.id)
+        scan.status = "completed_with_errors" if scan.issues_count else "completed"
+    except Exception as error:
+        session.rollback()
+        scan = session.get(ScanRun, scan_run_id)
+        if scan is not None:
+            scan.status = "failed"
+            scan.error_message = str(error)[:4000]
+    finally:
+        scan = session.get(ScanRun, scan_run_id)
+        if scan is not None:
+            scan.finished_at = utc_now()
+        session.commit()
+
+
+def _validated_source_root(source: LibrarySource) -> Path:
+    settings = get_settings()
+    allowed = settings.allowed_library_root.resolve(strict=True)
+    root = Path(source.root_path).resolve(strict=True)
+    if not root.is_dir():
+        raise RuntimeError("Library source path is not a directory")
+    if root != allowed and allowed not in root.parents:
+        raise RuntimeError("Library source resolves outside the allowed root")
+    if not os.access(root, os.R_OK | os.X_OK):
+        raise RuntimeError("Library source is not readable")
+    return root
+
+
+def _directories_at_depth(root: Path, target_depth: int):
+    for current, directories, _files in os.walk(root, followlinks=False):
+        current_path = Path(current)
+        depth = len(current_path.relative_to(root).parts)
+        if depth == target_depth:
+            directories.clear()
+            yield current_path
+        elif depth > target_depth:
+            directories.clear()
+
+
+def _scan_model(
+    session: Session,
+    scan: ScanRun,
+    source: LibrarySource,
+    root: Path,
+    model_directory: Path,
+    relative_path: str,
+    values: dict[str, str],
+) -> None:
+    model = session.scalar(
+        select(LibraryModel).where(
+            LibraryModel.library_source_id == source.id,
+            LibraryModel.relative_path == relative_path,
+        )
+    )
+    is_new = model is None
+    now = utc_now()
+    if model is None:
+        model = LibraryModel(
+            library_source_id=source.id,
+            relative_path=relative_path,
+            name=values["model"],
+            first_seen_at=now,
+        )
+        session.add(model)
+        session.flush()
+        scan.models_added += 1
+    else:
+        scan.models_updated += 1
+
+    model.name = values["model"]
+    model.creator = values.get("creator")
+    model.franchise = values.get("franchise")
+    model.series = values.get("series")
+    model.collection = values.get("collection")
+    model.last_seen_at = now
+    model.last_seen_scan_id = scan.id
+    model.status = "available"
+    scan.models_found += 1
+
+    files = [path for path in model_directory.iterdir() if path.is_file()]
+    safe_files = [
+        path for path in files if _path_stays_inside(path, root)
+    ]
+    if len(safe_files) != len(files):
+        _add_issue(
+            session,
+            scan,
+            relative_path,
+            "error",
+            "unsafe_symlink",
+            "One or more files resolve outside the library source",
+            model.id,
+        )
+
+    archive_extensions = {f".{item.casefold()}" for item in source.archive_formats}
+    image_extensions = {f".{item.casefold()}" for item in source.image_formats}
+    archives = sorted(
+        (path for path in safe_files if path.suffix.casefold() in archive_extensions),
+        key=lambda path: path.name.casefold(),
+    )
+    images = sorted(
+        (path for path in safe_files if path.suffix.casefold() in image_extensions),
+        key=lambda path: (_image_priority(path), path.name.casefold()),
+    )
+
+    primary_image = _sync_images(session, model, root, images)
+    if not images:
+        model.status = "incomplete"
+        _add_issue(
+            session,
+            scan,
+            relative_path,
+            "error",
+            "image_missing",
+            "No supported image was found",
+            model.id,
+        )
+    elif primary_image is not None:
+        image_record, image_path = primary_image
+        _sync_primary_thumbnail(
+            session,
+            scan,
+            model,
+            image_record,
+            image_path,
+        )
+
+    if not archives:
+        model.status = "incomplete"
+        session.execute(delete(Archive).where(Archive.model_id == model.id))
+        _add_issue(
+            session,
+            scan,
+            relative_path,
+            "error",
+            "archive_missing",
+            "No supported archive was found",
+            model.id,
+        )
+        return
+
+    archives_ok = _sync_archives(session, scan, model, root, archives)
+    if not archives_ok:
+        model.status = "error"
+    elif is_new and model.status == "available":
+        model.status = "available"
+
+
+def _is_model_candidate(directory: Path, source: LibrarySource) -> bool:
+    supported_extensions = {
+        f".{item.casefold()}"
+        for item in (*source.archive_formats, *source.image_formats)
+    }
+    return any(
+        path.is_file() and path.suffix.casefold() in supported_extensions
+        for path in directory.iterdir()
+    )
+
+
+def _delete_empty_placeholder(
+    session: Session, source_id: int, relative_path: str
+) -> None:
+    model = session.scalar(
+        select(LibraryModel).where(
+            LibraryModel.library_source_id == source_id,
+            LibraryModel.relative_path == relative_path,
+        )
+    )
+    if model is None:
+        return
+    has_archive = session.scalar(
+        select(Archive.id).where(Archive.model_id == model.id).limit(1)
+    )
+    has_image = session.scalar(
+        select(ModelImage.id).where(ModelImage.model_id == model.id).limit(1)
+    )
+    if has_archive is None and has_image is None:
+        session.delete(model)
+        session.commit()
+
+
+def _sync_archive(
+    session: Session,
+    scan: ScanRun,
+    model: LibraryModel,
+    root: Path,
+    archive_path: Path,
+) -> bool:
+    stat = archive_path.stat()
+    relative_path = archive_path.relative_to(root).as_posix()
+    archive = session.scalar(
+        select(Archive).where(
+            Archive.model_id == model.id,
+            Archive.relative_path == relative_path,
+        )
+    )
+    unchanged = (
+        archive is not None
+        and archive.relative_path == relative_path
+        and archive.size_bytes == stat.st_size
+        and archive.modified_ns == stat.st_mtime_ns
+        and archive.status == "ready"
+    )
+    if unchanged:
+        return True
+
+    if archive is not None:
+        session.execute(
+            delete(ArchiveEntry).where(ArchiveEntry.archive_id == archive.id)
+        )
+    else:
+        archive = Archive(
+            model_id=model.id,
+            filename=archive_path.name,
+            relative_path=relative_path,
+            format=archive_path.suffix.casefold().lstrip("."),
+            size_bytes=stat.st_size,
+            modified_ns=stat.st_mtime_ns,
+            status="pending",
+            error_message=None,
+            entry_count=0,
+            uncompressed_size_bytes=0,
+        )
+        session.add(archive)
+
+    archive.filename = archive_path.name
+    archive.relative_path = relative_path
+    archive.format = archive_path.suffix.casefold().lstrip(".")
+    archive.size_bytes = stat.st_size
+    archive.modified_ns = stat.st_mtime_ns
+    archive.status = "pending"
+    archive.error_message = None
+    archive.entry_count = 0
+    archive.uncompressed_size_bytes = 0
+    session.flush()
+
+    settings = get_settings()
+    try:
+        entries = list_archive(
+            str(archive_path),
+            command=settings.archive_command,
+            timeout_seconds=settings.archive_timeout_seconds,
+            max_entries=settings.archive_max_entries,
+            max_output_bytes=settings.archive_max_output_bytes,
+        )
+    except ArchiveReadError as error:
+        archive.status = "error"
+        archive.error_message = str(error)[:4000]
+        _add_issue(
+            session,
+            scan,
+            model.relative_path,
+            "error",
+            "archive_unreadable",
+            archive.error_message,
+            model.id,
+        )
+        return False
+
+    session.add_all(
+        ArchiveEntry(
+            archive_id=archive.id,
+            path=entry.path,
+            name=entry.name,
+            is_directory=entry.is_directory,
+            size_bytes=entry.size_bytes,
+            compressed_size_bytes=entry.compressed_size_bytes,
+            crc=entry.crc,
+            modified_at=entry.modified_at,
+        )
+        for entry in entries
+    )
+    archive.entry_count = len(entries)
+    archive.uncompressed_size_bytes = sum(
+        entry.size_bytes or 0 for entry in entries if not entry.is_directory
+    )
+    archive.content_scanned_at = utc_now()
+    archive.status = "ready"
+    return True
+
+
+def _sync_archives(
+    session: Session,
+    scan: ScanRun,
+    model: LibraryModel,
+    root: Path,
+    archive_paths: list[Path],
+) -> bool:
+    expected_paths = {
+        archive_path.relative_to(root).as_posix()
+        for archive_path in archive_paths
+    }
+    stale_archives = session.scalars(
+        select(Archive).where(
+            Archive.model_id == model.id,
+            Archive.relative_path.not_in(expected_paths),
+        )
+    ).all()
+    for archive in stale_archives:
+        session.execute(
+            delete(ArchiveEntry).where(ArchiveEntry.archive_id == archive.id)
+        )
+        session.delete(archive)
+
+    all_ready = True
+    for archive_path in archive_paths:
+        if not _sync_archive(session, scan, model, root, archive_path):
+            all_ready = False
+    return all_ready
+
+
+def _sync_images(
+    session: Session,
+    model: LibraryModel,
+    root: Path,
+    image_paths: list[Path],
+) -> tuple[ModelImage, Path] | None:
+    existing = {
+        image.relative_path: image
+        for image in session.scalars(
+            select(ModelImage).where(ModelImage.model_id == model.id)
+        )
+    }
+    seen: set[str] = set()
+    primary: tuple[ModelImage, Path] | None = None
+    for index, image_path in enumerate(image_paths):
+        stat = image_path.stat()
+        relative_path = image_path.relative_to(root).as_posix()
+        image = existing.get(relative_path)
+        if image is None:
+            image = ModelImage(model_id=model.id, relative_path=relative_path)
+            session.add(image)
+        image.filename = image_path.name
+        image.format = image_path.suffix.casefold().lstrip(".")
+        image.size_bytes = stat.st_size
+        image.modified_ns = stat.st_mtime_ns
+        image.is_primary = index == 0
+        image.is_available = True
+        if index == 0:
+            primary = (image, image_path)
+        seen.add(relative_path)
+
+    for relative_path, image in existing.items():
+        if relative_path not in seen:
+            image.is_available = False
+            image.is_primary = False
+    session.flush()
+    return primary
+
+
+def _sync_primary_thumbnail(
+    session: Session,
+    scan: ScanRun,
+    model: LibraryModel,
+    image: ModelImage,
+    source_path: Path,
+) -> None:
+    settings = get_settings()
+    old_key = image.thumbnail_key
+    try:
+        key = generate_thumbnail(
+            source_path,
+            relative_source_path=f"{model.library_source_id}/{image.relative_path}",
+            source_size=image.size_bytes,
+            source_modified_ns=image.modified_ns,
+            cache_root=settings.cache_dir,
+            max_size=settings.thumbnail_size,
+            quality=settings.thumbnail_quality,
+        )
+    except ThumbnailError as error:
+        image.thumbnail_status = "error"
+        image.thumbnail_error = str(error)[:4000]
+        _add_issue(
+            session,
+            scan,
+            model.relative_path,
+            "warning",
+            "thumbnail_failed",
+            image.thumbnail_error,
+            model.id,
+        )
+        return
+
+    image.thumbnail_key = key
+    image.thumbnail_status = "ready"
+    image.thumbnail_error = None
+    if old_key != key:
+        remove_cached_thumbnail(settings.cache_dir, old_key)
+
+
+def _image_priority(path: Path) -> int:
+    stem = path.stem.casefold()
+    preferred = ("cover", "preview", "thumbnail", "render")
+    for index, word in enumerate(preferred):
+        if word in stem:
+            return index
+    return len(preferred)
+
+
+def _path_stays_inside(path: Path, root: Path) -> bool:
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError:
+        return False
+    return resolved == root or root in resolved.parents
+
+
+def _add_issue(
+    session: Session,
+    scan: ScanRun,
+    relative_path: str,
+    severity: str,
+    code: str,
+    message: str,
+    model_id: int | None = None,
+) -> None:
+    session.add(
+        ScanIssue(
+            scan_run_id=scan.id,
+            model_id=model_id,
+            relative_path=relative_path,
+            severity=severity,
+            code=code,
+            message=message[:4000],
+        )
+    )
+    scan.issues_count += 1

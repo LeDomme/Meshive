@@ -1,0 +1,38 @@
+# Release checklist
+
+Use this checklist for every stable Meshive release.
+
+## Prepare
+
+- Update the backend and frontend versions to the same semantic version.
+- Update `CHANGELOG.md` and any changed configuration in `.env.example`.
+- Review database migrations and document incompatible rollback conditions.
+- Build the frontend and run the complete backend test suite.
+- Run dependency audits and the database migration test.
+- Build the runtime image and verify its health check.
+
+## Acceptance test
+
+- Sign in as an administrator and a normal user.
+- Scan representative 7z, ZIP, and RAR sources twice.
+- Verify thumbnails, gallery filters, detail pages, and archive trees.
+- Download one archive with a range request and one multi-archive bundle.
+- Create, validate, and restore a manual backup; verify the pre-restore backup.
+- Confirm scheduled scans and scheduled backups run after a restart.
+- Confirm the model mounts are read-only and the browser console has no
+  application-generated CSP errors.
+
+## Publish
+
+1. Merge the release commit into `main` and wait for a green workflow.
+2. Create an annotated `vX.Y.Z` tag on that exact commit.
+3. Push the tag. CI publishes semantic GHCR tags, an SBOM/provenance
+   attestation, and the GitHub Release.
+4. Deploy the immutable version tag and complete the production smoke test.
+5. Confirm the release notes, semantic image tags, and image digest are visible.
+
+## Rollback readiness
+
+- Keep the previous image digest and a validated pre-upgrade database backup.
+- Do not run an older image against a schema it does not support.
+- Record any restore or rollback performed during the release.

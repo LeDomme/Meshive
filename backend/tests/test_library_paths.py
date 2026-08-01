@@ -1,0 +1,125 @@
+import pytest
+
+from meshive.services.library_paths import (
+    PathPatternError,
+    parse_library_path,
+    validate_library_root,
+)
+
+
+def test_parses_creator_franchise_and_model_folder_layout() -> None:
+    normalized_path, values = parse_library_path(
+        directory_pattern="{creator_folder}/{franchise}/{model_folder}",
+        model_pattern="{franchise} - {model} - by {creator}",
+        relative_path=(
+            r"Bulkamancer Sculpts\Bocchi the Rock"
+            r"\Bocchi the Rock - Hitori Gotoh - by Bulkamancer"
+        ),
+    )
+
+    assert normalized_path == (
+        "Bulkamancer Sculpts/Bocchi the Rock/"
+        "Bocchi the Rock - Hitori Gotoh - by Bulkamancer"
+    )
+    assert values == {
+        "creator_folder": "Bulkamancer Sculpts",
+        "franchise": "Bocchi the Rock",
+        "model_folder": "Bocchi the Rock - Hitori Gotoh - by Bulkamancer",
+        "model": "Hitori Gotoh",
+        "creator": "Bulkamancer",
+    }
+
+
+def test_parses_franchise_and_model_folder_layout() -> None:
+    _, values = parse_library_path(
+        directory_pattern="{franchise}/{model_folder}",
+        model_pattern="{franchise} - {model} - by {creator}",
+        relative_path="Animal Crossing/Animal Crossing - Ankha - by Rubim",
+    )
+
+    assert values["franchise"] == "Animal Crossing"
+    assert values["model"] == "Ankha"
+    assert values["creator"] == "Rubim"
+
+
+def test_rejects_conflicting_values_from_directory_and_model_name() -> None:
+    with pytest.raises(PathPatternError, match="Conflicting values"):
+        parse_library_path(
+            directory_pattern="{franchise}/{model_folder}",
+            model_pattern="{franchise} - {model} - by {creator}",
+            relative_path="Animal Crossing/Zelda - Link - by Example",
+        )
+
+
+def test_tries_model_name_patterns_in_order_and_keeps_broad_franchise() -> None:
+    _, values = parse_library_path(
+        directory_pattern="{franchise}/{model_folder}",
+        model_pattern=(
+            "{series} - {model} - by {creator}\n"
+            "{series} - {model} - {creator}"
+        ),
+        relative_path="Marvel/Marvel Rivals - Magik - 3D.moonn",
+    )
+
+    assert values["franchise"] == "Marvel"
+    assert values["series"] == "Marvel Rivals"
+    assert values["model"] == "Magik"
+    assert values["creator"] == "3D.moonn"
+
+
+def test_parses_series_below_a_broad_franchise() -> None:
+    _, values = parse_library_path(
+        directory_pattern="{franchise}/{model_folder}",
+        model_pattern="{series} - {model} - by {creator}",
+        relative_path="Disney/Aladdin - Jasmin - by CA3D",
+    )
+
+    assert values["franchise"] == "Disney"
+    assert values["series"] == "Aladdin"
+    assert values["model"] == "Jasmin"
+
+
+def test_tries_deeper_directory_layout_before_standard_layout() -> None:
+    _, values = parse_library_path(
+        directory_pattern=(
+            "{creator_folder}/{franchise}/{series}/{model_folder}\n"
+            "{creator_folder}/{franchise}/{model_folder}"
+        ),
+        model_pattern="{franchise} - {model} - by {creator}\n{model}",
+        relative_path=(
+            "Bulkamancer Sculpts/League of Legends/League of Legends Arcane/"
+            "League of Legends - Jinx - by Bulkamancer"
+        ),
+    )
+
+    assert values["creator_folder"] == "Bulkamancer Sculpts"
+    assert values["franchise"] == "League of Legends"
+    assert values["series"] == "League of Legends Arcane"
+    assert values["model"] == "Jinx"
+    assert values["creator"] == "Bulkamancer"
+
+
+def test_rejects_parent_path_segments() -> None:
+    with pytest.raises(PathPatternError, match="unsafe"):
+        parse_library_path(
+            directory_pattern="{franchise}/{model}",
+            relative_path="../Animal Crossing/Ankha",
+        )
+
+
+def test_applies_source_defaults_for_missing_metadata() -> None:
+    _, values = parse_library_path(
+        directory_pattern="{category}/{model}",
+        relative_path="Animals/Red Panda",
+        defaults={"creator": "Example Creator", "franchise": None},
+    )
+
+    assert values["model"] == "Red Panda"
+    assert values["creator"] == "Example Creator"
+
+
+def test_library_root_must_stay_inside_allowed_root() -> None:
+    assert validate_library_root("/models/bulkamancer", "/models") == "/models/bulkamancer"
+
+    with pytest.raises(PathPatternError, match="inside /models"):
+        validate_library_root("/etc", "/models")

@@ -1,0 +1,73 @@
+# Deployment behind an existing Traefik reverse proxy.
+services:
+  meshive:
+    image: ${MESHIVE_IMAGE:-ghcr.io/ledomme/meshive:1.0.0}
+    container_name: meshive
+    restart: unless-stopped
+    init: true
+    read_only: true
+    environment:
+      PUID: ${PUID:-10001}
+      PGID: ${PGID:-10001}
+      MESHIVE_ENVIRONMENT: production
+      MESHIVE_DATA_DIR: /app/data
+      MESHIVE_CACHE_DIR: /app/cache
+      MESHIVE_BACKUP_DIR: /backups
+      MESHIVE_FRONTEND_DIST: /app/frontend
+      MESHIVE_ALLOWED_LIBRARY_ROOT: /models
+      MESHIVE_SESSION_COOKIE_NAME: ${MESHIVE_SESSION_COOKIE_NAME:-meshive_session}
+      MESHIVE_SESSION_LIFETIME_DAYS: ${MESHIVE_SESSION_LIFETIME_DAYS:-7}
+      MESHIVE_AUTH_RATE_LIMIT_ATTEMPTS: ${MESHIVE_AUTH_RATE_LIMIT_ATTEMPTS:-5}
+      MESHIVE_AUTH_RATE_LIMIT_WINDOW_SECONDS: ${MESHIVE_AUTH_RATE_LIMIT_WINDOW_SECONDS:-60}
+      MESHIVE_ARCHIVE_COMMAND: ${MESHIVE_ARCHIVE_COMMAND:-7z}
+      MESHIVE_ARCHIVE_TIMEOUT_SECONDS: ${MESHIVE_ARCHIVE_TIMEOUT_SECONDS:-120}
+      MESHIVE_ARCHIVE_MAX_ENTRIES: ${MESHIVE_ARCHIVE_MAX_ENTRIES:-100000}
+      MESHIVE_ARCHIVE_MAX_OUTPUT_BYTES: ${MESHIVE_ARCHIVE_MAX_OUTPUT_BYTES:-67108864}
+      MESHIVE_BACKUP_MAX_RESTORE_BYTES: ${MESHIVE_BACKUP_MAX_RESTORE_BYTES:-5368709120}
+      MESHIVE_BACKUP_RESTORE_MIN_FREE_BYTES: ${MESHIVE_BACKUP_RESTORE_MIN_FREE_BYTES:-67108864}
+      MESHIVE_MAX_CONCURRENT_SCANS: ${MESHIVE_MAX_CONCURRENT_SCANS:-1}
+      MESHIVE_MAX_CONCURRENT_DOWNLOADS: ${MESHIVE_MAX_CONCURRENT_DOWNLOADS:-4}
+      MESHIVE_THUMBNAIL_SIZE: ${MESHIVE_THUMBNAIL_SIZE:-480}
+      MESHIVE_THUMBNAIL_QUALITY: ${MESHIVE_THUMBNAIL_QUALITY:-82}
+      MESHIVE_SETUP_TOKEN: ${MESHIVE_SETUP_TOKEN:-}
+    volumes:
+      - meshive-data:/app/data
+      - meshive-cache:/app/cache
+      - meshive-backups:/backups
+      - meshive-models:/models:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
+    networks:
+      - traefik
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${TRAEFIK_NETWORK:-proxy}
+      traefik.http.routers.meshive.rule: Host(`${MESHIVE_HOST}`)
+      traefik.http.routers.meshive.entrypoints: ${TRAEFIK_ENTRYPOINTS:-websecure}
+      traefik.http.routers.meshive.tls: "true"
+      traefik.http.routers.meshive.tls.certresolver: ${TRAEFIK_CERT_RESOLVER:-letsencrypt}
+      traefik.http.services.meshive.loadbalancer.server.port: "8000"
+
+volumes:
+  meshive-data:
+  meshive-cache:
+  meshive-backups:
+    external: true
+    name: ${MESHIVE_BACKUP_VOLUME:-meshive-backups}
+  meshive-models:
+    external: true
+    name: ${MESHIVE_MODELS_VOLUME:-meshive-models}
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-proxy}

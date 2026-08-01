@@ -1,0 +1,506 @@
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
+import { RouterLink, useRoute } from "vue-router"
+
+import { ApiError, apiRequest } from "../api"
+import { useAuthStore } from "../stores/auth"
+
+interface Tag { id: number; name: string; color: string | null; description: string | null }
+
+interface ModelImage {
+  id: number
+  filename: string
+  format: string
+  size_bytes: number
+  is_primary: boolean
+  url: string
+}
+
+interface ArchiveEntry {
+  path: string
+  name: string
+  is_directory: boolean
+  size_bytes: number | null
+  compressed_size_bytes: number | null
+  modified_at: string | null
+}
+
+interface ModelArchive {
+  id: number
+  filename: string
+  format: string
+  size_bytes: number
+  status: string
+  entry_count: number
+  uncompressed_size_bytes: number
+  error_message: string | null
+  download_url: string
+  entries: ArchiveEntry[]
+}
+
+interface ModelDetail {
+  id: number
+  name: string
+  creator: string | null
+  franchise: string | null
+  series: string | null
+  collection: string | null
+  status: string
+  source_id: number
+  source_name: string
+  relative_path: string
+  images: ModelImage[]
+  archives: ModelArchive[]
+  archive_bundle_download_url: string | null
+  tags: Tag[]
+}
+
+interface ArchiveTreeNode {
+  key: string
+  name: string
+  depth: number
+  isDirectory: boolean
+  entry: ArchiveEntry | null
+  children: ArchiveTreeNode[]
+}
+
+const route = useRoute()
+const auth = useAuthStore()
+const model = ref<ModelDetail | null>(null)
+const availableTags = ref<Tag[]>([])
+const selectedTagId = ref("")
+const loading = ref(true)
+const errorMessage = ref("")
+const selectedImage = ref<ModelImage | null>(null)
+const archiveFilter = ref("")
+const selectedArchiveIndex = ref(0)
+const collapsedFolders = ref<Set<string>>(new Set())
+const lightboxOpen = ref(false)
+const lightboxMode = ref<"height" | "width" | "original">("height")
+const detailImageButton = ref<HTMLButtonElement | null>(null)
+const lightboxCloseButton = ref<HTMLButtonElement | null>(null)
+
+const imageFrameStyle = computed(() => ({
+  "--detail-image": selectedImage.value
+    ? `url("${selectedImage.value.url.replaceAll('"', '\\"')}")`
+    : "none",
+}))
+const currentArchive = computed(
+  () => model.value?.archives[selectedArchiveIndex.value] ?? null,
+)
+
+const archiveTree = computed(() => {
+  const root: ArchiveTreeNode = {
+    key: "",
+    name: "",
+    depth: -1,
+    isDirectory: true,
+    entry: null,
+    children: [],
+  }
+  const nodes = new Map<string, ArchiveTreeNode>([["", root]])
+
+  for (const entry of currentArchive.value?.entries ?? []) {
+    const parts = entry.path.replaceAll("\\", "/").split("/").filter(Boolean)
+    let parent = root
+    let path = ""
+    parts.forEach((part, index) => {
+      path = path ? `${path}/${part}` : part
+      let node = nodes.get(path)
+      const isLast = index === parts.length - 1
+      if (!node) {
+        node = {
+          key: path,
+          name: part,
+          depth: index,
+          isDirectory: !isLast || entry.is_directory,
+          entry: isLast ? entry : null,
+          children: [],
+        }
+        nodes.set(path, node)
+        parent.children.push(node)
+      } else if (isLast) {
+        node.entry = entry
+        node.isDirectory = entry.is_directory
+      }
+      parent = node
+    })
+  }
+
+  const sortNodes = (nodesToSort: ArchiveTreeNode[]) => {
+    nodesToSort.sort(
+      (left, right) =>
+        Number(right.isDirectory) - Number(left.isDirectory) ||
+        left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
+    )
+    nodesToSort.forEach((node) => sortNodes(node.children))
+  }
+  sortNodes(root.children)
+  return root.children
+})
+
+const visibleTreeRows = computed(() => {
+  const search = archiveFilter.value.trim().toLocaleLowerCase()
+  const rows: ArchiveTreeNode[] = []
+
+  const hasMatch = (node: ArchiveTreeNode): boolean =>
+    node.key.toLocaleLowerCase().includes(search) ||
+    node.children.some((child) => hasMatch(child))
+
+  const visit = (nodes: ArchiveTreeNode[]) => {
+    for (const node of nodes) {
+      if (search && !hasMatch(node)) continue
+      rows.push(node)
+      if (
+        node.isDirectory &&
+        (search || !collapsedFolders.value.has(node.key))
+      ) {
+        visit(node.children)
+      }
+    }
+  }
+  visit(archiveTree.value)
+  return rows
+})
+
+function toggleFolder(path: string) {
+  const next = new Set(collapsedFolders.value)
+  if (next.has(path)) next.delete(path)
+  else next.add(path)
+  collapsedFolders.value = next
+}
+
+function selectArchive(index: number) {
+  selectedArchiveIndex.value = index
+  archiveFilter.value = ""
+  collapsedFolders.value = new Set()
+}
+
+async function openLightbox() {
+  if (!selectedImage.value) return
+  lightboxMode.value = "height"
+  lightboxOpen.value = true
+  document.documentElement.style.overflow = "hidden"
+  await nextTick()
+  lightboxCloseButton.value?.focus()
+}
+
+function closeLightbox() {
+  lightboxOpen.value = false
+  document.documentElement.style.overflow = ""
+  nextTick(() => detailImageButton.value?.focus())
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape" && lightboxOpen.value) closeLightbox()
+}
+
+function formatBytes(value: number | null) {
+  if (value === null) return "—"
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let size = value
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
+}
+
+async function addTag() {
+  if (!model.value || !selectedTagId.value) return
+  await apiRequest<void>(
+    `/api/admin/models/${model.value.id}/tags/${selectedTagId.value}`,
+    { method: "PUT" },
+  )
+  model.value = await apiRequest<ModelDetail>(`/api/models/${route.params.id}`)
+  selectedTagId.value = ""
+}
+
+async function removeTag(tag: Tag) {
+  if (!model.value) return
+  await apiRequest<void>(`/api/admin/models/${model.value.id}/tags/${tag.id}`, {
+    method: "DELETE",
+  })
+  model.value = await apiRequest<ModelDetail>(`/api/models/${route.params.id}`)
+}
+
+onMounted(async () => {
+  window.addEventListener("keydown", handleKeydown)
+  try {
+    model.value = await apiRequest<ModelDetail>(`/api/models/${route.params.id}`)
+    availableTags.value = await apiRequest<Tag[]>("/api/tags")
+    selectedImage.value = model.value.images[0] ?? null
+  } catch (error) {
+    errorMessage.value =
+      error instanceof ApiError ? error.message : "Unable to load the model"
+  } finally {
+    loading.value = false
+  }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleKeydown)
+  document.documentElement.style.overflow = ""
+})
+</script>
+
+<template>
+  <main class="detail-shell">
+    <RouterLink class="text-link detail-back" to="/">← Back to catalogue</RouterLink>
+
+    <p v-if="loading" class="muted">Loading…</p>
+    <p v-else-if="errorMessage" class="form-error error-panel" role="alert">
+      {{ errorMessage }}
+    </p>
+
+    <template v-else-if="model">
+      <header class="detail-header">
+        <div>
+          <p class="eyebrow">{{ model.source_name }}</p>
+          <h1>{{ model.name }}</h1>
+          <p class="detail-taxonomy">
+            {{ [model.franchise, model.series, model.collection]
+              .filter((value, index, values) => value && values.indexOf(value) === index)
+              .join(" · ") || "Uncategorised" }}
+          </p>
+        </div>
+        <span v-if="model.status !== 'available'" class="detail-status">
+          {{ model.status }}
+        </span>
+      </header>
+      <section class="detail-tags">
+        <div class="tag-list">
+          <span
+            v-for="tag in model.tags"
+            :key="tag.id"
+            class="tag-chip"
+            :style="{ '--tag-color': tag.color || '#5eead4' }"
+          >
+            {{ tag.name }}
+            <button
+              v-if="auth.user?.role === 'admin'"
+              type="button"
+              aria-label="Remove tag"
+              @click="removeTag(tag)"
+            >×</button>
+          </span>
+        </div>
+        <form
+          v-if="auth.user?.role === 'admin' && availableTags.length"
+          class="tag-assignment"
+          @submit.prevent="addTag"
+        >
+          <select v-model="selectedTagId" required>
+            <option value="">Add tag…</option>
+            <option v-for="tag in availableTags" :key="tag.id" :value="String(tag.id)">
+              {{ tag.name }}
+            </option>
+          </select>
+          <button class="secondary-button" type="submit">Add</button>
+        </form>
+      </section>
+
+      <section class="detail-grid">
+        <div class="panel image-gallery">
+          <div class="detail-image-frame" :style="imageFrameStyle">
+            <button
+              v-if="selectedImage"
+              ref="detailImageButton"
+              class="detail-image-button"
+              type="button"
+              aria-label="Open image viewer"
+              @click="openLightbox"
+            >
+              <img
+                :src="selectedImage.url"
+                :alt="`${model.name} — ${selectedImage.filename}`"
+              >
+              <span class="image-open-hint">View full image</span>
+            </button>
+            <div v-else class="thumbnail-placeholder">No images found</div>
+          </div>
+          <div v-if="model.images.length > 1" class="image-strip">
+            <button
+              v-for="image in model.images"
+              :key="image.id"
+              type="button"
+              :class="{ selected: selectedImage?.id === image.id }"
+              @click="selectedImage = image"
+            >
+              <img :src="image.url" :alt="image.filename" loading="lazy">
+            </button>
+          </div>
+        </div>
+
+        <aside class="panel model-facts">
+          <h2>Details</h2>
+          <dl>
+            <template v-if="model.creator">
+              <dt>Creator</dt><dd>{{ model.creator }}</dd>
+            </template>
+            <template v-if="model.franchise">
+              <dt>Franchise</dt><dd>{{ model.franchise }}</dd>
+            </template>
+            <template v-if="model.series">
+              <dt>Series</dt><dd>{{ model.series }}</dd>
+            </template>
+            <template v-if="model.collection">
+              <dt>Collection</dt><dd>{{ model.collection }}</dd>
+            </template>
+            <dt>Source</dt><dd>{{ model.source_name }}</dd>
+            <dt>Folder</dt><dd class="path-value">{{ model.relative_path }}</dd>
+          </dl>
+        </aside>
+      </section>
+
+      <section class="panel archive-panel">
+        <div v-if="model.archives.length > 1" class="archive-tabs">
+          <button
+            v-for="(archive, index) in model.archives"
+            :key="archive.filename"
+            class="secondary-button"
+            :class="{ active: selectedArchiveIndex === index }"
+            type="button"
+            @click="selectArchive(index)"
+          >
+            {{ archive.filename }}
+          </button>
+        </div>
+        <div class="archive-heading">
+          <div>
+            <p class="eyebrow">Archive contents</p>
+            <h2>{{ currentArchive?.filename || "No archive indexed" }}</h2>
+          </div>
+          <p v-if="currentArchive" class="archive-summary">
+            {{ currentArchive.entry_count }} entries ·
+            {{ formatBytes(currentArchive.size_bytes) }} compressed ·
+            {{ formatBytes(currentArchive.uncompressed_size_bytes) }} unpacked
+          </p>
+        </div>
+
+        <div v-if="currentArchive" class="archive-downloads">
+          <a
+            class="primary-link archive-download"
+            :href="currentArchive.download_url"
+            :download="currentArchive.filename"
+          >
+            Download archive
+          </a>
+          <a
+            v-if="model.archive_bundle_download_url"
+            class="secondary-button archive-download"
+            :href="model.archive_bundle_download_url"
+            download
+          >
+            Download all archives (.tar)
+          </a>
+        </div>
+        <p v-if="currentArchive?.error_message" class="form-error">
+          {{ currentArchive.error_message }}
+        </p>
+        <template v-if="currentArchive?.entries.length">
+          <label class="archive-search">
+            <span class="sr-only">Filter archive contents</span>
+            <input v-model="archiveFilter" type="search" placeholder="Filter archive contents…">
+          </label>
+          <div class="archive-table-wrap">
+            <table class="archive-table">
+              <thead>
+                <tr><th>Name</th><th>Size</th><th>Modified</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="node in visibleTreeRows" :key="node.key">
+                  <td class="tree-name-cell">
+                    <span
+                      class="tree-indent"
+                      :style="{ width: `${node.depth * 1.25}rem` }"
+                    />
+                    <button
+                      v-if="node.isDirectory"
+                      class="tree-toggle"
+                      type="button"
+                      :aria-expanded="Boolean(archiveFilter.trim()) || !collapsedFolders.has(node.key)"
+                      @click="toggleFolder(node.key)"
+                    >
+                      <span class="tree-chevron">
+                        {{ collapsedFolders.has(node.key) ? "▶" : "▼" }}
+                      </span>
+                      <span>📁</span>
+                      <span>{{ node.name }}</span>
+                    </button>
+                    <span v-else class="tree-file path-value">
+                      <span>📄</span>
+                      <span>{{ node.name }}</span>
+                    </span>
+                  </td>
+                  <td>
+                    {{ node.isDirectory ? "—" : formatBytes(node.entry?.size_bytes ?? null) }}
+                  </td>
+                  <td>{{ node.entry?.modified_at || "—" }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+      </section>
+
+      <div
+        v-if="lightboxOpen && selectedImage"
+        class="image-lightbox"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="selectedImage.filename"
+        @click.self="closeLightbox"
+      >
+        <div class="lightbox-toolbar">
+          <span>{{ selectedImage.filename }}</span>
+          <div>
+            <button
+              class="secondary-button"
+              :class="{ active: lightboxMode === 'height' }"
+              type="button"
+              @click="lightboxMode = 'height'"
+            >
+              Fit height
+            </button>
+            <button
+              class="secondary-button"
+              :class="{ active: lightboxMode === 'width' }"
+              type="button"
+              @click="lightboxMode = 'width'"
+            >
+              Fit width
+            </button>
+            <button
+              class="secondary-button"
+              :class="{ active: lightboxMode === 'original' }"
+              type="button"
+              @click="lightboxMode = 'original'"
+            >
+              Original
+            </button>
+            <button
+              ref="lightboxCloseButton"
+              class="secondary-button"
+              type="button"
+              @click="closeLightbox"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+        <div
+          class="lightbox-image-area"
+          :class="`mode-${lightboxMode}`"
+          @click.self="closeLightbox"
+        >
+          <img
+            :src="selectedImage.url"
+            :alt="`${model.name} — ${selectedImage.filename}`"
+          >
+        </div>
+      </div>
+    </template>
+  </main>
+</template>
