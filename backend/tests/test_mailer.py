@@ -1,3 +1,5 @@
+from email.message import EmailMessage
+
 from meshive.config import Settings
 from meshive.services.mailer import send_password_reset_email
 
@@ -38,5 +40,9 @@ def test_implicit_tls_uses_smtp_ssl(monkeypatch) -> None:
     assert calls["connection"][0:2] == ("smtp.example", 465)
     assert calls["login"] == ("meshive@example.com", "mailbox-password")
     message = calls["message"]
+    assert isinstance(message, EmailMessage)
     assert message["To"] == "viewer@example.com"
-    assert "https://meshive.example/reset-password#token=raw-token" in str(message)
+    assert (
+        "https://meshive.example/reset-password#token=raw-token"
+        in message.get_content()
+    )
