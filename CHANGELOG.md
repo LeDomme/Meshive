@@ -17,6 +17,9 @@ All notable changes to Meshive are documented in this file. Releases follow
   dialog.
 - Added Meshive-themed fallback artwork and administrator-managed custom WebP
   artwork for creators, franchises, and collections.
+- Added administrator-managed automatic tag rules with case-insensitive
+  archive-entry matching, independently tracked provenance, immediate
+  re-evaluation, and scan-result statistics.
 
 ### Changed
 
@@ -25,8 +28,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ### Upgrade notes
 
-- Startup automatically applies the model-variant, favorite-list, and metadata
-  artwork migrations.
+- Startup automatically applies the model-variant, favorite-list, metadata
+  artwork, and automatic-tagging migrations.
 - Favorite lists are stored in Meshive's SQLite database and are included in
   regular database backups together with custom metadata artwork.
 

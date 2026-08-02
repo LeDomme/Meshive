@@ -1,6 +1,5 @@
 import os
 import threading
-from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 from sqlalchemy import delete, inspect, or_, select, update
@@ -20,12 +19,12 @@ from meshive.models.catalog import (
 )
 from meshive.models.library_source import LibrarySource
 from meshive.services.library_paths import PathPatternError, parse_library_path
+from meshive.services.tags import recompute_automatic_tags, recompute_inherited_tags
 from meshive.services.thumbnails import (
     ThumbnailError,
     generate_thumbnail,
     remove_cached_thumbnail,
 )
-from meshive.services.tags import recompute_inherited_tags
 
 _active_sources: set[int] = set()
 _active_sources_lock = threading.Lock()
@@ -47,9 +46,7 @@ def release_source(source_id: int) -> None:
         _active_sources.discard(source_id)
 
 
-def create_scan_run(
-    session: Session, source_id: int, *, trigger: str = "manual"
-) -> ScanRun:
+def create_scan_run(session: Session, source_id: int, *, trigger: str = "manual") -> ScanRun:
     scan = ScanRun(
         library_source_id=source_id,
         status="pending",
@@ -58,6 +55,9 @@ def create_scan_run(
         models_added=0,
         models_updated=0,
         models_missing=0,
+        automatic_tag_matches=0,
+        automatic_tags_added=0,
+        automatic_tags_removed=0,
         issues_count=0,
     )
     session.add(scan)
@@ -67,14 +67,17 @@ def create_scan_run(
 
 
 def has_queued_or_running_scan(session: Session, source_id: int) -> bool:
-    return session.scalar(
-        select(ScanRun.id)
-        .where(
-            ScanRun.library_source_id == source_id,
-            ScanRun.status.in_(("pending", "running")),
+    return (
+        session.scalar(
+            select(ScanRun.id)
+            .where(
+                ScanRun.library_source_id == source_id,
+                ScanRun.status.in_(("pending", "running")),
+            )
+            .limit(1)
         )
-        .limit(1)
-    ) is not None
+        is not None
+    )
 
 
 def dispatch_pending_scans() -> None:
@@ -127,9 +130,7 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
             if pattern.strip()
         }
         model_directories = {
-            directory
-            for depth in depths
-            for directory in _directories_at_depth(root, depth)
+            directory for depth in depths for directory in _directories_at_depth(root, depth)
         }
 
         for model_directory in sorted(
@@ -150,9 +151,7 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
                 session.commit()
                 continue
             if not is_candidate:
-                _delete_empty_placeholder(
-                    session, source.id, relative_path
-                )
+                _delete_empty_placeholder(session, source.id, relative_path)
                 continue
             try:
                 normalized_path, values = parse_library_path(
@@ -296,9 +295,7 @@ def _scan_model(
     scan.models_found += 1
 
     files = [path for path in model_directory.iterdir() if path.is_file()]
-    safe_files = [
-        path for path in files if _path_stays_inside(path, root)
-    ]
+    safe_files = [path for path in files if _path_stays_inside(path, root)]
     if len(safe_files) != len(files):
         _add_issue(
             session,
@@ -355,19 +352,40 @@ def _scan_model(
             "No supported archive was found",
             model.id,
         )
+        _apply_automatic_tags(session, scan, model)
         return
 
     archives_ok = _sync_archives(session, scan, model, root, archives)
+    _apply_automatic_tags(session, scan, model)
     if not archives_ok:
         model.status = "error"
     elif is_new and model.status == "available":
         model.status = "available"
 
 
+def _apply_automatic_tags(session: Session, scan: ScanRun, model: LibraryModel) -> None:
+    try:
+        with session.begin_nested():
+            result = recompute_automatic_tags(session, [model.id])
+    except Exception as error:
+        _add_issue(
+            session,
+            scan,
+            model.relative_path,
+            "warning",
+            "automatic_tag_evaluation_failed",
+            str(error),
+            model.id,
+        )
+        return
+    scan.automatic_tag_matches += result.matches
+    scan.automatic_tags_added += result.assignments_added
+    scan.automatic_tags_removed += result.assignments_removed
+
+
 def _is_model_candidate(directory: Path, source: LibrarySource) -> bool:
     supported_extensions = {
-        f".{item.casefold()}"
-        for item in (*source.archive_formats, *source.image_formats)
+        f".{item.casefold()}" for item in (*source.archive_formats, *source.image_formats)
     }
     return any(
         path.is_file() and path.suffix.casefold() in supported_extensions
@@ -375,9 +393,7 @@ def _is_model_candidate(directory: Path, source: LibrarySource) -> bool:
     )
 
 
-def _delete_empty_placeholder(
-    session: Session, source_id: int, relative_path: str
-) -> None:
+def _delete_empty_placeholder(session: Session, source_id: int, relative_path: str) -> None:
     model = session.scalar(
         select(LibraryModel).where(
             LibraryModel.library_source_id == source_id,
@@ -386,9 +402,7 @@ def _delete_empty_placeholder(
     )
     if model is None:
         return
-    has_archive = session.scalar(
-        select(Archive.id).where(Archive.model_id == model.id).limit(1)
-    )
+    has_archive = session.scalar(select(Archive.id).where(Archive.model_id == model.id).limit(1))
     has_image = session.scalar(
         select(ModelImage.id).where(ModelImage.model_id == model.id).limit(1)
     )
@@ -423,9 +437,7 @@ def _sync_archive(
         return True
 
     if archive is not None:
-        session.execute(
-            delete(ArchiveEntry).where(ArchiveEntry.archive_id == archive.id)
-        )
+        session.execute(delete(ArchiveEntry).where(ArchiveEntry.archive_id == archive.id))
     else:
         archive = Archive(
             model_id=model.id,
@@ -504,10 +516,7 @@ def _sync_archives(
     root: Path,
     archive_paths: list[Path],
 ) -> bool:
-    expected_paths = {
-        archive_path.relative_to(root).as_posix()
-        for archive_path in archive_paths
-    }
+    expected_paths = {archive_path.relative_to(root).as_posix() for archive_path in archive_paths}
     stale_archives = session.scalars(
         select(Archive).where(
             Archive.model_id == model.id,
@@ -515,9 +524,7 @@ def _sync_archives(
         )
     ).all()
     for archive in stale_archives:
-        session.execute(
-            delete(ArchiveEntry).where(ArchiveEntry.archive_id == archive.id)
-        )
+        session.execute(delete(ArchiveEntry).where(ArchiveEntry.archive_id == archive.id))
         session.delete(archive)
 
     all_ready = True
@@ -535,9 +542,7 @@ def _sync_images(
 ) -> tuple[ModelImage, Path] | None:
     existing = {
         image.relative_path: image
-        for image in session.scalars(
-            select(ModelImage).where(ModelImage.model_id == model.id)
-        )
+        for image in session.scalars(select(ModelImage).where(ModelImage.model_id == model.id))
     }
     seen: set[str] = set()
     primary: tuple[ModelImage, Path] | None = None

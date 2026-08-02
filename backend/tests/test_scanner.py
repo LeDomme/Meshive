@@ -14,6 +14,7 @@ from meshive.models.catalog import (
     ScanRun,
 )
 from meshive.models.library_source import LibrarySource
+from meshive.models.tag import AutomaticTagRule, ModelTag, Tag
 from meshive.services import scanner
 
 
@@ -51,20 +52,21 @@ def test_scans_model_archive_image_and_marks_missing(tmp_path, monkeypatch) -> N
         "get_settings",
         lambda: Settings(allowed_library_root=tmp_path),
     )
+    listed_entries = [
+        ListedArchiveEntry(
+            path="model.stl",
+            name="model.stl",
+            is_directory=False,
+            size_bytes=1234,
+            compressed_size_bytes=456,
+            crc="ABC123",
+            modified_at="2025-01-01 12:00:00",
+        )
+    ]
     monkeypatch.setattr(
         scanner,
         "list_archive",
-        lambda *_args, **_kwargs: [
-            ListedArchiveEntry(
-                path="model.stl",
-                name="model.stl",
-                is_directory=False,
-                size_bytes=1234,
-                compressed_size_bytes=456,
-                crc="ABC123",
-                modified_at="2025-01-01 12:00:00",
-            )
-        ],
+        lambda *_args, **_kwargs: listed_entries,
     )
     monkeypatch.setattr(
         scanner,
@@ -84,6 +86,18 @@ def test_scans_model_archive_image_and_marks_missing(tmp_path, monkeypatch) -> N
             scan_enabled=True,
         )
         session.add(source)
+        session.flush()
+        automatic_tag = Tag(name="Printable")
+        session.add(automatic_tag)
+        session.flush()
+        session.add(
+            AutomaticTagRule(
+                tag_id=automatic_tag.id,
+                pattern="MODEL.STL",
+                pattern_key="model.stl",
+                enabled=True,
+            )
+        )
         session.commit()
         scan = make_scan(session, source.id)
 
@@ -110,17 +124,18 @@ def test_scans_model_archive_image_and_marks_missing(tmp_path, monkeypatch) -> N
         assert completed.status == "completed"
         assert completed.models_found == 1
         assert completed.models_added == 1
+        assert completed.automatic_tag_matches == 1
+        assert completed.automatic_tags_added == 1
+        assignment = session.scalar(select(ModelTag))
+        assert assignment is not None
+        assert assignment.is_automatic is True
         assert completed.issues_count == 0
 
         second_archive_path = model_directory / "extras.zip"
         second_archive_path.write_bytes(b"second archive")
         multi_scan = make_scan(session, source.id)
         scanner._execute_scan(session, source.id, multi_scan.id)
-        archives = list(
-            session.scalars(
-                select(Archive).order_by(Archive.filename)
-            )
-        )
+        archives = list(session.scalars(select(Archive).order_by(Archive.filename)))
         assert sorted(
             (archive.filename for archive in archives),
             key=str.casefold,
@@ -129,6 +144,28 @@ def test_scans_model_archive_image_and_marks_missing(tmp_path, monkeypatch) -> N
             "Moikaloop - Neon Moika - by Aoae.7z",
         ]
         assert session.get(ScanRun, multi_scan.id).issues_count == 0
+        assert session.get(ScanRun, multi_scan.id).automatic_tag_matches == 1
+        assert session.get(ScanRun, multi_scan.id).automatic_tags_added == 0
+
+        listed_entries[:] = [
+            ListedArchiveEntry(
+                path="documentation/readme.txt",
+                name="readme.txt",
+                is_directory=False,
+                size_bytes=100,
+                compressed_size_bytes=50,
+                crc="DEF456",
+                modified_at="2025-01-02 12:00:00",
+            )
+        ]
+        for archive_path in model_directory.glob("*.7z"):
+            archive_path.write_bytes(b"changed archive contents")
+        second_archive_path.write_bytes(b"changed second archive contents")
+        changed_scan = make_scan(session, source.id)
+        scanner._execute_scan(session, source.id, changed_scan.id)
+        assert session.get(ScanRun, changed_scan.id).automatic_tag_matches == 0
+        assert session.get(ScanRun, changed_scan.id).automatic_tags_removed == 1
+        assert session.scalar(select(ModelTag)) is None
 
         for child in model_directory.iterdir():
             child.unlink()
@@ -209,8 +246,7 @@ def test_rescan_splits_variant_without_creating_duplicate(tmp_path, monkeypatch)
         assert model.variant is None
 
         source.model_pattern = (
-            "{franchise} - {series} - {model} - "
-            "{variant_identifier} {variant} - by {creator}"
+            "{franchise} - {series} - {model} - {variant_identifier} {variant} - by {creator}"
         )
         session.commit()
         second_scan = make_scan(session, source.id)

@@ -12,13 +12,21 @@ from meshive.models.favorite import FavoriteList, FavoriteListItem
 from meshive.models.library_source import LibrarySource
 from meshive.models.metadata import MetadataArtwork
 from meshive.models.session import UserSession
-from meshive.models.tag import FolderTagRule, ModelTag, Tag
+from meshive.models.tag import (
+    AutomaticTagMatch,
+    AutomaticTagRule,
+    FolderTagRule,
+    ModelTag,
+    Tag,
+)
 from meshive.models.user import User
 from meshive.models.user_token import UserActionToken
 
 __all__ = [
     "Archive",
     "ArchiveEntry",
+    "AutomaticTagMatch",
+    "AutomaticTagRule",
     "BackupRun",
     "BackupSchedule",
     "CreatorLink",
