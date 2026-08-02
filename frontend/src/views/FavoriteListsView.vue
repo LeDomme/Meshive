@@ -127,10 +127,12 @@ onMounted(async () => {
   <main class="favorites-shell">
     <RouterLink class="text-link" to="/">&larr; Back to catalogue</RouterLink>
     <header class="favorites-header">
-      <BrandLogo class="account-brand-icon" />
-      <div>
+      <div class="catalogue-brand">
         <p class="eyebrow">Private to your account</p>
-        <h1>Favorite lists</h1>
+        <div class="catalogue-title-row">
+          <BrandLogo />
+          <h1 class="catalogue-title">Favorite lists</h1>
+        </div>
       </div>
     </header>
 
@@ -185,17 +187,56 @@ onMounted(async () => {
           </form>
 
           <div v-if="selected.items.length" class="favorite-items">
-            <article v-for="item in selected.items" :key="item.id" class="favorite-item">
-              <div>
+            <article
+              v-for="item in selected.items"
+              :key="item.id"
+              class="favorite-item"
+              :class="{ 'favorite-item--model': item.entity_type === 'model' }"
+            >
+              <RouterLink
+                v-if="item.url"
+                class="favorite-item-preview"
+                :to="item.url"
+                :aria-label="`Open ${item.label}`"
+              >
+                <img
+                  v-if="item.thumbnail_url"
+                  :src="item.thumbnail_url"
+                  :alt="item.label"
+                  loading="lazy"
+                >
+                <span v-else class="favorite-item-symbol" aria-hidden="true">
+                  {{ item.entity_type === "model" ? "♡" : item.entity_type[0].toUpperCase() }}
+                </span>
+                <span v-if="item.status && item.status !== 'available'" class="model-status">
+                  {{ item.status }}
+                </span>
+              </RouterLink>
+              <div v-else class="favorite-item-preview favorite-item-preview--unavailable">
+                <span class="favorite-item-symbol" aria-hidden="true">♡</span>
+              </div>
+
+              <div class="favorite-item-body">
                 <span class="favorite-item-type">{{ item.entity_type }}</span>
                 <RouterLink v-if="item.url" class="favorite-item-link" :to="item.url">
                   {{ item.label }}
                 </RouterLink>
                 <span v-else class="favorite-item-unavailable">{{ item.label }}</span>
+                <span v-if="item.entity_type === 'model' && item.creator" class="favorite-item-meta">
+                  {{ item.creator }}
+                </span>
+                <span
+                  v-if="item.entity_type === 'model' && (item.franchise || item.series || item.collection)"
+                  class="favorite-item-meta"
+                >
+                  {{ [item.franchise, item.series, item.collection]
+                    .filter((value, index, values) => value && values.indexOf(value) === index)
+                    .join(" · ") }}
+                </span>
                 <small v-if="!item.is_available">No longer in the catalogue</small>
               </div>
               <button
-                class="secondary-button"
+                class="secondary-button favorite-item-remove"
                 type="button"
                 :disabled="working"
                 @click="removeItem(item.id)"

@@ -4,7 +4,13 @@ import { RouterLink, useRoute } from "vue-router"
 
 import { ApiError, apiRequest } from "../api"
 import FavoriteSaveDialog from "../components/FavoriteSaveDialog.vue"
-import { favoriteTargetsForModel } from "../favorites"
+import {
+  favoriteTargetsForModel,
+  type FavoriteListSummary,
+  type FavoriteMembershipList,
+  type FavoriteModelMembership,
+  type FavoriteTarget,
+} from "../favorites"
 import { useAuthStore } from "../stores/auth"
 
 interface Tag { id: number; name: string; color: string | null; description: string | null }
@@ -95,6 +101,7 @@ const selectedArchiveIndex = ref(0)
 const collapsedFolders = ref<Set<string>>(new Set())
 const lightboxOpen = ref(false)
 const favoriteDialogOpen = ref(false)
+const favoriteMemberships = ref<FavoriteMembershipList[]>([])
 const lightboxMode = ref<"height" | "width" | "original">("height")
 const detailImageButton = ref<HTMLButtonElement | null>(null)
 const lightboxCloseButton = ref<HTMLButtonElement | null>(null)
@@ -239,6 +246,31 @@ function catalogueFilterLink(
   }
 }
 
+function favoriteButtonLabel() {
+  if (!favoriteMemberships.value.length) return "Save to favorites"
+  if (favoriteMemberships.value.length === 1) {
+    return `Saved in ${favoriteMemberships.value[0].name}`
+  }
+  return `Saved in ${favoriteMemberships.value.length} lists`
+}
+
+async function loadFavoriteMemberships(modelId: number) {
+  try {
+    const result = await apiRequest<FavoriteModelMembership[]>(
+      `/api/favorite-lists/model-memberships?model_ids=${modelId}`,
+    )
+    favoriteMemberships.value = result[0]?.lists ?? []
+  } catch {
+    favoriteMemberships.value = []
+  }
+}
+
+function favoriteSaved(list: FavoriteListSummary, target: FavoriteTarget) {
+  if (target.entity_type !== "model") return
+  if (favoriteMemberships.value.some((membership) => membership.id === list.id)) return
+  favoriteMemberships.value = [...favoriteMemberships.value, list]
+}
+
 async function addTag() {
   if (!model.value || !selectedTagId.value) return
   await apiRequest<void>(
@@ -263,6 +295,7 @@ onMounted(async () => {
     model.value = await apiRequest<ModelDetail>(`/api/models/${route.params.id}`)
     availableTags.value = await apiRequest<Tag[]>("/api/tags")
     selectedImage.value = model.value.images[0] ?? null
+    await loadFavoriteMemberships(model.value.id)
   } catch (error) {
     errorMessage.value =
       error instanceof ApiError ? error.message : "Unable to load the model"
@@ -304,8 +337,15 @@ onBeforeUnmount(() => {
           <span v-if="model.status !== 'available'" class="detail-status">
             {{ model.status }}
           </span>
-          <button class="secondary-button" type="button" @click="favoriteDialogOpen = true">
-            <span aria-hidden="true">&#9825;</span> Save to favorites
+          <button
+            class="secondary-button detail-favorite-button"
+            :class="{ 'favorite-active': favoriteMemberships.length }"
+            type="button"
+            :title="favoriteMemberships.map((list) => list.name).join(', ')"
+            @click="favoriteDialogOpen = true"
+          >
+            <span aria-hidden="true">{{ favoriteMemberships.length ? "♥" : "♡" }}</span>
+            <span>{{ favoriteButtonLabel() }}</span>
           </button>
         </div>
       </header>
@@ -619,7 +659,9 @@ onBeforeUnmount(() => {
       <FavoriteSaveDialog
         :open="favoriteDialogOpen"
         :targets="favoriteDialogTargets"
+        :existing-model-lists="favoriteMemberships"
         @close="favoriteDialogOpen = false"
+        @saved="favoriteSaved"
       />
     </template>
   </main>

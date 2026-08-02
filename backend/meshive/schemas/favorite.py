@@ -68,6 +68,25 @@ class FavoriteListItemRead(BaseModel):
     url: str | None
     is_available: bool
     created_at: datetime
+    model_id: int | None = None
+    thumbnail_url: str | None = None
+    variant: str | None = None
+    creator: str | None = None
+    franchise: str | None = None
+    series: str | None = None
+    collection: str | None = None
+    status: str | None = None
+
+
+class FavoriteMembershipList(BaseModel):
+    id: int
+    name: str
+    item_id: int
+
+
+class FavoriteModelMembership(BaseModel):
+    model_id: int
+    lists: list[FavoriteMembershipList]
 
 
 class FavoriteListDetail(FavoriteListSummary):

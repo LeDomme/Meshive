@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, create_database_engine, get_session
 from meshive.main import app
-from meshive.models.catalog import LibraryModel
+from meshive.models.catalog import LibraryModel, ModelImage
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import Tag
 from meshive.models.user import User
@@ -88,6 +88,21 @@ def test_favorite_lists_are_private_and_resolve_catalogue_targets(tmp_path) -> N
             )
             tag = Tag(name="Bust", color="#00aaff")
             session.add_all([model, tag])
+            session.flush()
+            session.add(
+                ModelImage(
+                    model_id=model.id,
+                    filename="psylocke.jpg",
+                    relative_path="Marvel/Psylocke Chibi/psylocke.jpg",
+                    format="jpg",
+                    size_bytes=1234,
+                    modified_ns=1,
+                    is_primary=True,
+                    is_available=True,
+                    thumbnail_key="favorites/psylocke.webp",
+                    thumbnail_status="ready",
+                )
+            )
             session.commit()
             model_id = model.id
             tag_id = tag.id
@@ -124,6 +139,24 @@ def test_favorite_lists_are_private_and_resolve_catalogue_targets(tmp_path) -> N
             )
             assert response.status_code == 201
 
+        memberships = client.get(
+            "/api/favorite-lists/model-memberships",
+            params=[("model_ids", model_id)],
+        )
+        assert memberships.status_code == 200
+        membership_data = memberships.json()
+        assert membership_data[0]["model_id"] == model_id
+        assert [
+            (item["id"], item["name"]) for item in membership_data[0]["lists"]
+        ] == [(favorite_list_id, "Print next")]
+        assert isinstance(membership_data[0]["lists"][0]["item_id"], int)
+        current_user["id"] = 2
+        assert client.get(
+            "/api/favorite-lists/model-memberships",
+            params=[("model_ids", model_id)],
+        ).json() == []
+        current_user["id"] = 1
+
         duplicate_item = client.post(
             f"/api/favorite-lists/{favorite_list_id}/items",
             json={"entity_type": "model", "model_id": model_id},
@@ -136,6 +169,10 @@ def test_favorite_lists_are_private_and_resolve_catalogue_targets(tmp_path) -> N
         items = {item["entity_type"]: item for item in detail.json()["items"]}
         assert items["model"]["label"] == "Psylocke — Chibi"
         assert items["model"]["url"] == f"/models/{model_id}"
+        assert items["model"]["model_id"] == model_id
+        assert items["model"]["thumbnail_url"] == f"/api/models/{model_id}/thumbnail"
+        assert items["model"]["variant"] == "Chibi"
+        assert items["model"]["creator"] == "E.S Monster"
         assert items["creator"]["label"] == "E.S Monster"
         assert items["creator"]["url"] == "/?creator=E.S+Monster"
         assert items["tag"]["url"] == f"/?tag_id={tag_id}"

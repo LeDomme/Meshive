@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 
 import { ApiError, apiRequest } from "../api"
-import type { FavoriteListItem, FavoriteListSummary, FavoriteTarget } from "../favorites"
+import type {
+  FavoriteListItem,
+  FavoriteListSummary,
+  FavoriteMembershipList,
+  FavoriteTarget,
+} from "../favorites"
 
 const props = defineProps<{
   open: boolean
   targets: FavoriteTarget[]
+  existingModelLists?: FavoriteMembershipList[]
 }>()
 const emit = defineEmits<{
   close: []
-  saved: [list: FavoriteListSummary]
+  saved: [list: FavoriteListSummary, target: FavoriteTarget]
 }>()
 
 const lists = ref<FavoriteListSummary[]>([])
@@ -20,16 +26,31 @@ const newListName = ref("")
 const loading = ref(false)
 const saving = ref(false)
 const errorMessage = ref("")
+const saveComplete = ref(false)
+const savedMessage = ref("")
 const dialog = ref<HTMLElement | null>(null)
+let closeTimer: number | undefined
+const selectedTarget = computed(() =>
+  props.targets.find((item) => item.key === selectedTargetKey.value),
+)
+
+function listAlreadyContainsTarget(listId: number) {
+  return selectedTarget.value?.entity_type === "model"
+    && Boolean(props.existingModelLists?.some((list) => list.id === listId))
+}
+
+function selectAvailableList() {
+  if (selectedListId.value && !listAlreadyContainsTarget(selectedListId.value)) return
+  selectedListId.value = lists.value.find((list) => !listAlreadyContainsTarget(list.id))?.id ?? 0
+}
 
 async function loadLists() {
   loading.value = true
   errorMessage.value = ""
   try {
     lists.value = await apiRequest<FavoriteListSummary[]>("/api/favorite-lists")
-    if (!lists.value.some((item) => item.id === selectedListId.value)) {
-      selectedListId.value = lists.value[0]?.id ?? 0
-    }
+    if (!lists.value.some((item) => item.id === selectedListId.value)) selectedListId.value = 0
+    selectAvailableList()
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "Unable to load favorite lists"
   } finally {
@@ -75,8 +96,14 @@ async function save() {
       }),
     })
     list.item_count += 1
-    emit("saved", list)
-    close()
+    saving.value = false
+    savedMessage.value = `${target.label} saved to ${list.name}`
+    saveComplete.value = true
+    closeTimer = window.setTimeout(() => {
+      saveComplete.value = false
+      emit("saved", list, target)
+      emit("close")
+    }, 850)
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "Unable to save the favorite"
   } finally {
@@ -85,7 +112,7 @@ async function save() {
 }
 
 function close() {
-  if (!saving.value) emit("close")
+  if (!saving.value && !saveComplete.value) emit("close")
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -97,6 +124,9 @@ watch(
   async (open) => {
     document.documentElement.style.overflow = open ? "hidden" : ""
     if (!open) return
+    window.clearTimeout(closeTimer)
+    saveComplete.value = false
+    savedMessage.value = ""
     selectedTargetKey.value = props.targets[0]?.key ?? ""
     await loadLists()
     await nextTick()
@@ -104,8 +134,11 @@ watch(
   },
 )
 
+watch(selectedTargetKey, selectAvailableList)
+
 document.addEventListener("keydown", handleKeydown)
 onBeforeUnmount(() => {
+  window.clearTimeout(closeTimer)
   document.removeEventListener("keydown", handleKeydown)
   document.documentElement.style.overflow = ""
 })
@@ -133,6 +166,11 @@ onBeforeUnmount(() => {
         </div>
 
         <p v-if="loading" class="panel-copy">Loading favorite lists...</p>
+        <div v-else-if="saveComplete" class="favorite-save-complete" role="status">
+          <span class="favorite-save-heart" aria-hidden="true">&#9829;</span>
+          <strong>Saved</strong>
+          <p>{{ savedMessage }}</p>
+        </div>
         <form v-else class="favorite-dialog-form" @submit.prevent="save">
           <label>
             <span>Save</span>
@@ -145,11 +183,22 @@ onBeforeUnmount(() => {
           <label v-if="lists.length">
             <span>To list</span>
             <select v-model="selectedListId" required>
-              <option v-for="list in lists" :key="list.id" :value="list.id">
-                {{ list.name }} ({{ list.item_count }})
+              <option
+                v-for="list in lists"
+                :key="list.id"
+                :value="list.id"
+                :disabled="listAlreadyContainsTarget(list.id)"
+              >
+                {{ list.name }} ({{ list.item_count }}){{ listAlreadyContainsTarget(list.id) ? " - saved" : "" }}
               </option>
             </select>
           </label>
+          <p
+            v-if="selectedTarget?.entity_type === 'model' && lists.length && !selectedListId"
+            class="panel-copy favorite-already-saved"
+          >
+            This model is already saved in every list. Create another list to save it again.
+          </p>
 
           <div class="favorite-create-row">
             <label>
@@ -169,7 +218,11 @@ onBeforeUnmount(() => {
           <p v-if="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
           <div class="favorite-dialog-actions">
             <RouterLink class="text-link" to="/favorites" @click="close">Manage lists</RouterLink>
-            <button class="primary-button" type="submit" :disabled="saving || !lists.length">
+            <button
+              class="primary-button"
+              type="submit"
+              :disabled="saving || !selectedListId"
+            >
               {{ saving ? "Saving..." : "Save" }}
             </button>
           </div>
