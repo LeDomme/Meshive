@@ -41,6 +41,7 @@ interface ModelArchive {
 interface ModelDetail {
   id: number
   name: string
+  variant: string | null
   creator: string | null
   creator_links: Array<{
     id: number
@@ -284,6 +285,9 @@ onBeforeUnmount(() => {
         <div>
           <p class="eyebrow">{{ model.source_name }}</p>
           <h1>{{ model.name }}</h1>
+          <p v-if="model.variant" class="detail-variant">
+            Variant · {{ model.variant }}
+          </p>
           <p class="detail-taxonomy">
             {{ [model.franchise, model.series, model.collection]
               .filter((value, index, values) => value && values.indexOf(value) === index)
@@ -338,6 +342,10 @@ onBeforeUnmount(() => {
                 {{ model.name }}
               </RouterLink>
             </dd>
+            <template v-if="model.variant">
+              <dt>Variant</dt>
+              <dd>{{ model.variant }}</dd>
+            </template>
             <template v-if="model.creator">
               <dt>Creator</dt>
               <dd>

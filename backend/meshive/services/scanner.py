@@ -285,6 +285,7 @@ def _scan_model(
         scan.models_updated += 1
 
     model.name = values["model"]
+    model.variant = values.get("variant")
     model.creator = values.get("creator")
     model.franchise = values.get("franchise")
     model.series = values.get("series")

@@ -15,6 +15,7 @@ from meshive.schemas.library_source import (
 )
 from meshive.services.library_paths import (
     PathPatternError,
+    model_pattern_warnings,
     parse_library_path,
     validate_library_root,
 )
@@ -98,7 +99,11 @@ def preview_library_path(payload: PathPreviewRequest) -> PathPreviewResponse:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
         ) from error
-    return PathPreviewResponse(normalized_path=normalized_path, values=values)
+    return PathPreviewResponse(
+        normalized_path=normalized_path,
+        values=values,
+        warnings=model_pattern_warnings(payload.model_pattern),
+    )
 
 
 def _get_source_or_404(session: Session, source_id: int):

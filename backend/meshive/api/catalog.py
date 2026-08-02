@@ -138,6 +138,7 @@ def list_models(
         ModelSummary(
             id=model.id,
             name=model.name,
+            variant=model.variant,
             creator=model.creator,
             franchise=model.franchise,
             series=model.series,
@@ -326,6 +327,7 @@ def model_detail(
     return ModelDetail(
         id=model.id,
         name=model.name,
+        variant=model.variant,
         creator=model.creator,
         creator_url=creator_url,
         creator_links=[
@@ -669,6 +671,8 @@ def _model_filters(
 
 def _model_order(sort: str) -> tuple:
     name = LibraryModel.name.collate("NOCASE")
+    variant = LibraryModel.variant.collate("NOCASE")
+    variant_order = (LibraryModel.variant.is_not(None), variant)
     creator = LibraryModel.creator.collate("NOCASE")
     if sort == "meshive_newest":
         return (LibraryModel.first_seen_at.desc(), LibraryModel.id.desc())
@@ -695,17 +699,24 @@ def _model_order(sort: str) -> tuple:
     if sort == "files_oldest":
         return (files_modified == 0, files_modified, LibraryModel.id)
     if sort == "name_desc":
-        return (name.desc(), LibraryModel.id.desc())
+        return (name.desc(), *variant_order, LibraryModel.id.desc())
     if sort == "creator_asc":
-        return (LibraryModel.creator.is_(None), creator, name, LibraryModel.id)
+        return (
+            LibraryModel.creator.is_(None),
+            creator,
+            name,
+            *variant_order,
+            LibraryModel.id,
+        )
     if sort == "creator_desc":
         return (
             LibraryModel.creator.is_(None),
             creator.desc(),
             name,
+            *variant_order,
             LibraryModel.id,
         )
-    return (name, LibraryModel.id)
+    return (name, *variant_order, LibraryModel.id)
 
 
 def _text_filter_options(

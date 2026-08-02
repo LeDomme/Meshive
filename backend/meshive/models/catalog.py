@@ -27,6 +27,7 @@ class LibraryModel(Base):
     )
     relative_path: Mapped[str] = mapped_column(Text)
     name: Mapped[str] = mapped_column(String(512), index=True)
+    variant: Mapped[str | None] = mapped_column(String(255), nullable=True)
     creator: Mapped[str | None] = mapped_column(String(255), index=True)
     franchise: Mapped[str | None] = mapped_column(String(255), index=True)
     series: Mapped[str | None] = mapped_column(String(255), index=True)

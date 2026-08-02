@@ -7,6 +7,7 @@ from meshive.schemas.tag import TagRead
 class ModelSummary(BaseModel):
     id: int
     name: str
+    variant: str | None
     creator: str | None
     franchise: str | None
     series: str | None
@@ -62,6 +63,7 @@ class ArchiveRead(BaseModel):
 class ModelDetail(BaseModel):
     id: int
     name: str
+    variant: str | None
     creator: str | None
     creator_url: str | None
     creator_links: list[CreatorMetadataLinkRead]
