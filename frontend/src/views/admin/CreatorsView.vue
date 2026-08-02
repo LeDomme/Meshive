@@ -71,6 +71,12 @@ const linkTypeOptions: Array<{ value: CreatorLinkKind; label: string }> = [
 const creators = ref<Creator[]>([])
 const metadataEntities = ref<MetadataEntity[]>([])
 const selectedEntityType = ref<MetadataEntityType>("creator")
+const selectedEntityTypeValue = computed({
+  get: () => selectedEntityType.value,
+  set: (value: string) => {
+    selectedEntityType.value = value as MetadataEntityType
+  },
+})
 const selectedEntityValue = ref("")
 const artworkFile = ref<File | null>(null)
 const artworkInput = ref<HTMLInputElement | null>(null)
@@ -83,6 +89,11 @@ const addingLink = ref(false)
 const savingLinkId = ref<number | null>(null)
 const errorMessage = ref("")
 const successMessage = ref("")
+const metadataTypeOptions = [
+  { value: "creator", label: "Creator" },
+  { value: "franchise", label: "Franchise" },
+  { value: "collection", label: "Collection" },
+]
 
 const entityOptions = computed(() => {
   const options = metadataEntities.value
@@ -356,22 +367,29 @@ onMounted(loadMetadata)
       <p v-if="loading" class="muted">Loading...</p>
       <template v-else>
         <div class="metadata-selectors">
-          <label>
+          <div class="matched-dropdown-field">
             <span>Type</span>
-            <select v-model="selectedEntityType" @change="entityTypeChanged">
-              <option value="creator">Creator</option>
-              <option value="franchise">Franchise</option>
-              <option value="collection">Collection</option>
-            </select>
-          </label>
-          <SearchableFilter
-            v-model="selectedEntityValue"
-            :label="entityTypeLabel"
-            :all-label="`Select a ${entityTypeLabel.toLocaleLowerCase()}`"
-            :search-placeholder="`Search ${entityTypeLabel.toLocaleLowerCase()}s`"
-            :options="entityOptions"
-            @change="resetEditor"
-          />
+            <SearchableFilter
+              v-model="selectedEntityTypeValue"
+              label="Metadata type"
+              all-label="Select a type"
+              search-placeholder="Search types"
+              :options="metadataTypeOptions"
+              :show-all-option="false"
+              @change="entityTypeChanged"
+            />
+          </div>
+          <div class="matched-dropdown-field">
+            <span>{{ entityTypeLabel }}</span>
+            <SearchableFilter
+              v-model="selectedEntityValue"
+              :label="entityTypeLabel"
+              :all-label="`Select a ${entityTypeLabel.toLocaleLowerCase()}`"
+              :search-placeholder="`Search ${entityTypeLabel.toLocaleLowerCase()}s`"
+              :options="entityOptions"
+              @change="resetEditor"
+            />
+          </div>
         </div>
 
         <div v-if="selectedEntity" class="creator-metadata-editor">
