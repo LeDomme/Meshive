@@ -29,17 +29,21 @@ def test_direct_and_recursive_tags_are_exposed_and_filterable() -> None:
     try:
         with sessions() as session:
             source = LibrarySource(
-                name="Test", root_path="/models/test",
+                name="Test",
+                root_path="/models/test",
                 directory_pattern="{franchise}/{model_folder}",
-                archive_formats=["7z"], image_formats=["jpg"],
-                is_active=True, scan_enabled=True,
+                archive_formats=["7z"],
+                image_formats=["jpg"],
+                is_active=True,
+                scan_enabled=True,
             )
             session.add(source)
             session.flush()
             model = LibraryModel(
                 library_source_id=source.id,
                 relative_path="Marvel/X-Men/Wolverine",
-                name="Wolverine", status="available",
+                name="Wolverine",
+                status="available",
             )
             session.add(model)
             session.commit()
@@ -51,9 +55,22 @@ def test_direct_and_recursive_tags_are_exposed_and_filterable() -> None:
             )
             assert created.status_code == 201
             tag_id = created.json()["id"]
-            assert client.put(
-                f"/api/admin/models/{model.id}/tags/{tag_id}"
-            ).status_code == 204
+            assert client.put(f"/api/admin/models/{model.id}/tags/{tag_id}").status_code == 204
+            updated = client.put(
+                f"/api/admin/tags/{tag_id}",
+                json={
+                    "name": "Curated",
+                    "color": "#123abc",
+                    "description": "Reviewed by an administrator",
+                },
+            )
+            assert updated.status_code == 200
+            assert updated.json() == {
+                "id": tag_id,
+                "name": "Curated",
+                "color": "#123abc",
+                "description": "Reviewed by an administrator",
+            }
             filtered = client.get("/api/models", params={"tag_id": tag_id})
             assert filtered.json()["total"] == 1
 
@@ -72,9 +89,15 @@ def test_direct_and_recursive_tags_are_exposed_and_filterable() -> None:
             )
             assert rule.status_code == 201
             detail = client.get(f"/api/models/{model.id}").json()
-            assert {tag["name"] for tag in detail["tags"]} == {
-                "Favourite", "Marvel"
-            }
+            assert {tag["name"] for tag in detail["tags"]} == {"Curated", "Marvel"}
+            conflict = client.put(
+                f"/api/admin/tags/{tag_id}",
+                json={"name": "Marvel", "color": None, "description": None},
+            )
+            assert conflict.status_code == 409
+            assert {
+                tag["name"] for tag in client.get(f"/api/models/{model.id}").json()["tags"]
+            } == {"Curated", "Marvel"}
     finally:
         app.dependency_overrides.clear()
         Base.metadata.drop_all(engine)
