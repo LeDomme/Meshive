@@ -40,7 +40,20 @@ const catalogueFilters = ref<CatalogueFilters>({
   tags: [],
 })
 const directFavoriteType = ref<DirectFavoriteType>("creator")
+const directFavoriteTypeValue = computed({
+  get: () => directFavoriteType.value,
+  set: (value: string) => {
+    directFavoriteType.value = value as DirectFavoriteType
+  },
+})
 const directFavoriteValue = ref("")
+const directFavoriteTypeOptions = [
+  { value: "creator", label: "Creator" },
+  { value: "franchise", label: "Franchise" },
+  { value: "series", label: "Series" },
+  { value: "collection", label: "Collection" },
+  { value: "tag", label: "Tag" },
+]
 
 const directFavoriteOptions = computed(() => {
   if (directFavoriteType.value === "tag") {
@@ -296,23 +309,28 @@ onMounted(async () => {
               </p>
             </div>
             <div class="favorite-direct-add-fields">
-              <label>
+              <div class="matched-dropdown-field">
                 <span>Type</span>
-                <select v-model="directFavoriteType" @change="directFavoriteTypeChanged">
-                  <option value="creator">Creator</option>
-                  <option value="franchise">Franchise</option>
-                  <option value="series">Series</option>
-                  <option value="collection">Collection</option>
-                  <option value="tag">Tag</option>
-                </select>
-              </label>
-              <SearchableFilter
-                v-model="directFavoriteValue"
-                :label="directFavoriteLabel"
-                :all-label="`Select ${directFavoriteLabel.toLocaleLowerCase()}`"
-                :search-placeholder="`Search ${directFavoriteLabel.toLocaleLowerCase()}`"
-                :options="directFavoriteOptions"
-              />
+                <SearchableFilter
+                  v-model="directFavoriteTypeValue"
+                  label="Favorite type"
+                  all-label="Select a type"
+                  search-placeholder="Search types"
+                  :options="directFavoriteTypeOptions"
+                  :show-all-option="false"
+                  @change="directFavoriteTypeChanged"
+                />
+              </div>
+              <div class="matched-dropdown-field">
+                <span>{{ directFavoriteLabel }}</span>
+                <SearchableFilter
+                  v-model="directFavoriteValue"
+                  :label="directFavoriteLabel"
+                  :all-label="`Select ${directFavoriteLabel.toLocaleLowerCase()}`"
+                  :search-placeholder="`Search ${directFavoriteLabel.toLocaleLowerCase()}`"
+                  :options="directFavoriteOptions"
+                />
+              </div>
               <button
                 class="primary-button"
                 type="submit"
