@@ -198,7 +198,8 @@ def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:
                 root_path="/models/variants",
                 directory_pattern="{franchise}/{model_folder}",
                 model_pattern=(
-                    "{franchise} - {series} - {model} - variant {variant} - by {creator}"
+                    "{franchise} - {series} - {model} - "
+                    "{variant_identifier} {variant} - by {creator}"
                 ),
                 archive_formats=["7z"],
                 image_formats=["jpg"],

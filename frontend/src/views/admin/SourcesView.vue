@@ -350,7 +350,9 @@ onBeforeUnmount(() => {
             Enter one pattern per line. The first matching pattern is used.
             <code>{variant}</code> accepts free-form values; put variant patterns
             first and use a literal marker such as
-            <code>variant {variant}</code> when layouts could overlap.
+            <code>{variant_identifier} {variant}</code> when layouts could overlap.
+            The identifier accepts variant, version, edition, and revision
+            without regard to capitalization.
           </small>
         </label>
 
