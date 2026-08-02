@@ -12,6 +12,7 @@ ALLOWED_VARIABLES = frozenset(
         "model",
         "model_folder",
         "series",
+        "variant",
     }
 )
 VARIABLE_PATTERN = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -80,6 +81,30 @@ def validate_model_pattern(value: str | None) -> str | None:
         _compile_pattern(pattern)
         patterns.append(pattern)
     return "\n".join(patterns)
+
+
+def model_pattern_warnings(value: str | None) -> list[str]:
+    normalized = validate_model_pattern(value)
+    if not normalized:
+        return []
+
+    patterns = normalized.splitlines()
+    warnings: list[str] = []
+    for left_index, left in enumerate(patterns):
+        left_variables = set(VARIABLE_PATTERN.findall(left))
+        for right_index in range(left_index + 1, len(patterns)):
+            right = patterns[right_index]
+            right_variables = set(VARIABLE_PATTERN.findall(right))
+            if ("variant" in left_variables) == ("variant" in right_variables):
+                continue
+            if _pattern_signature(left) != _pattern_signature(right):
+                continue
+            warnings.append(
+                f"Patterns {left_index + 1} and {right_index + 1} are structurally "
+                "ambiguous around {variant}; the first matching pattern wins. "
+                "Add a literal marker such as [{variant}] if both layouts occur."
+            )
+    return warnings
 
 
 def parse_library_path(
@@ -156,6 +181,10 @@ def _normalize_pattern(value: str) -> str:
     if "{" in without_variables or "}" in without_variables:
         raise PathPatternError("The pattern contains an invalid variable")
     return pattern
+
+
+def _pattern_signature(pattern: str) -> str:
+    return VARIABLE_PATTERN.sub("{value}", pattern).casefold()
 
 
 def _compile_pattern(pattern: str) -> re.Pattern[str]:

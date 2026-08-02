@@ -26,6 +26,7 @@ interface LibrarySource {
 interface PreviewResponse {
   normalized_path: string
   values: Record<string, string>
+  warnings: string[]
 }
 
 interface ScanRun {
@@ -345,7 +346,12 @@ onBeforeUnmount(() => {
             rows="3"
             placeholder="{franchise} - {model} - by {creator}"
           />
-          <small>Enter one pattern per line. The first matching pattern is used.</small>
+          <small>
+            Enter one pattern per line. The first matching pattern is used.
+            <code>{variant}</code> accepts free-form values; put variant patterns
+            first and use a literal marker such as <code>[{variant}]</code> when
+            layouts could overlap.
+          </small>
         </label>
 
         <details>
@@ -429,6 +435,11 @@ onBeforeUnmount(() => {
 
         <div v-if="preview" class="preview-result">
           <p><strong>Normalized:</strong> {{ preview.normalized_path }}</p>
+          <ul v-if="preview.warnings.length" class="preview-warnings" role="status">
+            <li v-for="warning in preview.warnings" :key="warning">
+              {{ warning }}
+            </li>
+          </ul>
           <dl>
             <template v-for="(value, key) in preview.values" :key="key">
               <dt>{{ key }}</dt>

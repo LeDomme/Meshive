@@ -163,3 +163,65 @@ def test_model_candidate_requires_supported_file(tmp_path) -> None:
 
     (organisation / "model.7z").write_bytes(b"archive")
     assert scanner._is_model_candidate(organisation, source) is True
+
+
+def test_rescan_splits_variant_without_creating_duplicate(tmp_path, monkeypatch) -> None:
+    folder_name = "Marvel - X-Men - Psylocke - [Chibi version] - by E.S Monster"
+    model_directory = tmp_path / "Marvel" / folder_name
+    model_directory.mkdir(parents=True)
+    (model_directory / "psylocke.7z").write_bytes(b"archive")
+    (model_directory / "psylocke.jpg").write_bytes(b"image")
+    engine = create_engine(f"sqlite:///{tmp_path / 'variant.db'}")
+    Base.metadata.create_all(engine)
+
+    monkeypatch.setattr(
+        scanner,
+        "get_settings",
+        lambda: Settings(allowed_library_root=tmp_path),
+    )
+    monkeypatch.setattr(scanner, "list_archive", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        scanner,
+        "generate_thumbnail",
+        lambda *_args, **_kwargs: "thumbnails/variant.webp",
+    )
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Variants",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{franchise}/{model_folder}",
+            model_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.commit()
+
+        first_scan = make_scan(session, source.id)
+        scanner._execute_scan(session, source.id, first_scan.id)
+        model = session.scalar(select(LibraryModel))
+        assert model is not None
+        model_id = model.id
+        assert model.name == folder_name
+        assert model.variant is None
+
+        source.model_pattern = (
+            "{franchise} - {series} - {model} - [{variant}] - by {creator}"
+        )
+        session.commit()
+        second_scan = make_scan(session, source.id)
+        scanner._execute_scan(session, source.id, second_scan.id)
+
+        models = list(session.scalars(select(LibraryModel)))
+        assert len(models) == 1
+        assert models[0].id == model_id
+        assert models[0].name == "Psylocke"
+        assert models[0].variant == "Chibi version"
+        assert models[0].creator == "E.S Monster"
+        assert models[0].franchise == "Marvel"
+        assert models[0].series == "X-Men"
+
+    engine.dispose()

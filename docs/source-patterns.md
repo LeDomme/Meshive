@@ -57,6 +57,47 @@ Always use **Preview values** with a path relative to the source's container
 path before saving. Do not include `/models`, the source root, or an archive
 filename in the preview path.
 
+## Optional model variants
+
+Use the optional `{variant}` value when a creator publishes several distinct
+versions of the same canonical model. The captured value is free-form; Meshive
+does not require words such as `Variant` or `Edition`.
+
+For example, these patterns keep `Psylocke` as the model while capturing the
+text in brackets as its variant:
+
+```text
+{franchise} - {series} - {model} - [{variant}] - by {creator}
+{franchise} - {series} - {model} - by {creator}
+```
+
+They parse all of the following without changing the canonical model name:
+
+```text
+Marvel - X-Men - Psylocke - [06] - by E.S Monster
+Marvel - X-Men - Psylocke - [2024] - by E.S Monster
+Marvel - X-Men - Psylocke - [Chibi version] - by E.S Monster
+```
+
+The model filter contains one `Psylocke` option and selects every variant.
+Variants remain visible on catalogue cards and detail pages and are included in
+full-text search.
+
+A plain `{variant}` segment is also supported. Be careful when a source mixes
+series and non-series layouts: these two patterns have the same structure and
+the first one would always win for a matching folder:
+
+```text
+{franchise} - {series} - {model} - by {creator}
+{franchise} - {model} - {variant} - by {creator}
+```
+
+The pattern preview warns about this overlap. Add a source-specific literal
+marker to make the layouts distinct, for example `[{variant}]`,
+`Variant {variant}`, or `Edition {variant}`. Put variant alternatives before
+their corresponding non-variant fallbacks and keep a broad `{model}` fallback
+last.
+
 ## Optional directory levels
 
 If some models are grouped inside an additional series folder, configure both

@@ -2,6 +2,7 @@ import pytest
 
 from meshive.services.library_paths import (
     PathPatternError,
+    model_pattern_warnings,
     parse_library_path,
     validate_library_root,
 )
@@ -77,6 +78,41 @@ def test_parses_series_below_a_broad_franchise() -> None:
     assert values["franchise"] == "Disney"
     assert values["series"] == "Aladdin"
     assert values["model"] == "Jasmin"
+
+
+def test_parses_free_form_model_variant() -> None:
+    _, values = parse_library_path(
+        directory_pattern="{franchise}/{model_folder}",
+        model_pattern=(
+            "{franchise} - {series} - {model} - [{variant}] - by {creator}\n"
+            "{franchise} - {series} - {model} - by {creator}"
+        ),
+        relative_path=(
+            "Marvel/Marvel - X-Men - Psylocke - [Chibi version] - by E.S Monster"
+        ),
+    )
+
+    assert values["franchise"] == "Marvel"
+    assert values["series"] == "X-Men"
+    assert values["model"] == "Psylocke"
+    assert values["variant"] == "Chibi version"
+    assert values["creator"] == "E.S Monster"
+
+
+def test_warns_about_structurally_ambiguous_variant_patterns() -> None:
+    warnings = model_pattern_warnings(
+        "{franchise} - {series} - {model} - by {creator}\n"
+        "{franchise} - {model} - {variant} - by {creator}"
+    )
+
+    assert len(warnings) == 1
+    assert "Patterns 1 and 2" in warnings[0]
+    assert "[{variant}]" in warnings[0]
+
+    assert model_pattern_warnings(
+        "{franchise} - {series} - {model} - by {creator}\n"
+        "{franchise} - {model} - [{variant}] - by {creator}"
+    ) == []
 
 
 def test_tries_deeper_directory_layout_before_standard_layout() -> None:

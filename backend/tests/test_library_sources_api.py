@@ -104,3 +104,29 @@ def test_preview_endpoint_parses_confirmed_layout() -> None:
 
         assert response.status_code == 200
         assert response.json()["values"]["model"] == "Ankha"
+        assert response.json()["warnings"] == []
+
+
+def test_preview_endpoint_returns_variant_and_ambiguity_warning() -> None:
+    with build_client() as (client, _sessions):
+        response = client.post(
+            "/api/admin/library-sources/preview",
+            json={
+                "directory_pattern": "{franchise}/{model_folder}",
+                "model_pattern": (
+                    "{franchise} - {series} - {model} - by {creator}\n"
+                    "{franchise} - {model} - {variant} - by {creator}"
+                ),
+                "relative_path": "Marvel/Marvel - Psylocke - Chibi - by Example",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["values"] == {
+            "franchise": "Marvel",
+            "model_folder": "Marvel - Psylocke - Chibi - by Example",
+            "series": "Psylocke",
+            "model": "Chibi",
+            "creator": "Example",
+        }
+        assert len(response.json()["warnings"]) == 1

@@ -28,7 +28,8 @@ def catalog_client() -> Generator[tuple[TestClient, sessionmaker], None, None]:
     with engine.begin() as connection:
         connection.exec_driver_sql(
             "CREATE VIRTUAL TABLE model_search USING fts5("
-            "model_id UNINDEXED, name, creator, franchise, series, collection, tags)"
+            "model_id UNINDEXED, name, variant, creator, franchise, series, "
+            "collection, tags)"
         )
     sessions = sessionmaker(bind=engine, expire_on_commit=False)
 
@@ -113,8 +114,9 @@ def test_lists_searches_filters_and_downloads_models(tmp_path) -> None:
             session.execute(
                 text(
                     "INSERT INTO model_search("
-                    "model_id, name, creator, franchise, series, collection, tags"
-                    ") VALUES (:id, :name, :creator, :franchise, :series, '', '')"
+                    "model_id, name, variant, creator, franchise, series, "
+                    "collection, tags) VALUES ("
+                    ":id, :name, '', :creator, :franchise, :series, '', '')"
                 ),
                 {
                     "id": model.id,
@@ -186,6 +188,81 @@ def test_lists_searches_filters_and_downloads_models(tmp_path) -> None:
         assert filters.json()["models"] == [{"value": model.name, "count": 1}]
         assert filters.json()["creators"] == [{"value": "Aoae", "count": 1}]
         assert filters.json()["series"] == [{"value": "Moikaloop", "count": 1}]
+
+
+def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(
+                name="Variants",
+                root_path="/models/variants",
+                directory_pattern="{franchise}/{model_folder}",
+                model_pattern=(
+                    "{franchise} - {series} - {model} - [{variant}] - by {creator}"
+                ),
+                archive_formats=["7z"],
+                image_formats=["jpg"],
+                is_active=True,
+                scan_enabled=True,
+            )
+            session.add(source)
+            session.flush()
+            models = [
+                LibraryModel(
+                    library_source_id=source.id,
+                    relative_path=f"Marvel/Psylocke {variant}",
+                    name="Psylocke",
+                    variant=variant,
+                    creator="E.S Monster",
+                    franchise="Marvel",
+                    series="X-Men",
+                    status="available",
+                )
+                for variant in ("06", "Chibi version")
+            ]
+            session.add_all(models)
+            session.flush()
+            for model in models:
+                session.execute(
+                    text(
+                        "INSERT INTO model_search("
+                        "model_id, name, variant, creator, franchise, series, "
+                        "collection, tags) VALUES ("
+                        ":id, :name, :variant, :creator, :franchise, :series, '', '')"
+                    ),
+                    {
+                        "id": model.id,
+                        "name": model.name,
+                        "variant": model.variant,
+                        "creator": model.creator,
+                        "franchise": model.franchise,
+                        "series": model.series,
+                    },
+                )
+            session.commit()
+            chibi_id = models[1].id
+
+        filters = client.get("/api/models/filters")
+        assert filters.status_code == 200
+        assert filters.json()["models"] == [{"value": "Psylocke", "count": 2}]
+
+        filtered = client.get("/api/models", params={"model": "Psylocke"})
+        assert filtered.status_code == 200
+        assert filtered.json()["total"] == 2
+        assert [item["variant"] for item in filtered.json()["items"]] == [
+            "06",
+            "Chibi version",
+        ]
+
+        searched = client.get("/api/models", params={"search": "chibi"})
+        assert searched.status_code == 200
+        assert searched.json()["total"] == 1
+        assert searched.json()["items"][0]["name"] == "Psylocke"
+        assert searched.json()["items"][0]["variant"] == "Chibi version"
+
+        detail = client.get(f"/api/models/{chibi_id}")
+        assert detail.status_code == 200
+        assert detail.json()["variant"] == "Chibi version"
 
 
 def test_admin_can_only_delete_missing_models() -> None:
