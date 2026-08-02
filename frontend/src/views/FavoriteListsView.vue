@@ -1,10 +1,27 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 import { RouterLink } from "vue-router"
 
 import { ApiError, apiRequest } from "../api"
 import BrandLogo from "../components/BrandLogo.vue"
-import type { FavoriteListDetail, FavoriteListSummary } from "../favorites"
+import SearchableFilter from "../components/SearchableFilter.vue"
+import type {
+  FavoriteEntityType,
+  FavoriteListDetail,
+  FavoriteListItem,
+  FavoriteListSummary,
+} from "../favorites"
+
+type DirectFavoriteType = "creator" | "franchise" | "series" | "collection" | "tag"
+interface FilterOption { value: string; count: number }
+interface TagOption { id: number; name: string }
+interface CatalogueFilters {
+  creators: FilterOption[]
+  franchises: FilterOption[]
+  series: FilterOption[]
+  collections: FilterOption[]
+  tags: TagOption[]
+}
 
 const lists = ref<FavoriteListSummary[]>([])
 const selected = ref<FavoriteListDetail | null>(null)
@@ -15,6 +32,47 @@ const loading = ref(true)
 const working = ref(false)
 const errorMessage = ref("")
 const successMessage = ref("")
+const catalogueFilters = ref<CatalogueFilters>({
+  creators: [],
+  franchises: [],
+  series: [],
+  collections: [],
+  tags: [],
+})
+const directFavoriteType = ref<DirectFavoriteType>("creator")
+const directFavoriteValue = ref("")
+
+const directFavoriteOptions = computed(() => {
+  if (directFavoriteType.value === "tag") {
+    return catalogueFilters.value.tags.map((tag) => ({
+      value: String(tag.id),
+      label: tag.name,
+    }))
+  }
+  const key: "creators" | "franchises" | "series" | "collections" =
+    directFavoriteType.value === "series"
+      ? "series"
+      : `${directFavoriteType.value}s` as
+          | "creators"
+          | "franchises"
+          | "collections"
+  return catalogueFilters.value[key]
+})
+
+const directFavoriteLabel = computed(() =>
+  directFavoriteType.value === "series"
+    ? "Series"
+    : `${directFavoriteType.value[0].toUpperCase()}${directFavoriteType.value.slice(1)}`,
+)
+
+function favoritePreview(item: FavoriteListItem) {
+  if (item.thumbnail_url) return item.thumbnail_url
+  if (item.artwork_url) return item.artwork_url
+  if (["creator", "franchise", "collection"].includes(item.entity_type)) {
+    return `/favorite-fallbacks/favorite-${item.entity_type}.webp`
+  }
+  return null
+}
 
 async function loadLists(preferredId?: number) {
   lists.value = await apiRequest<FavoriteListSummary[]>("/api/favorite-lists")
@@ -112,9 +170,53 @@ async function removeItem(itemId: number) {
   }
 }
 
+function directFavoriteTypeChanged() {
+  directFavoriteValue.value = ""
+}
+
+async function addDirectFavorite() {
+  if (!selected.value || !directFavoriteValue.value) return
+  working.value = true
+  errorMessage.value = ""
+  successMessage.value = ""
+  try {
+    const payload: {
+      entity_type: FavoriteEntityType
+      value?: string
+      tag_id?: number
+    } = { entity_type: directFavoriteType.value }
+    if (directFavoriteType.value === "tag") {
+      payload.tag_id = Number(directFavoriteValue.value)
+    } else {
+      payload.value = directFavoriteValue.value
+    }
+    await apiRequest<FavoriteListItem>(
+      `/api/favorite-lists/${selected.value.id}/items`,
+      { method: "POST", body: JSON.stringify(payload) },
+    )
+    const selectedOption = directFavoriteOptions.value.find(
+      (option) => option.value === directFavoriteValue.value,
+    )
+    const label = selectedOption && "label" in selectedOption
+      ? selectedOption.label
+      : selectedOption?.value ?? directFavoriteValue.value
+    directFavoriteValue.value = ""
+    await loadLists(selected.value.id)
+    successMessage.value = `Added ${label} to ${selected.value.name}.`
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError ? error.message : "Unable to add the entry"
+  } finally {
+    working.value = false
+  }
+}
+
 onMounted(async () => {
   try {
-    await loadLists()
+    const [, filterResult] = await Promise.all([
+      loadLists(),
+      apiRequest<CatalogueFilters>("/api/models/filters"),
+    ])
+    catalogueFilters.value = filterResult
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "Unable to load favorite lists"
   } finally {
@@ -186,6 +288,39 @@ onMounted(async () => {
             <button class="secondary-button" type="submit" :disabled="working">Rename</button>
           </form>
 
+          <form class="favorite-direct-add" @submit.prevent="addDirectFavorite">
+            <div>
+              <h3>Add catalogue entry</h3>
+              <p class="panel-copy">
+                Add a creator, franchise, series, collection, or tag without opening a model first.
+              </p>
+            </div>
+            <div class="favorite-direct-add-fields">
+              <label>
+                <span>Type</span>
+                <select v-model="directFavoriteType" @change="directFavoriteTypeChanged">
+                  <option value="creator">Creator</option>
+                  <option value="franchise">Franchise</option>
+                  <option value="series">Series</option>
+                  <option value="collection">Collection</option>
+                  <option value="tag">Tag</option>
+                </select>
+              </label>
+              <SearchableFilter
+                v-model="directFavoriteValue"
+                :label="directFavoriteLabel"
+                :all-label="`Select ${directFavoriteLabel.toLocaleLowerCase()}`"
+                :search-placeholder="`Search ${directFavoriteLabel.toLocaleLowerCase()}`"
+                :options="directFavoriteOptions"
+              />
+              <button
+                class="primary-button"
+                type="submit"
+                :disabled="working || !directFavoriteValue"
+              >Add</button>
+            </div>
+          </form>
+
           <div v-if="selected.items.length" class="favorite-items">
             <article
               v-for="item in selected.items"
@@ -200,8 +335,8 @@ onMounted(async () => {
                 :aria-label="`Open ${item.label}`"
               >
                 <img
-                  v-if="item.thumbnail_url"
-                  :src="item.thumbnail_url"
+                  v-if="favoritePreview(item)"
+                  :src="favoritePreview(item) || ''"
                   :alt="item.label"
                   loading="lazy"
                 >
@@ -213,7 +348,13 @@ onMounted(async () => {
                 </span>
               </RouterLink>
               <div v-else class="favorite-item-preview favorite-item-preview--unavailable">
-                <span class="favorite-item-symbol" aria-hidden="true">♡</span>
+                <img
+                  v-if="favoritePreview(item)"
+                  :src="favoritePreview(item) || ''"
+                  :alt="item.label"
+                  loading="lazy"
+                >
+                <span v-else class="favorite-item-symbol" aria-hidden="true">&#9825;</span>
               </div>
 
               <div class="favorite-item-body">
@@ -236,17 +377,19 @@ onMounted(async () => {
                 <small v-if="!item.is_available">No longer in the catalogue</small>
               </div>
               <button
-                class="secondary-button favorite-item-remove"
+                class="secondary-button favorite-item-remove favorite-active favorite-direct-remove"
                 type="button"
                 :disabled="working"
                 @click="removeItem(item.id)"
               >
-                Remove
+                <span aria-hidden="true">&#9829;</span>
+                <span class="favorite-button-label">Saved</span>
+                <span class="favorite-button-hover-label">Remove from list</span>
               </button>
             </article>
           </div>
           <p v-else class="panel-copy favorite-empty-list">
-            This list is empty. Use the Save button on a model card or detail page.
+            This list is empty. Add a catalogue entry above or use Save on a model.
           </p>
         </template>
         <div v-else class="favorite-empty-list">

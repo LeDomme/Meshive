@@ -399,13 +399,51 @@ function openFavoriteDialog(model: ModelSummary) {
   favoriteModel.value = model
 }
 
-function favoriteSaved(list: FavoriteListSummary, target: FavoriteTarget) {
+function favoriteSaved(
+  list: FavoriteListSummary,
+  target: FavoriteTarget,
+  itemId: number,
+) {
   if (target.entity_type !== "model" || !target.model_id) return
   const memberships = favoriteMemberships.value[target.model_id] ?? []
   if (memberships.some((membership) => membership.id === list.id)) return
   favoriteMemberships.value = {
     ...favoriteMemberships.value,
-    [target.model_id]: [...memberships, list],
+    [target.model_id]: [...memberships, { ...list, item_id: itemId }],
+  }
+}
+
+function favoriteRemoved(list: FavoriteMembershipList, target: FavoriteTarget) {
+  if (target.entity_type !== "model" || !target.model_id) return
+  favoriteMemberships.value = {
+    ...favoriteMemberships.value,
+    [target.model_id]: (favoriteMemberships.value[target.model_id] ?? []).filter(
+      (membership) => membership.id !== list.id,
+    ),
+  }
+}
+
+async function handleFavoriteClick(model: ModelSummary) {
+  const memberships = favoriteMemberships.value[model.id] ?? []
+  if (memberships.length !== 1 || !memberships[0].item_id) {
+    openFavoriteDialog(model)
+    return
+  }
+  errorMessage.value = ""
+  try {
+    await apiRequest<void>(
+      `/api/favorite-lists/${memberships[0].id}/items/${memberships[0].item_id}`,
+      { method: "DELETE" },
+    )
+    favoriteRemoved(memberships[0], {
+      key: `model:${model.id}`,
+      label: model.name,
+      entity_type: "model",
+      model_id: model.id,
+    })
+  } catch (error) {
+    errorMessage.value =
+      error instanceof ApiError ? error.message : "Unable to remove the favorite"
   }
 }
 
@@ -660,15 +698,22 @@ onMounted(async () => {
           </p>
           <button
             class="secondary-button model-favorite-button"
-            :class="{ 'favorite-active': favoriteMemberships[model.id]?.length }"
+            :class="{
+              'favorite-active': favoriteMemberships[model.id]?.length,
+              'favorite-direct-remove': favoriteMemberships[model.id]?.length === 1,
+            }"
             type="button"
             :title="favoriteMemberships[model.id]?.map((list) => list.name).join(', ')"
-            @click="openFavoriteDialog(model)"
+            @click="handleFavoriteClick(model)"
           >
             <span aria-hidden="true">
               {{ favoriteMemberships[model.id]?.length ? "♥" : "♡" }}
             </span>
-            <span>{{ favoriteButtonLabel(model.id) }}</span>
+            <span class="favorite-button-label">{{ favoriteButtonLabel(model.id) }}</span>
+            <span
+              v-if="favoriteMemberships[model.id]?.length === 1"
+              class="favorite-button-hover-label"
+            >Remove from list</span>
           </button>
           <button
             v-if="auth.user?.role === 'admin' && model.status === 'missing'"
@@ -781,6 +826,7 @@ onMounted(async () => {
       :existing-model-lists="favoriteModel ? favoriteMemberships[favoriteModel.id] : []"
       @close="favoriteModel = null"
       @saved="favoriteSaved"
+      @removed="favoriteRemoved"
     />
   </main>
 </template>

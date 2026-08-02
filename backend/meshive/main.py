@@ -15,6 +15,8 @@ from meshive.api.catalog import router as catalog_router
 from meshive.api.creator_links import router as creator_links_router
 from meshive.api.favorites import router as favorites_router
 from meshive.api.library_sources import router as library_sources_router
+from meshive.api.metadata import admin_router as metadata_admin_router
+from meshive.api.metadata import router as metadata_router
 from meshive.api.recovery import router as recovery_router
 from meshive.api.scans import router as scans_router
 from meshive.api.setup import router as setup_router
@@ -23,12 +25,14 @@ from meshive.api.tags import admin_router as tags_admin_router
 from meshive.api.tags import router as tags_router
 from meshive.api.users import router as users_router
 from meshive.config import get_settings
+from meshive.security import is_cross_site_api_request
 from meshive.services.backup_scheduler import start_scheduler, stop_scheduler
 from meshive.services.scan_scheduler import (
     start_scheduler as start_scan_scheduler,
+)
+from meshive.services.scan_scheduler import (
     stop_scheduler as stop_scan_scheduler,
 )
-from meshive.security import is_cross_site_api_request
 
 settings = get_settings()
 
@@ -94,6 +98,8 @@ app.include_router(catalog_admin_router, prefix="/api")
 app.include_router(creator_links_router, prefix="/api")
 app.include_router(favorites_router, prefix="/api")
 app.include_router(library_sources_router, prefix="/api")
+app.include_router(metadata_router, prefix="/api")
+app.include_router(metadata_admin_router, prefix="/api")
 app.include_router(recovery_router, prefix="/api")
 app.include_router(setup_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
@@ -107,6 +113,14 @@ frontend_assets = frontend_dist / "assets"
 
 if frontend_assets.is_dir():
     app.mount("/assets", StaticFiles(directory=frontend_assets), name="frontend-assets")
+
+frontend_favorite_fallbacks = frontend_dist / "favorite-fallbacks"
+if frontend_favorite_fallbacks.is_dir():
+    app.mount(
+        "/favorite-fallbacks",
+        StaticFiles(directory=frontend_favorite_fallbacks),
+        name="favorite-fallbacks",
+    )
 
 
 @app.get("/meshhive_logo.png", include_in_schema=False)

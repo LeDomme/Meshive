@@ -38,5 +38,6 @@ def test_existing_users_survive_favorite_list_migration(tmp_path, monkeypatch) -
         assert username == "Viewer"
         assert "favorite_lists" in table_names
         assert "favorite_list_items" in table_names
+        assert "metadata_artwork" in table_names
     finally:
         get_settings.cache_clear()

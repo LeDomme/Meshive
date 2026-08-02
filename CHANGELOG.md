@@ -12,12 +12,23 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Added private per-user favorite lists for models, creators, franchises,
   series, collections, and tags, including catalogue links and unavailable-item
   handling.
+- Added direct catalogue-category assignment from favorite lists, positive
+  saved states with one-click removal, and multi-list management in the save
+  dialog.
+- Added Meshive-themed fallback artwork and administrator-managed custom WebP
+  artwork for creators, franchises, and collections.
+
+### Changed
+
+- Renamed the Creator administration section to Metadata and combined creator
+  links with catalogue artwork management.
 
 ### Upgrade notes
 
-- Startup automatically applies the model-variant and favorite-list migrations.
+- Startup automatically applies the model-variant, favorite-list, and metadata
+  artwork migrations.
 - Favorite lists are stored in Meshive's SQLite database and are included in
-  regular database backups.
+  regular database backups together with custom metadata artwork.
 
 ## [1.1.0] - 2026-08-02
 

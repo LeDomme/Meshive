@@ -15,6 +15,7 @@ dependencies = [
   "pillow>=11,<13",
   "pwdlib[argon2]>=0.2,<1",
   "pydantic-settings>=2.14.2,<3",
+  "python-multipart>=0.0.22,<1",
   "sqlalchemy>=2.0,<3",
   "uvicorn[standard]>=0.51.0,<1",
 ]

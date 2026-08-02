@@ -12,6 +12,7 @@ from meshive.models import (  # noqa: F401
     FavoriteListItem,
     LibraryModel,
     LibrarySource,
+    MetadataArtwork,
     ModelImage,
     ScanIssue,
     ScanRun,

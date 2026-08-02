@@ -16,7 +16,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   close: []
-  saved: [list: FavoriteListSummary, target: FavoriteTarget]
+  saved: [list: FavoriteListSummary, target: FavoriteTarget, itemId: number]
+  removed: [list: FavoriteMembershipList, target: FavoriteTarget]
 }>()
 
 const lists = ref<FavoriteListSummary[]>([])
@@ -25,6 +26,7 @@ const selectedTargetKey = ref("")
 const newListName = ref("")
 const loading = ref(false)
 const saving = ref(false)
+const removingItemId = ref<number | null>(null)
 const errorMessage = ref("")
 const saveComplete = ref(false)
 const savedMessage = ref("")
@@ -32,6 +34,9 @@ const dialog = ref<HTMLElement | null>(null)
 let closeTimer: number | undefined
 const selectedTarget = computed(() =>
   props.targets.find((item) => item.key === selectedTargetKey.value),
+)
+const selectedTargetMemberships = computed(() =>
+  selectedTarget.value?.entity_type === "model" ? props.existingModelLists ?? [] : [],
 )
 
 function listAlreadyContainsTarget(listId: number) {
@@ -86,7 +91,8 @@ async function save() {
   saving.value = true
   errorMessage.value = ""
   try {
-    await apiRequest<FavoriteListItem>(`/api/favorite-lists/${list.id}/items`, {
+    const createdItem = await apiRequest<FavoriteListItem>(
+      `/api/favorite-lists/${list.id}/items`, {
       method: "POST",
       body: JSON.stringify({
         entity_type: target.entity_type,
@@ -94,20 +100,43 @@ async function save() {
         tag_id: target.tag_id,
         value: target.value,
       }),
-    })
+      },
+    )
     list.item_count += 1
     saving.value = false
     savedMessage.value = `${target.label} saved to ${list.name}`
     saveComplete.value = true
     closeTimer = window.setTimeout(() => {
       saveComplete.value = false
-      emit("saved", list, target)
+      emit("saved", list, target, createdItem.id)
       emit("close")
     }, 850)
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "Unable to save the favorite"
   } finally {
     saving.value = false
+  }
+}
+
+async function removeMembership(membership: FavoriteMembershipList) {
+  const target = selectedTarget.value
+  if (!target || !membership.item_id) return
+  removingItemId.value = membership.item_id
+  errorMessage.value = ""
+  try {
+    await apiRequest<void>(
+      `/api/favorite-lists/${membership.id}/items/${membership.item_id}`,
+      { method: "DELETE" },
+    )
+    const list = lists.value.find((item) => item.id === membership.id)
+    if (list) list.item_count = Math.max(0, list.item_count - 1)
+    emit("removed", membership, target)
+    selectAvailableList()
+  } catch (error) {
+    errorMessage.value =
+      error instanceof ApiError ? error.message : "Unable to remove the favorite"
+  } finally {
+    removingItemId.value = null
   }
 }
 
@@ -180,6 +209,24 @@ onBeforeUnmount(() => {
               </option>
             </select>
           </label>
+          <section v-if="selectedTargetMemberships.length" class="favorite-saved-lists">
+            <span>Already saved in</span>
+            <div
+              v-for="membership in selectedTargetMemberships"
+              :key="membership.id"
+              class="favorite-saved-list-row"
+            >
+              <span>{{ membership.name }}</span>
+              <button
+                class="danger-button"
+                type="button"
+                :disabled="removingItemId === membership.item_id"
+                @click="removeMembership(membership)"
+              >
+                {{ removingItemId === membership.item_id ? "Removing..." : "Remove" }}
+              </button>
+            </div>
+          </section>
           <label v-if="lists.length">
             <span>To list</span>
             <select v-model="selectedListId" required>
