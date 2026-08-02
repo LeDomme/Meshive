@@ -37,10 +37,11 @@ saved in exactly one list, hovering changes the action to **Remove from list**
 and clicking removes it immediately. Models saved in multiple lists open the
 management dialog so that the intended list remains explicit.
 
-Creator, Franchise, and Collection cards use Meshive-themed fallback artwork.
-Administrators can replace it per catalogue value under **Administration →
-Metadata**. Uploaded images are validated, resized to at most 1600 pixels per
-edge, encoded as WebP, and stored in SQLite.
+Creator, Franchise, Series, Collection, and Tag cards use Meshive-themed
+fallback artwork. Administrators can replace artwork for Creators, Franchises,
+and Collections per catalogue value under **Administration → Metadata**.
+Uploaded images are validated, resized to at most 1600 pixels per edge, encoded
+as WebP, and stored in SQLite.
 
 Deleting a list does not change any model, archive, image, tag, or source file.
 

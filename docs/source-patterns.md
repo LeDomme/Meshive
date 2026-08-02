@@ -64,9 +64,9 @@ versions of the same canonical model. The captured value is free-form; Meshive
 does not require words such as `Variant` or `Edition`.
 
 The recommended convention places a recognized identifier before the free-form
-value. `{variant_identifier}` accepts `variant`, `version`, `edition`, and
-`revision` without regard to capitalization. These patterns cover models both
-with and without a series:
+value. `{variant_identifier}` accepts `variant`, `version`, `edition`,
+`revision`, `rev`, and `ver` without regard to capitalization. These patterns
+cover models both with and without a series:
 
 ```text
 {franchise} - {series} - {model} - {variant_identifier} {variant} - by {creator}
