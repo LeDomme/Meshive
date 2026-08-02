@@ -700,6 +700,7 @@ onMounted(async () => {
           <button
             class="secondary-button model-favorite-button"
             :class="{
+              'favorite-add-ready': !favoriteMemberships[model.id]?.length,
               'favorite-active': favoriteMemberships[model.id]?.length,
               'favorite-direct-remove': favoriteMemberships[model.id]?.length === 1,
             }"
@@ -712,7 +713,11 @@ onMounted(async () => {
             </span>
             <span class="favorite-button-label">{{ favoriteButtonLabel(model.id) }}</span>
             <span
-              v-if="favoriteMemberships[model.id]?.length === 1"
+              v-if="!favoriteMemberships[model.id]?.length"
+              class="favorite-button-hover-label"
+            >Choose a list</span>
+            <span
+              v-else-if="favoriteMemberships[model.id]?.length === 1"
               class="favorite-button-hover-label"
             >Remove from list</span>
           </button>

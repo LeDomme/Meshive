@@ -1865,6 +1865,60 @@ summary {
   display: none;
 }
 
+.favorite-add-ready {
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease,
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+
+.favorite-add-ready > span:first-child {
+  color: #67e8f9;
+  transition: color 140ms ease, text-shadow 140ms ease, transform 140ms ease;
+}
+
+.favorite-add-ready > span:first-child {
+  font-size: 0;
+}
+
+.favorite-add-ready > span:first-child::before {
+  content: "\2661";
+  font-size: 1rem;
+}
+
+.favorite-add-ready:hover,
+.favorite-add-ready:focus-visible {
+  border-color: rgb(34 211 238 / 75%);
+  box-shadow: 0 0 0 1px rgb(34 211 238 / 16%), 0 0.65rem 1.5rem rgb(2 132 199 / 18%);
+  color: #ecfeff;
+  background: rgb(8 145 178 / 26%);
+  transform: translateY(-1px);
+}
+
+.favorite-add-ready:hover > span:first-child,
+.favorite-add-ready:focus-visible > span:first-child {
+  color: #5eead4;
+  text-shadow: 0 0 12px rgb(45 212 191 / 58%);
+  transform: scale(1.16);
+}
+
+.favorite-add-ready:hover > span:first-child::before,
+.favorite-add-ready:focus-visible > span:first-child::before {
+  content: "\2665";
+}
+
+.favorite-add-ready:hover .favorite-button-label,
+.favorite-add-ready:focus-visible .favorite-button-label {
+  display: none;
+}
+
+.favorite-add-ready:hover .favorite-button-hover-label,
+.favorite-add-ready:focus-visible .favorite-button-hover-label {
+  display: inline;
+}
+
 .favorite-direct-remove:hover,
 .favorite-direct-remove:focus-visible {
   border-color: rgb(251 113 133 / 62%);
@@ -1886,6 +1940,13 @@ summary {
 .favorite-direct-remove:hover .favorite-button-hover-label,
 .favorite-direct-remove:focus-visible .favorite-button-hover-label {
   display: inline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .favorite-add-ready,
+  .favorite-add-ready > span:first-child {
+    transition: none;
+  }
 }
 
 .tag-list {

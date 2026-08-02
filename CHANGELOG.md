@@ -30,6 +30,8 @@ All notable changes to Meshive are documented in this file. Releases follow
   or favorite-list references.
 - Tag descriptions are shown in a compact tooltip when a tag is hovered or
   focused with the keyboard.
+- Unsaved model favorite buttons now provide a highlighted add state on hover
+  and keyboard focus.
 
 ### Upgrade notes
 
