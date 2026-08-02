@@ -3,6 +3,46 @@
 All notable changes to Meshive are documented in this file. Releases follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-08-02
+
+### Added
+
+- Added exact model-name filtering, searchable filter menus, dependent facet
+  values, on-demand full-text search, and expanded catalogue pagination.
+- Added filter-aware links for model metadata and tags on detail pages while
+  preserving catalogue state when navigating back.
+- Added administrator-managed creator metadata with multiple typed links for
+  websites, memberships, marketplaces, and custom destinations.
+- Added a privacy-conscious active-session overview with individual revocation
+  and an option to sign out all other sessions.
+- Added optional verified email addresses and secure, rate-limited password
+  recovery through configurable SMTP delivery.
+- Added email-verification controls for users and administrators plus a secure
+  container-side emergency password-reset command.
+
+### Changed
+
+- Stable container tags remain release-only, while successful builds from
+  `main` publish the `edge` development tag.
+- Improved responsive administration layouts and catalogue filter controls.
+- Updated the pinned `pip-audit` development dependency to 2.10.1.
+
+### Security
+
+- Password-reset and email-verification tokens are single-use, expire, and are
+  invalidated with affected sessions after sensitive account changes.
+- Recovery requests return neutral responses and are rate limited to avoid
+  account discovery and mail abuse.
+- Database restores invalidate all sessions and outstanding action tokens.
+
+### Upgrade notes
+
+- Startup automatically applies the creator-link, session-metadata, and account
+  recovery migrations.
+- Before upgrading, create and validate a backup. Meshive 1.0.1 must not be run
+  against the migrated 1.1 schema; restore the pre-upgrade database before
+  rolling back to the previous image.
+
 ## [1.0.1] - 2026-08-01
 
 ### Changed
@@ -54,5 +94,6 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
+[1.1.0]: ../../compare/v1.0.1...v1.1.0
 [1.0.1]: ../../compare/v1.0.0...v1.0.1
 [1.0.0]: ../../releases/tag/v1.0.0

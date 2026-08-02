@@ -11,10 +11,10 @@ HTTP range requests for large files and resumable transfers.
 
 ## Project status
 
-Meshive 1.0 is the first stable release. The application is intended for a
-single self-hosted instance and has been validated with multi-terabyte,
-read-only model libraries. Architecture, operating procedures, and the
-completed MVP scope live in the [`docs`](docs/) directory.
+Meshive 1.1 is the current stable release series. The application is intended
+for a single self-hosted instance and has been validated with multi-terabyte,
+read-only model libraries. Architecture and operating procedures live in the
+[`docs`](docs/) directory.
 
 ## Stack
 
@@ -76,7 +76,7 @@ HTTPS and production mode whenever Meshive is exposed beyond that boundary.
 To build the image locally instead, run `docker build -t meshive:local .` and
 set `MESHIVE_IMAGE=meshive:local` in `.env` before starting Compose.
 
-Stable deployments should use a concrete semantic tag such as `1.0.1` or an
+Stable deployments should use a concrete semantic tag such as `1.1.0` or an
 immutable digest. `latest` is updated only by a stable version tag. The `edge`
 tag follows successful builds from `main` and is intended for testing upcoming
 changes rather than production deployments.
@@ -102,7 +102,7 @@ container builds install the required build dependencies with
 high-severity npm advisories before publishing an image. Runtime Python
 dependencies are checked with `pip-audit`.
 
-Dependabot checks npm, Python, Docker, and GitHub Actions dependencies weekly.
+Dependabot checks npm, Python, Docker, and GitHub Actions dependencies monthly.
 Workflow actions are pinned to immutable commit SHAs, with their release tags
 retained as comments so automated updates can maintain them.
 
