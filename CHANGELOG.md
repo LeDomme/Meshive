@@ -3,6 +3,22 @@
 All notable changes to Meshive are documented in this file. Releases follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Added optional model variants with case-insensitive Variant, Version,
+  Edition, Revision, Rev, and Ver identifiers in source name patterns.
+- Added private per-user favorite lists for models, creators, franchises,
+  series, collections, and tags, including catalogue links and unavailable-item
+  handling.
+
+### Upgrade notes
+
+- Startup automatically applies the model-variant and favorite-list migrations.
+- Favorite lists are stored in Meshive's SQLite database and are included in
+  regular database backups.
+
 ## [1.1.0] - 2026-08-02
 
 ### Added

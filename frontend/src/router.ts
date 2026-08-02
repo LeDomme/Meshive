@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from "vue-router"
 import { useAuthStore } from "./stores/auth"
 import HomeView from "./views/HomeView.vue"
 import ForgotPasswordView from "./views/ForgotPasswordView.vue"
+import FavoriteListsView from "./views/FavoriteListsView.vue"
 import LoginView from "./views/LoginView.vue"
 import ModelDetailView from "./views/ModelDetailView.vue"
 import NotFoundView from "./views/NotFoundView.vue"
@@ -31,6 +32,12 @@ export const router = createRouter({
       name: "account",
       component: PasswordView,
       meta: { requiresAuth: true, allowsPasswordChange: true },
+    },
+    {
+      path: "/favorites",
+      name: "favorite-lists",
+      component: FavoriteListsView,
+      meta: { requiresAuth: true },
     },
     {
       path: "/models/:id",
