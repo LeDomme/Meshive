@@ -1,7 +1,7 @@
 # Standalone deployment with a directly published HTTP port.
 services:
   meshive:
-    image: ${MESHIVE_IMAGE:-ghcr.io/ledomme/meshive:1.0.1}
+    image: ${MESHIVE_IMAGE:-ghcr.io/ledomme/meshive:1.1.0}
     container_name: meshive
     restart: unless-stopped
     init: true
