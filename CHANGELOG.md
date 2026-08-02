@@ -25,6 +25,9 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 - Renamed the Creator administration section to Metadata and combined creator
   links with catalogue artwork management.
+- Existing tags can now be renamed and have their colour or description
+  corrected without losing model assignments, folder rules, automatic rules,
+  or favorite-list references.
 
 ### Upgrade notes
 

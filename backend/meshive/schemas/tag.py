@@ -6,7 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field
 class TagCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=1000)
+
+
+class TagUpdate(TagCreate):
+    pass
 
 
 class TagRead(TagCreate):

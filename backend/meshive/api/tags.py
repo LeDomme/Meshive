@@ -22,6 +22,7 @@ from meshive.schemas.tag import (
     FolderRuleRead,
     TagCreate,
     TagRead,
+    TagUpdate,
 )
 from meshive.services.library_paths import PathPatternError, normalize_relative_path
 from meshive.services.tags import (
@@ -43,8 +44,31 @@ def list_tags(session: Session = Depends(get_session)) -> list[Tag]:
 
 @admin_router.post("/tags", response_model=TagRead, status_code=201)
 def create_tag(payload: TagCreate, session: Session = Depends(get_session)) -> Tag:
-    tag = Tag(name=payload.name.strip(), color=payload.color, description=payload.description)
+    name, description = _tag_values(payload)
+    tag = Tag(name=name, color=payload.color, description=description)
     session.add(tag)
+    try:
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(
+            status_code=409, detail="A tag with this name already exists"
+        ) from error
+    session.refresh(tag)
+    return tag
+
+
+@admin_router.put("/tags/{tag_id}", response_model=TagRead)
+def update_tag(
+    tag_id: int,
+    payload: TagUpdate,
+    session: Session = Depends(get_session),
+) -> Tag:
+    tag = session.get(Tag, tag_id)
+    if tag is None:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    tag.name, tag.description = _tag_values(payload)
+    tag.color = payload.color
     try:
         session.commit()
     except IntegrityError as error:
@@ -297,6 +321,14 @@ def _automatic_pattern(value: str) -> tuple[str, str]:
     if not pattern_key:
         raise HTTPException(status_code=422, detail="Pattern cannot be empty")
     return pattern, pattern_key
+
+
+def _tag_values(payload: TagCreate | TagUpdate) -> tuple[str, str | None]:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Tag name cannot be empty")
+    description = payload.description.strip() if payload.description else None
+    return name, description
 
 
 def _automatic_rule_read(

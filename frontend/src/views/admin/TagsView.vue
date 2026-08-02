@@ -29,6 +29,14 @@ const rules = ref<Rule[]>([])
 const automaticRules = ref<AutomaticRule[]>([])
 const name = ref("")
 const color = ref("#5eead4")
+const description = ref("")
+const editingTagId = ref<number | null>(null)
+const editTagName = ref("")
+const editTagColor = ref("#5eead4")
+const editTagDescription = ref("")
+const tagFeedback = ref("")
+const tagError = ref("")
+const tagWorking = ref(false)
 const sourceId = ref("")
 const tagId = ref("")
 const path = ref("")
@@ -48,14 +56,76 @@ async function load() {
   ])
 }
 async function createTag() {
-  await apiRequest("/api/admin/tags", { method: "POST", body: JSON.stringify({ name: name.value, color: color.value, description: null }) })
-  name.value = ""
-  await load()
+  tagWorking.value = true
+  tagFeedback.value = ""
+  tagError.value = ""
+  try {
+    await apiRequest("/api/admin/tags", {
+      method: "POST",
+      body: JSON.stringify({
+        name: name.value,
+        color: color.value,
+        description: description.value || null,
+      }),
+    })
+    name.value = ""
+    description.value = ""
+    tagFeedback.value = "Tag created."
+    await load()
+  } catch (error) {
+    tagError.value = error instanceof Error ? error.message : "Unable to create tag"
+  } finally {
+    tagWorking.value = false
+  }
+}
+function editTag(tag: Tag) {
+  editingTagId.value = tag.id
+  editTagName.value = tag.name
+  editTagColor.value = tag.color || "#5eead4"
+  editTagDescription.value = tag.description || ""
+  tagFeedback.value = ""
+  tagError.value = ""
+}
+function cancelTagEdit() {
+  editingTagId.value = null
+}
+async function saveTag(tagId: number) {
+  tagWorking.value = true
+  tagFeedback.value = ""
+  tagError.value = ""
+  try {
+    await apiRequest(`/api/admin/tags/${tagId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: editTagName.value,
+        color: editTagColor.value,
+        description: editTagDescription.value || null,
+      }),
+    })
+    editingTagId.value = null
+    tagFeedback.value = "Tag updated. Existing assignments and rules were preserved."
+    await load()
+  } catch (error) {
+    tagError.value = error instanceof Error ? error.message : "Unable to update tag"
+  } finally {
+    tagWorking.value = false
+  }
 }
 async function deleteTag(id: number) {
   if (!confirm("Delete this tag and all its assignments?")) return
-  await apiRequest(`/api/admin/tags/${id}`, { method: "DELETE" })
-  await load()
+  tagWorking.value = true
+  tagFeedback.value = ""
+  tagError.value = ""
+  try {
+    await apiRequest(`/api/admin/tags/${id}`, { method: "DELETE" })
+    if (editingTagId.value === id) editingTagId.value = null
+    tagFeedback.value = "Tag and its assignments were deleted."
+    await load()
+  } catch (error) {
+    tagError.value = error instanceof Error ? error.message : "Unable to delete tag"
+  } finally {
+    tagWorking.value = false
+  }
 }
 async function createRule() {
   await apiRequest("/api/admin/folder-tag-rules", { method: "POST", body: JSON.stringify({
@@ -153,15 +223,81 @@ onMounted(load)
     <section class="admin-grid">
       <div class="panel">
         <h2>Tags</h2>
+        <p v-if="tagFeedback" class="success-panel" aria-live="polite">
+          {{ tagFeedback }}
+        </p>
+        <p v-if="tagError" class="form-error" role="alert">{{ tagError }}</p>
         <form class="source-form" @submit.prevent="createTag">
           <label><span>Name</span><input v-model="name" required></label>
           <label><span>Colour</span><input v-model="color" type="color"></label>
-          <button class="primary-button">Create tag</button>
+          <label>
+            <span>Description</span>
+            <textarea
+              v-model="description"
+              maxlength="1000"
+              rows="2"
+              placeholder="Optional description"
+            ></textarea>
+          </label>
+          <button class="primary-button" :disabled="tagWorking">Create tag</button>
         </form>
-        <div class="source-list">
-          <div v-for="tag in tags" :key="tag.id" class="source-row">
-            <span class="tag-chip" :style="{ '--tag-color': tag.color || '#5eead4' }">{{ tag.name }}</span>
-            <button class="danger-button" @click="deleteTag(tag.id)">Delete</button>
+        <div class="source-list tag-admin-list">
+          <div v-for="tag in tags" :key="tag.id" class="tag-admin-item">
+            <form
+              v-if="editingTagId === tag.id"
+              class="source-form tag-edit-form"
+              @submit.prevent="saveTag(tag.id)"
+            >
+              <label>
+                <span>Name</span>
+                <input v-model="editTagName" required maxlength="80">
+              </label>
+              <label>
+                <span>Colour</span>
+                <input v-model="editTagColor" type="color">
+              </label>
+              <label class="tag-edit-description">
+                <span>Description</span>
+                <textarea
+                  v-model="editTagDescription"
+                  maxlength="1000"
+                  rows="2"
+                  placeholder="Optional description"
+                ></textarea>
+              </label>
+              <div class="row-actions tag-edit-actions">
+                <button class="primary-button" :disabled="tagWorking">Save changes</button>
+                <button
+                  class="secondary-button"
+                  type="button"
+                  :disabled="tagWorking"
+                  @click="cancelTagEdit"
+                >Cancel</button>
+              </div>
+            </form>
+            <div v-else class="source-row tag-admin-row">
+              <div class="tag-admin-summary">
+                <span
+                  class="tag-chip"
+                  :style="{ '--tag-color': tag.color || '#5eead4' }"
+                >{{ tag.name }}</span>
+                <small v-if="tag.description">{{ tag.description }}</small>
+              </div>
+              <div class="row-actions">
+                <button
+                  class="secondary-button"
+                  type="button"
+                  :disabled="tagWorking"
+                  @click="editTag(tag)"
+                >Edit</button>
+                <button
+                  class="danger-button"
+                  type="button"
+                  :disabled="tagWorking"
+                  @click="deleteTag(tag.id)"
+                >Delete</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
