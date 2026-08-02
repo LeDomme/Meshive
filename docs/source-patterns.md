@@ -63,20 +63,25 @@ Use the optional `{variant}` value when a creator publishes several distinct
 versions of the same canonical model. The captured value is free-form; Meshive
 does not require words such as `Variant` or `Edition`.
 
-For example, these patterns keep `Psylocke` as the model while capturing the
-text in brackets as its variant:
+The recommended convention places a recognized identifier before the free-form
+value. `{variant_identifier}` accepts `variant`, `version`, `edition`, and
+`revision` without regard to capitalization. These patterns cover models both
+with and without a series:
 
 ```text
-{franchise} - {series} - {model} - [{variant}] - by {creator}
+{franchise} - {series} - {model} - {variant_identifier} {variant} - by {creator}
+{franchise} - {model} - {variant_identifier} {variant} - by {creator}
 {franchise} - {series} - {model} - by {creator}
+{franchise} - {model} - by {creator}
 ```
 
 They parse all of the following without changing the canonical model name:
 
 ```text
-Marvel - X-Men - Psylocke - [06] - by E.S Monster
-Marvel - X-Men - Psylocke - [2024] - by E.S Monster
-Marvel - X-Men - Psylocke - [Chibi version] - by E.S Monster
+Marvel - X-Men - Psylocke - variant 06 - by E.S Monster
+Marvel - X-Men - Psylocke - Edition 2024 - by E.S Monster
+Street Fighter - Cammy - variant Beach - by E.S Monster
+Street Fighter - Cammy - VERSION Chibi - by E.S Monster
 ```
 
 The model filter contains one `Psylocke` option and selects every variant.
@@ -93,10 +98,12 @@ the first one would always win for a matching folder:
 ```
 
 The pattern preview warns about this overlap. Add a source-specific literal
-marker to make the layouts distinct, for example `[{variant}]`,
-`Variant {variant}`, or `Edition {variant}`. Put variant alternatives before
-their corresponding non-variant fallbacks and keep a broad `{model}` fallback
-last.
+marker to make the layouts distinct. Meshive recommends
+`{variant_identifier} {variant}` for consistent archives. A custom fixed marker
+such as `style {variant}` or `[{variant}]` remains supported; fixed literals are
+also matched case-insensitively. Spacing must still match the folder names. Put
+variant alternatives before their corresponding non-variant fallbacks and keep
+a broad `{model}` fallback last.
 
 ## Optional directory levels
 

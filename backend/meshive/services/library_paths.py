@@ -13,8 +13,10 @@ ALLOWED_VARIABLES = frozenset(
         "model_folder",
         "series",
         "variant",
+        "variant_identifier",
     }
 )
+VARIANT_IDENTIFIERS = ("variant", "version", "edition", "revision")
 VARIABLE_PATTERN = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 
 
@@ -78,6 +80,9 @@ def validate_model_pattern(value: str | None) -> str | None:
         pattern = _normalize_pattern(line)
         if "/" in pattern:
             raise PathPatternError("Model-name patterns cannot contain path separators")
+        variables = set(VARIABLE_PATTERN.findall(pattern))
+        if "variant_identifier" in variables and "variant" not in variables:
+            raise PathPatternError("{variant_identifier} requires {variant}")
         _compile_pattern(pattern)
         patterns.append(pattern)
     return "\n".join(patterns)
@@ -102,7 +107,7 @@ def model_pattern_warnings(value: str | None) -> list[str]:
             warnings.append(
                 f"Patterns {left_index + 1} and {right_index + 1} are structurally "
                 "ambiguous around {variant}; the first matching pattern wins. "
-                "Add a literal marker such as [{variant}] if both layouts occur."
+                "Use {variant_identifier} {variant} or add another literal marker."
             )
     return warnings
 
@@ -196,12 +201,16 @@ def _compile_pattern(pattern: str) -> re.Pattern[str]:
         name = match.group(1)
         if name in seen:
             chunks.append(f"(?P={name})")
+        elif name == "variant_identifier":
+            alternatives = "|".join(re.escape(value) for value in VARIANT_IDENTIFIERS)
+            chunks.append(f"(?P<{name}>{alternatives})")
+            seen.add(name)
         else:
             chunks.append(f"(?P<{name}>[^/]+?)")
             seen.add(name)
         position = match.end()
     chunks.append(re.escape(pattern[position:]))
-    return re.compile("".join(chunks))
+    return re.compile("".join(chunks), flags=re.IGNORECASE)
 
 
 def _merge_values(target: dict[str, str], incoming: dict[str, str | None]) -> None:

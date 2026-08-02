@@ -80,22 +80,25 @@ def test_parses_series_below_a_broad_franchise() -> None:
     assert values["model"] == "Jasmin"
 
 
-def test_parses_free_form_model_variant() -> None:
+@pytest.mark.parametrize("identifier", ["variant", "Version", "EDITION", "revision"])
+def test_parses_free_form_model_variant(identifier: str) -> None:
     _, values = parse_library_path(
         directory_pattern="{franchise}/{model_folder}",
         model_pattern=(
-            "{franchise} - {series} - {model} - [{variant}] - by {creator}\n"
+            "{franchise} - {series} - {model} - "
+            "{variant_identifier} {variant} - by {creator}\n"
             "{franchise} - {series} - {model} - by {creator}"
         ),
         relative_path=(
-            "Marvel/Marvel - X-Men - Psylocke - [Chibi version] - by E.S Monster"
+            f"Marvel/Marvel - X-Men - Psylocke - {identifier} Chibi - BY E.S Monster"
         ),
     )
 
     assert values["franchise"] == "Marvel"
     assert values["series"] == "X-Men"
     assert values["model"] == "Psylocke"
-    assert values["variant"] == "Chibi version"
+    assert values["variant_identifier"] == identifier
+    assert values["variant"] == "Chibi"
     assert values["creator"] == "E.S Monster"
 
 
@@ -107,12 +110,23 @@ def test_warns_about_structurally_ambiguous_variant_patterns() -> None:
 
     assert len(warnings) == 1
     assert "Patterns 1 and 2" in warnings[0]
-    assert "[{variant}]" in warnings[0]
+    assert "{variant_identifier} {variant}" in warnings[0]
 
     assert model_pattern_warnings(
         "{franchise} - {series} - {model} - by {creator}\n"
-        "{franchise} - {model} - [{variant}] - by {creator}"
+        "{franchise} - {model} - {variant_identifier} {variant} - by {creator}"
     ) == []
+
+
+def test_variant_identifier_requires_variant_value() -> None:
+    with pytest.raises(PathPatternError, match="requires"):
+        parse_library_path(
+            directory_pattern="{franchise}/{model_folder}",
+            model_pattern=(
+                "{franchise} - {model} - {variant_identifier} - by {creator}"
+            ),
+            relative_path="Marvel/Marvel - Psylocke - variant - by Example",
+        )
 
 
 def test_tries_deeper_directory_layout_before_standard_layout() -> None:
