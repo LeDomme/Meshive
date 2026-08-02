@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from "vue-router"
 
 import { ApiError, apiRequest } from "../api"
 import FavoriteSaveDialog from "../components/FavoriteSaveDialog.vue"
+import TagChip from "../components/TagChip.vue"
 import {
   favoriteTargetsForModel,
   type FavoriteListSummary,
@@ -508,11 +509,12 @@ onBeforeUnmount(() => {
             <dt>Tags</dt>
             <dd class="model-fact-tags">
               <div v-if="model.tags.length" class="tag-list">
-                <span
+                <TagChip
                   v-for="tag in model.tags"
                   :key="tag.id"
-                  class="tag-chip"
-                  :style="{ '--tag-color': tag.color || '#5eead4' }"
+                  :color="tag.color"
+                  :description="tag.description"
+                  :focusable="false"
                 >
                   <RouterLink
                     class="tag-chip-link"
@@ -526,7 +528,7 @@ onBeforeUnmount(() => {
                     :aria-label="`Remove ${tag.name} tag`"
                     @click="removeTag(tag)"
                   >×</button>
-                </span>
+                </TagChip>
               </div>
               <span v-else class="muted">None</span>
             </dd>

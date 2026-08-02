@@ -7,6 +7,7 @@ import AccountMenu from "../components/AccountMenu.vue"
 import BrandLogo from "../components/BrandLogo.vue"
 import FavoriteSaveDialog from "../components/FavoriteSaveDialog.vue"
 import SearchableFilter from "../components/SearchableFilter.vue"
+import TagChip from "../components/TagChip.vue"
 import {
   favoriteTargetsForModel,
   type FavoriteListSummary,
@@ -678,12 +679,12 @@ onMounted(async () => {
           </p>
           <p class="model-creator">{{ model.creator || "Unknown creator" }}</p>
           <div v-if="model.tags.length" class="tag-list">
-            <span
+            <TagChip
               v-for="tag in model.tags"
               :key="tag.id"
-              class="tag-chip"
-              :style="{ '--tag-color': tag.color || '#5eead4' }"
-            >{{ tag.name }}</span>
+              :color="tag.color"
+              :description="tag.description"
+            >{{ tag.name }}</TagChip>
           </div>
           <p class="archive-meta">
             <span v-if="model.archive_count > 1">

@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue"
 import { apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
+import TagChip from "../../components/TagChip.vue"
 
 interface Tag { id: number; name: string; color: string | null; description: string | null }
 interface Source { id: number; name: string }
@@ -277,10 +278,10 @@ onMounted(load)
             </form>
             <div v-else class="source-row tag-admin-row">
               <div class="tag-admin-summary">
-                <span
-                  class="tag-chip"
-                  :style="{ '--tag-color': tag.color || '#5eead4' }"
-                >{{ tag.name }}</span>
+                <TagChip
+                  :color="tag.color"
+                  :description="tag.description"
+                >{{ tag.name }}</TagChip>
                 <small v-if="tag.description">{{ tag.description }}</small>
               </div>
               <div class="row-actions">
