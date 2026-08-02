@@ -5,6 +5,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-02
+
 ### Added
 
 - Added optional model variants with case-insensitive Variant, Version,
@@ -39,6 +41,9 @@ All notable changes to Meshive are documented in this file. Releases follow
   artwork, and automatic-tagging migrations.
 - Favorite lists are stored in Meshive's SQLite database and are included in
   regular database backups together with custom metadata artwork.
+- Before upgrading, create and validate a backup. Meshive 1.1.0 must not be run
+  against a migrated 1.2 database; restore the pre-upgrade backup before
+  rolling back to the previous image.
 
 ## [1.1.0] - 2026-08-02
 
@@ -131,6 +136,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
+[Unreleased]: ../../compare/v1.2.0...HEAD
+[1.2.0]: ../../compare/v1.1.0...v1.2.0
 [1.1.0]: ../../compare/v1.0.1...v1.1.0
 [1.0.1]: ../../compare/v1.0.0...v1.0.1
 [1.0.0]: ../../releases/tag/v1.0.0
