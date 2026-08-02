@@ -174,19 +174,21 @@ onMounted(loadUsers)
             <tr v-for="user in users" :key="user.id">
               <td><input v-model="user.username"></td>
               <td class="user-email-cell">
-                <input v-model="user.email" type="email" autocomplete="off" placeholder="Not configured">
-                <span v-if="user.email" :class="user.email_verified ? 'email-verified' : 'email-unverified'">
-                  {{ user.email_verified ? "Verified" : "Not verified" }}
-                </span>
-                <button
-                  v-if="user.email && !user.email_verified"
-                  class="text-button"
-                  type="button"
-                  :disabled="busyUserId === user.id"
-                  @click="sendVerification(user)"
-                >
-                  Send verification
-                </button>
+                <div class="user-email-control">
+                  <input v-model="user.email" type="email" autocomplete="off" placeholder="Not configured">
+                  <span v-if="user.email" :class="user.email_verified ? 'email-verified' : 'email-unverified'">
+                    {{ user.email_verified ? "Verified" : "Not verified" }}
+                  </span>
+                  <button
+                    v-if="user.email && !user.email_verified"
+                    class="text-button"
+                    type="button"
+                    :disabled="busyUserId === user.id"
+                    @click="sendVerification(user)"
+                  >
+                    Send verification
+                  </button>
+                </div>
               </td>
               <td><select v-model="user.role"><option value="user">User</option><option value="admin">Admin</option></select></td>
               <td><input v-model="passwords[user.id]" type="password" minlength="12" autocomplete="new-password" placeholder="Leave unchanged" title="Setting a temporary password requires the user to change it at next login"></td>

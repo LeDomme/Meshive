@@ -132,11 +132,17 @@ def change_recovery_email(
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> User:
+    rate_key = f"current-password:{user.id}"
+    _enforce_recovery_rate_limit(rate_key, settings)
     if not verify_password(payload.current_password, user.password_hash):
+        recovery_limiter.record_failure(
+            rate_key, window_seconds=settings.auth_rate_limit_window_seconds
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The current password is incorrect",
         )
+    recovery_limiter.clear(rate_key)
     if not settings.email_delivery_enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

@@ -46,3 +46,35 @@ def test_complete_smtp_configuration_enables_email_delivery() -> None:
         smtp_password="mailbox-password",
         smtp_from="meshive@example.com",
     ).email_delivery_enabled is False
+    assert Settings(
+        _env_file=None,
+        public_url="https://user:password@meshive.example",
+        smtp_host="smtp.example",
+        smtp_username="meshive@example.com",
+        smtp_password="mailbox-password",
+        smtp_from="meshive@example.com",
+    ).email_delivery_enabled is False
+
+
+@pytest.mark.parametrize(
+    ("public_url", "smtp_security"),
+    [
+        ("http://meshive.example", "ssl"),
+        ("https://meshive.example", "none"),
+    ],
+)
+def test_production_email_delivery_requires_transport_security(
+    public_url: str, smtp_security: str
+) -> None:
+    settings = Settings(
+        _env_file=None,
+        environment="production",
+        public_url=public_url,
+        smtp_host="smtp.example",
+        smtp_username="meshive@example.com",
+        smtp_password="mailbox-password",
+        smtp_from="meshive@example.com",
+        smtp_security=smtp_security,
+    )
+
+    assert settings.email_delivery_enabled is False

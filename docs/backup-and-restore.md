@@ -65,7 +65,13 @@ by `MESHIVE_BACKUP_DIR`.
 
 Restoring also restores users, passwords, source configuration, tags, and the
 catalogue to the selected point in time. Model files below `/models` are never
-changed.
+changed. All restored login sessions and password-reset or email-verification
+tokens are invalidated, so every user must sign in again and request fresh
+one-time links when needed.
+
+Backups contain account data such as recovery email addresses and password
+hashes. Restrict access to the backup location and protect independently stored
+copies with the encryption and access controls of the underlying storage.
 
 ## Online backup from the container host
 

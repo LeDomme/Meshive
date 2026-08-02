@@ -11,7 +11,7 @@ from meshive.auth.dependencies import (
     get_current_user_allow_password_change,
 )
 from meshive.auth.passwords import DUMMY_HASH, hash_password, verify_password
-from meshive.auth.rate_limit import login_limiter
+from meshive.auth.rate_limit import login_limiter, recovery_limiter
 from meshive.auth.sessions import (
     create_user_session,
     hash_session_token,
@@ -223,12 +223,30 @@ def change_password(
     request: Request,
     user: User = Depends(get_current_user_allow_password_change),
     session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> User:
+    rate_limit_key = f"current-password:{user.id}"
+    retry_after = recovery_limiter.retry_after(
+        rate_limit_key,
+        limit=settings.auth_rate_limit_attempts,
+        window_seconds=settings.auth_rate_limit_window_seconds,
+    )
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many password attempts; try again later",
+            headers={"Retry-After": str(retry_after)},
+        )
     if not verify_password(payload.current_password, user.password_hash):
+        recovery_limiter.record_failure(
+            rate_limit_key,
+            window_seconds=settings.auth_rate_limit_window_seconds,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The current password is incorrect",
         )
+    recovery_limiter.clear(rate_limit_key)
     if verify_password(payload.new_password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -237,7 +255,6 @@ def change_password(
     user.password_hash = hash_password(payload.new_password)
     user.must_change_password = False
     delete_user_action_tokens(session, user.id)
-    settings = get_settings()
     current_token = request.cookies.get(settings.session_cookie_name)
     current_token_hash = hash_session_token(current_token) if current_token else None
     statement = delete(UserSession).where(UserSession.user_id == user.id)

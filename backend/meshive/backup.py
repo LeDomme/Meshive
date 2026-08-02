@@ -168,6 +168,7 @@ def restore_backup(input_path: Path, *, confirmed_stopped: bool) -> Path | None:
                 closing(sqlite3.connect(temporary)) as restored,
             ):
                 backup.backup(restored)
+            _invalidate_restored_authentication(temporary)
             _validate_sqlite_database(temporary)
             _remove_sqlite_sidecars(temporary)
             _remove_sqlite_sidecars(target)
@@ -176,6 +177,25 @@ def restore_backup(input_path: Path, *, confirmed_stopped: bool) -> Path | None:
             _remove_sqlite_file(temporary)
             raise
     return safety_backup
+
+
+def _invalidate_restored_authentication(database: Path) -> None:
+    """Prevent restored sessions and one-time links from becoming valid again."""
+    with closing(sqlite3.connect(database)) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        authentication_tables = {
+            "user_sessions": "DELETE FROM user_sessions",
+            "user_action_tokens": "DELETE FROM user_action_tokens",
+        }
+        for table, statement in authentication_tables.items():
+            if table in tables:
+                connection.execute(statement)
+        connection.commit()
 
 
 def validate_backup(path: Path) -> None:

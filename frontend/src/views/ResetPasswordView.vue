@@ -17,7 +17,6 @@ const successMessage = ref("")
 const submitting = ref(false)
 
 function readRouteToken(): string {
-  if (typeof route.query.token === "string") return route.query.token
   if (!route.hash.startsWith("#token=")) return ""
   try {
     return decodeURIComponent(route.hash.slice(7))
@@ -27,7 +26,7 @@ function readRouteToken(): string {
 }
 
 onMounted(() => {
-  if (route.query.token || route.hash) void router.replace({ name: "reset-password" })
+  if (route.hash) void router.replace({ name: "reset-password" })
 })
 
 async function submit() {
@@ -52,6 +51,7 @@ async function submit() {
     )
     successMessage.value = result.message
     auth.clearLocalSession()
+    token.value = ""
     newPassword.value = ""
     confirmation.value = ""
   } catch (error) {

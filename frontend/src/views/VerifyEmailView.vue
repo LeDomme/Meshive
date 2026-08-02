@@ -15,7 +15,6 @@ const errorMessage = ref("")
 const successMessage = ref("")
 
 function readRouteToken(): string {
-  if (typeof route.query.token === "string") return route.query.token
   if (!route.hash.startsWith("#token=")) return ""
   try {
     return decodeURIComponent(route.hash.slice(7))
@@ -25,7 +24,7 @@ function readRouteToken(): string {
 }
 
 onMounted(async () => {
-  if (route.query.token || route.hash) await router.replace({ name: "verify-email" })
+  if (route.hash) await router.replace({ name: "verify-email" })
   if (!token.value) {
     errorMessage.value = "This verification link is incomplete."
     loading.value = false
@@ -37,6 +36,7 @@ onMounted(async () => {
       body: JSON.stringify({ token: token.value }),
     })
     successMessage.value = result.message
+    token.value = ""
     if (auth.user) await auth.refreshUser()
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "Unable to verify the email address"

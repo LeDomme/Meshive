@@ -613,19 +613,32 @@ h1 {
 }
 
 .user-email-cell {
-  min-width: 15rem;
+  min-width: 22rem;
 }
 
-.user-email-cell .email-verified,
-.user-email-cell .email-unverified {
-  margin-top: 0.4rem;
+.user-email-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.user-email-control input {
+  min-width: 13rem;
+}
+
+.user-email-control .email-verified,
+.user-email-control .email-unverified {
+  flex: 0 0 auto;
   margin-left: 0;
+  white-space: nowrap;
 }
 
-.user-email-cell .text-button {
-  margin-left: 0.25rem;
+.user-email-control .text-button {
+  flex: 0 0 auto;
+  margin-left: 0;
   color: #7dd3fc;
   font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 .admin-grid {
