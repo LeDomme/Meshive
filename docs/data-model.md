@@ -7,6 +7,8 @@ read-only library.
 
 - `User`: local account, password hash, role, active state, and timestamps.
 - `Session`: opaque server-side session with expiry and last use.
+- `FavoriteList`: a private, named list owned by exactly one user.
+- `FavoriteListItem`: a saved model or catalogue facet with a display snapshot.
 - `LibrarySource`: display name, container root, parsing patterns, defaults,
   supported formats, and scan settings.
 - `Creator`: parsed creator identity plus optional manual display override.
@@ -37,6 +39,12 @@ derived from these values later without rereading source archives.
 - Models are marked missing rather than immediately deleted.
 - Parsed metadata and manual overrides are stored separately.
 - Manual and inherited tags are distinct so folder rules can be removed safely.
+- Favorite-list names are unique per user after Unicode-aware normalization.
+- Favorite-list ownership is enforced on every list and item operation.
+- Saved models and tags use foreign keys plus a label snapshot. If the target is
+  deleted, the entry remains visible as unavailable until its owner removes it.
+- Saved Creator, Franchise, Series, and Collection values use normalized keys.
+  They link to the matching catalogue filter while that value still exists.
 - FTS tables are derived indexes and can be rebuilt.
 
 ## Change detection

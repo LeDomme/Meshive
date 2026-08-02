@@ -39,6 +39,9 @@ class User(Base):
     action_tokens: Mapped[list["UserActionToken"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"
     )
+    favorite_lists: Mapped[list["FavoriteList"]] = relationship(  # noqa: F821
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     @property
     def email_verified(self) -> bool:

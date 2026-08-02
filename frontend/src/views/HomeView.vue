@@ -5,7 +5,9 @@ import { RouterLink, useRoute, useRouter } from "vue-router"
 import { ApiError, apiRequest } from "../api"
 import AccountMenu from "../components/AccountMenu.vue"
 import BrandLogo from "../components/BrandLogo.vue"
+import FavoriteSaveDialog from "../components/FavoriteSaveDialog.vue"
 import SearchableFilter from "../components/SearchableFilter.vue"
+import { favoriteTargetsForModel } from "../favorites"
 import { useAuthStore } from "../stores/auth"
 
 interface ModelSummary {
@@ -111,6 +113,10 @@ const route = useRoute()
 const loading = ref(true)
 const errorMessage = ref("")
 const page = ref<ModelPage>({ items: [], total: 0, page: 1, page_size: 48 })
+const favoriteModel = ref<ModelSummary | null>(null)
+const favoriteDialogTargets = computed(() =>
+  favoriteModel.value ? favoriteTargetsForModel(favoriteModel.value) : [],
+)
 const filters = ref<CatalogueFilters>({
   models: [],
   creators: [],
@@ -362,6 +368,10 @@ function formatBytes(value: number | null) {
   return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
 }
 
+function openFavoriteDialog(model: ModelSummary) {
+  favoriteModel.value = model
+}
+
 let filterTimer: ReturnType<typeof setTimeout> | undefined
 watch(
   query,
@@ -605,6 +615,13 @@ onMounted(async () => {
             </span>
           </p>
           <button
+            class="secondary-button model-favorite-button"
+            type="button"
+            @click="openFavoriteDialog(model)"
+          >
+            <span aria-hidden="true">&#9825;</span> Save
+          </button>
+          <button
             v-if="auth.user?.role === 'admin' && model.status === 'missing'"
             class="danger-button model-delete-button"
             type="button"
@@ -708,5 +725,11 @@ onMounted(async () => {
         </button>
       </div>
     </nav>
+
+    <FavoriteSaveDialog
+      :open="Boolean(favoriteModel)"
+      :targets="favoriteDialogTargets"
+      @close="favoriteModel = null"
+    />
   </main>
 </template>

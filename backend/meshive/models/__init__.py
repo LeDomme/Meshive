@@ -1,5 +1,6 @@
 from meshive.models.library_source import LibrarySource
 from meshive.models.creator import CreatorLink
+from meshive.models.favorite import FavoriteList, FavoriteListItem
 from meshive.models.session import UserSession
 from meshive.models.tag import FolderTagRule, ModelTag, Tag
 from meshive.models.backup import BackupRun, BackupSchedule
@@ -10,6 +11,8 @@ __all__ = [
     "Archive",
     "ArchiveEntry",
     "CreatorLink",
+    "FavoriteList",
+    "FavoriteListItem",
     "LibraryModel",
     "LibrarySource",
     "ModelImage",

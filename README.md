@@ -91,6 +91,9 @@ Database backup and container-based restore procedures are documented in
 Per-source scan scheduling is documented in
 [`docs/automatic-scans.md`](docs/automatic-scans.md).
 
+Private per-user favorite lists are documented in
+[`docs/favorite-lists.md`](docs/favorite-lists.md).
+
 Scan and download concurrency settings are documented in
 [`docs/resource-limits.md`](docs/resource-limits.md).
 

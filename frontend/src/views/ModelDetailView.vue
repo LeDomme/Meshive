@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
 import { RouterLink, useRoute } from "vue-router"
 
 import { ApiError, apiRequest } from "../api"
+import FavoriteSaveDialog from "../components/FavoriteSaveDialog.vue"
+import { favoriteTargetsForModel } from "../favorites"
 import { useAuthStore } from "../stores/auth"
 
 interface Tag { id: number; name: string; color: string | null; description: string | null }
@@ -92,6 +94,7 @@ const archiveFilter = ref("")
 const selectedArchiveIndex = ref(0)
 const collapsedFolders = ref<Set<string>>(new Set())
 const lightboxOpen = ref(false)
+const favoriteDialogOpen = ref(false)
 const lightboxMode = ref<"height" | "width" | "original">("height")
 const detailImageButton = ref<HTMLButtonElement | null>(null)
 const lightboxCloseButton = ref<HTMLButtonElement | null>(null)
@@ -103,6 +106,9 @@ const imageFrameStyle = computed(() => ({
 }))
 const currentArchive = computed(
   () => model.value?.archives[selectedArchiveIndex.value] ?? null,
+)
+const favoriteDialogTargets = computed(() =>
+  model.value ? favoriteTargetsForModel(model.value) : [],
 )
 
 const archiveTree = computed(() => {
@@ -294,9 +300,14 @@ onBeforeUnmount(() => {
               .join(" · ") || "Uncategorised" }}
           </p>
         </div>
-        <span v-if="model.status !== 'available'" class="detail-status">
-          {{ model.status }}
-        </span>
+        <div class="detail-header-actions">
+          <span v-if="model.status !== 'available'" class="detail-status">
+            {{ model.status }}
+          </span>
+          <button class="secondary-button" type="button" @click="favoriteDialogOpen = true">
+            <span aria-hidden="true">&#9825;</span> Save to favorites
+          </button>
+        </div>
       </header>
       <section class="detail-grid">
         <div class="panel image-gallery">
@@ -604,6 +615,12 @@ onBeforeUnmount(() => {
           >
         </div>
       </div>
+
+      <FavoriteSaveDialog
+        :open="favoriteDialogOpen"
+        :targets="favoriteDialogTargets"
+        @close="favoriteDialogOpen = false"
+      />
     </template>
   </main>
 </template>
