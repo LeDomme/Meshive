@@ -28,6 +28,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Existing tags can now be renamed and have their colour or description
   corrected without losing model assignments, folder rules, automatic rules,
   or favorite-list references.
+- Tag descriptions are shown in a compact tooltip when a tag is hovered or
+  focused with the keyboard.
 
 ### Upgrade notes
 
