@@ -374,6 +374,7 @@ onBeforeUnmount(() => {
           <button
             class="secondary-button detail-favorite-button"
             :class="{
+              'favorite-add-ready': !favoriteMemberships.length,
               'favorite-active': favoriteMemberships.length,
               'favorite-direct-remove': favoriteMemberships.length === 1,
             }"
@@ -384,7 +385,11 @@ onBeforeUnmount(() => {
             <span aria-hidden="true">{{ favoriteMemberships.length ? "♥" : "♡" }}</span>
             <span class="favorite-button-label">{{ favoriteButtonLabel() }}</span>
             <span
-              v-if="favoriteMemberships.length === 1"
+              v-if="!favoriteMemberships.length"
+              class="favorite-button-hover-label"
+            >Choose a list</span>
+            <span
+              v-else-if="favoriteMemberships.length === 1"
               class="favorite-button-hover-label"
             >Remove from list</span>
           </button>
