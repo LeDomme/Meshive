@@ -9,6 +9,8 @@ read-only library.
 - `Session`: opaque server-side session with expiry and last use.
 - `FavoriteList`: a private, named list owned by exactly one user.
 - `FavoriteListItem`: a saved model or catalogue facet with a display snapshot.
+- `MetadataArtwork`: optimized custom artwork for one normalized Creator,
+  Franchise, or Collection value.
 - `LibrarySource`: display name, container root, parsing patterns, defaults,
   supported formats, and scan settings.
 - `Creator`: parsed creator identity plus optional manual display override.
@@ -41,6 +43,8 @@ derived from these values later without rereading source archives.
 - Manual and inherited tags are distinct so folder rules can be removed safely.
 - Favorite-list names are unique per user after Unicode-aware normalization.
 - Favorite-list ownership is enforced on every list and item operation.
+- Metadata artwork is unique per entity type and normalized catalogue value and
+  is stored in SQLite so database backups remain self-contained.
 - Saved models and tags use foreign keys plus a label snapshot. If the target is
   deleted, the entry remains visible as unavailable until its owner removes it.
 - Saved Creator, Franchise, Series, and Collection values use normalized keys.

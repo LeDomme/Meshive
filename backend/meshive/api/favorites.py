@@ -11,6 +11,7 @@ from meshive.auth.sessions import utc_now
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel, ModelImage
 from meshive.models.favorite import FavoriteList, FavoriteListItem
+from meshive.models.metadata import MetadataArtwork
 from meshive.models.tag import Tag
 from meshive.models.user import User
 from meshive.schemas.favorite import (
@@ -336,6 +337,17 @@ def _item_reads(
         for entity_type, column in _TEXT_COLUMNS.items()
         if any(item.entity_type == entity_type for item in items)
     }
+    artwork = {
+        (entity_type, entity_key): (artwork_id, etag)
+        for artwork_id, entity_type, entity_key, etag in session.execute(
+            select(
+                MetadataArtwork.id,
+                MetadataArtwork.entity_type,
+                MetadataArtwork.entity_key,
+                MetadataArtwork.etag,
+            )
+        )
+    }
 
     reads = []
     for item in items:
@@ -373,6 +385,12 @@ def _item_reads(
                     if model and model.id in thumbnail_model_ids
                     else None
                 ),
+                artwork_url=(
+                    _artwork_url(artwork.get((item.entity_type, item.entity_key)))
+                    if item.entity_type in _TEXT_COLUMNS
+                    and artwork.get((item.entity_type, item.entity_key)) is not None
+                    else None
+                ),
                 variant=model.variant if model else None,
                 creator=model.creator if model else None,
                 franchise=model.franchise if model else None,
@@ -400,3 +418,10 @@ def _model_label(model: LibraryModel) -> str:
 
 def _normalize(value: str) -> str:
     return unicodedata.normalize("NFKC", value.strip()).casefold()
+
+
+def _artwork_url(artwork: tuple[int, str] | None) -> str | None:
+    if artwork is None:
+        return None
+    artwork_id, etag = artwork
+    return f"/api/metadata/artwork/{artwork_id}?v={etag[:12]}"

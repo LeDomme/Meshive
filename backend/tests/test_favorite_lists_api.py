@@ -10,6 +10,7 @@ from meshive.database import Base, create_database_engine, get_session
 from meshive.main import app
 from meshive.models.catalog import LibraryModel, ModelImage
 from meshive.models.library_source import LibrarySource
+from meshive.models.metadata import MetadataArtwork
 from meshive.models.tag import Tag
 from meshive.models.user import User
 
@@ -89,6 +90,18 @@ def test_favorite_lists_are_private_and_resolve_catalogue_targets(tmp_path) -> N
             tag = Tag(name="Bust", color="#00aaff")
             session.add_all([model, tag])
             session.flush()
+            session.add(
+                MetadataArtwork(
+                    entity_type="creator",
+                    entity_value="E.S Monster",
+                    entity_key="e.s monster",
+                    content=b"webp",
+                    content_type="image/webp",
+                    width=32,
+                    height=32,
+                    etag="a" * 64,
+                )
+            )
             session.add(
                 ModelImage(
                     model_id=model.id,
@@ -175,6 +188,8 @@ def test_favorite_lists_are_private_and_resolve_catalogue_targets(tmp_path) -> N
         assert items["model"]["creator"] == "E.S Monster"
         assert items["creator"]["label"] == "E.S Monster"
         assert items["creator"]["url"] == "/?creator=E.S+Monster"
+        assert items["creator"]["artwork_url"].startswith("/api/metadata/artwork/")
+        assert items["franchise"]["artwork_url"] is None
         assert items["tag"]["url"] == f"/?tag_id={tag_id}"
         assert all(item["is_available"] for item in items.values())
 

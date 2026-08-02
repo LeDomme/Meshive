@@ -265,10 +265,43 @@ async function loadFavoriteMemberships(modelId: number) {
   }
 }
 
-function favoriteSaved(list: FavoriteListSummary, target: FavoriteTarget) {
+function favoriteSaved(
+  list: FavoriteListSummary,
+  target: FavoriteTarget,
+  itemId: number,
+) {
   if (target.entity_type !== "model") return
   if (favoriteMemberships.value.some((membership) => membership.id === list.id)) return
-  favoriteMemberships.value = [...favoriteMemberships.value, list]
+  favoriteMemberships.value = [
+    ...favoriteMemberships.value,
+    { id: list.id, name: list.name, item_id: itemId },
+  ]
+}
+
+function favoriteRemoved(list: FavoriteMembershipList, target: FavoriteTarget) {
+  if (target.entity_type !== "model") return
+  favoriteMemberships.value = favoriteMemberships.value.filter(
+    (membership) => membership.id !== list.id,
+  )
+}
+
+async function handleFavoriteClick() {
+  const membership = favoriteMemberships.value[0]
+  if (favoriteMemberships.value.length !== 1 || !membership?.item_id || !model.value) {
+    favoriteDialogOpen.value = true
+    return
+  }
+  errorMessage.value = ""
+  try {
+    await apiRequest<void>(
+      `/api/favorite-lists/${membership.id}/items/${membership.item_id}`,
+      { method: "DELETE" },
+    )
+    favoriteMemberships.value = []
+  } catch (error) {
+    errorMessage.value =
+      error instanceof ApiError ? error.message : "Unable to remove the favorite"
+  }
 }
 
 async function addTag() {
@@ -339,13 +372,20 @@ onBeforeUnmount(() => {
           </span>
           <button
             class="secondary-button detail-favorite-button"
-            :class="{ 'favorite-active': favoriteMemberships.length }"
+            :class="{
+              'favorite-active': favoriteMemberships.length,
+              'favorite-direct-remove': favoriteMemberships.length === 1,
+            }"
             type="button"
             :title="favoriteMemberships.map((list) => list.name).join(', ')"
-            @click="favoriteDialogOpen = true"
+            @click="handleFavoriteClick"
           >
             <span aria-hidden="true">{{ favoriteMemberships.length ? "♥" : "♡" }}</span>
-            <span>{{ favoriteButtonLabel() }}</span>
+            <span class="favorite-button-label">{{ favoriteButtonLabel() }}</span>
+            <span
+              v-if="favoriteMemberships.length === 1"
+              class="favorite-button-hover-label"
+            >Remove from list</span>
           </button>
         </div>
       </header>
@@ -662,6 +702,7 @@ onBeforeUnmount(() => {
         :existing-model-lists="favoriteMemberships"
         @close="favoriteDialogOpen = false"
         @saved="favoriteSaved"
+        @removed="favoriteRemoved"
       />
     </template>
   </main>

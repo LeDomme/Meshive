@@ -23,6 +23,7 @@ export interface FavoriteListItem {
   created_at: string
   model_id: number | null
   thumbnail_url: string | null
+  artwork_url: string | null
   variant: string | null
   creator: string | null
   franchise: string | null

@@ -70,6 +70,7 @@ class FavoriteListItemRead(BaseModel):
     created_at: datetime
     model_id: int | None = None
     thumbnail_url: str | None = None
+    artwork_url: str | None = None
     variant: str | None = None
     creator: str | None = None
     franchise: str | None = None
