@@ -20,6 +20,7 @@ interface User {
 const auth = useAuthStore()
 const users = ref<User[]>([])
 const passwords = reactive<Record<number, string>>({})
+const savedEmails = reactive<Record<number, string | null>>({})
 const errorMessage = ref("")
 const successMessage = ref("")
 const busyUserId = ref<number | null>(null)
@@ -33,7 +34,16 @@ const form = reactive({
 })
 
 async function loadUsers() {
-  users.value = await apiRequest<User[]>("/api/admin/users")
+  const loadedUsers = await apiRequest<User[]>("/api/admin/users")
+  users.value = loadedUsers
+  for (const key of Object.keys(savedEmails)) delete savedEmails[Number(key)]
+  for (const user of loadedUsers) savedEmails[user.id] = user.email
+}
+
+function displayedEmailIsVerified(user: User): boolean {
+  const displayed = user.email?.trim().toLocaleLowerCase() || null
+  const saved = savedEmails[user.id]?.trim().toLocaleLowerCase() || null
+  return user.email_verified && displayed === saved
 }
 
 async function createUser() {
@@ -167,43 +177,81 @@ onMounted(loadUsers)
 
     <section class="panel user-list-panel">
       <h2>Existing users</h2>
-      <div class="user-table-wrap">
-        <table class="user-table">
-          <thead><tr><th>Username</th><th>Recovery email</th><th>Role</th><th>Temporary password</th><th>Active</th><th>Require change</th><th>Last login</th><th></th></tr></thead>
-          <tbody>
-            <tr v-for="user in users" :key="user.id">
-              <td><input v-model="user.username"></td>
-              <td class="user-email-cell">
-                <input v-model="user.email" type="email" autocomplete="off" placeholder="Not configured">
-                <span v-if="user.email" :class="user.email_verified ? 'email-verified' : 'email-unverified'">
-                  {{ user.email_verified ? "Verified" : "Not verified" }}
-                </span>
-                <button
-                  v-if="user.email && !user.email_verified"
-                  class="text-button"
-                  type="button"
-                  :disabled="busyUserId === user.id"
-                  @click="sendVerification(user)"
-                >
-                  Send verification
-                </button>
-              </td>
-              <td><select v-model="user.role"><option value="user">User</option><option value="admin">Admin</option></select></td>
-              <td><input v-model="passwords[user.id]" type="password" minlength="12" autocomplete="new-password" placeholder="Leave unchanged" title="Setting a temporary password requires the user to change it at next login"></td>
-              <td><input v-model="user.is_active" type="checkbox" :disabled="user.id === auth.user?.id"></td>
-              <td><input v-model="user.must_change_password" type="checkbox"></td>
-              <td>{{ user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "Never" }}</td>
-              <td class="user-actions">
-                <button class="secondary-button" type="button" :disabled="busyUserId === user.id" @click="saveUser(user)">
-                  {{ busyUserId === user.id ? "Saving…" : "Save" }}
-                </button>
-                <button class="danger-button" type="button" :disabled="user.id === auth.user?.id || busyUserId === user.id" @click="deleteUser(user)">
-                  Delete
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="admin-user-list">
+        <article v-for="user in users" :key="user.id" class="admin-user-card">
+          <label class="admin-user-field">
+            <span>Username</span>
+            <input v-model="user.username">
+          </label>
+
+          <div class="admin-user-field admin-user-email">
+            <label :for="`user-email-${user.id}`">Recovery email</label>
+            <input
+              :id="`user-email-${user.id}`"
+              v-model="user.email"
+              type="email"
+              autocomplete="off"
+              placeholder="Not configured"
+            >
+            <div v-if="user.email" class="admin-user-email-status">
+              <span :class="displayedEmailIsVerified(user) ? 'email-verified' : 'email-unverified'">
+                {{ displayedEmailIsVerified(user) ? "Verified" : "Not verified" }}
+              </span>
+              <button
+                v-if="!displayedEmailIsVerified(user)"
+                class="text-button"
+                type="button"
+                :disabled="busyUserId === user.id"
+                @click="sendVerification(user)"
+              >
+                Send verification
+              </button>
+            </div>
+            <span v-else class="admin-user-email-empty">No recovery email configured</span>
+          </div>
+
+          <label class="admin-user-field">
+            <span>Role</span>
+            <select v-model="user.role"><option value="user">User</option><option value="admin">Admin</option></select>
+          </label>
+
+          <label class="admin-user-field">
+            <span>Temporary password</span>
+            <input
+              v-model="passwords[user.id]"
+              type="password"
+              minlength="12"
+              autocomplete="new-password"
+              placeholder="Leave unchanged"
+              title="Setting a temporary password requires the user to change it at next login"
+            >
+          </label>
+
+          <div class="admin-user-options">
+            <label class="inline-check">
+              <input v-model="user.is_active" type="checkbox" :disabled="user.id === auth.user?.id">
+              Active
+            </label>
+            <label class="inline-check">
+              <input v-model="user.must_change_password" type="checkbox">
+              Require password change
+            </label>
+          </div>
+
+          <div class="admin-user-last-login">
+            <span>Last login</span>
+            <strong>{{ user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "Never" }}</strong>
+          </div>
+
+          <div class="user-actions admin-user-actions">
+            <button class="secondary-button" type="button" :disabled="busyUserId === user.id" @click="saveUser(user)">
+              {{ busyUserId === user.id ? "Saving…" : "Save changes" }}
+            </button>
+            <button class="danger-button" type="button" :disabled="user.id === auth.user?.id || busyUserId === user.id" @click="deleteUser(user)">
+              Delete
+            </button>
+          </div>
+        </article>
       </div>
     </section>
   </main>

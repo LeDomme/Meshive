@@ -24,6 +24,11 @@ MESHIVE_SMTP_SECURITY=starttls
 - `starttls` for a plaintext connection upgraded to TLS, commonly on port 587;
 - `none` only for a trusted development mail relay.
 
+In production mode, recovery is enabled only when `MESHIVE_PUBLIC_URL` uses
+HTTPS and SMTP uses either `ssl` or `starttls`. Action tokens are placed in the
+URL fragment (`#token=...`) so browsers do not send them in HTTP requests or
+normal reverse-proxy access logs.
+
 Do not commit SMTP credentials. Supply them through the container platform's
 environment or secret management. Meshive validates SMTP certificates using
 the operating system trust store.

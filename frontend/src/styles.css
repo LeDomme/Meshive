@@ -574,6 +574,8 @@ h1 {
 
 .user-form input:not([type="checkbox"]),
 .user-form select,
+.admin-user-card input:not([type="checkbox"]),
+.admin-user-card select,
 .user-table input:not([type="checkbox"]),
 .user-table select {
   width: 100%;
@@ -612,20 +614,108 @@ h1 {
   color: #94a3b8;
 }
 
-.user-email-cell {
-  min-width: 15rem;
+.admin-user-list {
+  display: grid;
+  gap: 1rem;
 }
 
-.user-email-cell .email-verified,
-.user-email-cell .email-unverified {
-  margin-top: 0.4rem;
+.admin-user-card {
+  display: grid;
+  grid-template-columns:
+    minmax(10rem, 1fr)
+    minmax(18rem, 1.7fr)
+    minmax(8rem, 0.7fr)
+    minmax(14rem, 1.2fr);
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid #1e3a5f;
+  border-radius: 0.85rem;
+  background: rgb(5 15 32 / 48%);
+}
+
+.admin-user-field,
+.admin-user-last-login {
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.admin-user-field > span,
+.admin-user-field > label,
+.admin-user-last-login > span {
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.admin-user-email-status {
+  display: flex;
+  min-height: 1.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.7rem;
+}
+
+.admin-user-email-status .email-verified,
+.admin-user-email-status .email-unverified {
   margin-left: 0;
+  white-space: nowrap;
 }
 
-.user-email-cell .text-button {
-  margin-left: 0.25rem;
+.admin-user-email-status .text-button {
+  margin-left: 0;
   color: #7dd3fc;
   font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.admin-user-email-empty {
+  min-height: 1.5rem;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.admin-user-options {
+  display: flex;
+  align-items: center;
+  align-self: end;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  grid-column: 1 / 3;
+}
+
+.admin-user-options .inline-check {
+  margin: 0;
+  padding: 0;
+}
+
+.admin-user-last-login {
+  align-self: end;
+}
+
+.admin-user-last-login strong {
+  color: #f8fafc;
+  font-weight: 400;
+}
+
+.admin-user-actions {
+  align-self: end;
+  justify-self: end;
+}
+
+@media (max-width: 70rem) {
+  .admin-user-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-user-options {
+    grid-column: auto;
+  }
+
+  .admin-user-actions {
+    grid-column: 1 / -1;
+  }
 }
 
 .admin-grid {
@@ -2120,6 +2210,25 @@ summary {
 
   .user-form {
     grid-template-columns: 1fr;
+  }
+
+  .admin-user-card {
+    grid-template-columns: 1fr;
+    padding: 1rem;
+  }
+
+  .admin-user-options,
+  .admin-user-actions {
+    grid-column: auto;
+  }
+
+  .admin-user-actions {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .admin-user-actions button {
+    flex: 1;
   }
 
   .creator-metadata-heading {

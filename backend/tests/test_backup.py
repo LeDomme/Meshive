@@ -55,6 +55,36 @@ def test_backup_and_restore_with_safety_copy(tmp_path, monkeypatch) -> None:
         assert connection.execute("SELECT username FROM users").fetchone()[0] == "before"
 
 
+def test_restore_invalidates_sessions_and_action_tokens(tmp_path, monkeypatch) -> None:
+    live = tmp_path / "meshive.db"
+    saved = tmp_path / "saved.sqlite3"
+    for path in (live, saved):
+        create_meshive_database(path, path.stem)
+        with sqlite3.connect(path) as connection:
+            connection.executescript(
+                """
+                CREATE TABLE user_sessions (token_hash TEXT);
+                CREATE TABLE user_action_tokens (token_hash TEXT);
+                INSERT INTO user_sessions(token_hash) VALUES ('session-token');
+                INSERT INTO user_action_tokens(token_hash) VALUES ('action-token');
+                """
+            )
+    settings = Settings(
+        database_url=f"sqlite:///{live.as_posix()}",
+        data_dir=tmp_path / "data",
+        backup_dir=tmp_path / "backups",
+    )
+    monkeypatch.setattr(backup, "get_settings", lambda: settings)
+
+    backup.restore_backup(saved, confirmed_stopped=True)
+
+    with sqlite3.connect(live) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM user_sessions").fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM user_action_tokens"
+        ).fetchone()[0] == 0
+
+
 def test_zip_backup_is_single_file_and_cleans_data_tmp(tmp_path, monkeypatch) -> None:
     live = tmp_path / "meshive.db"
     create_meshive_database(live, "archive")

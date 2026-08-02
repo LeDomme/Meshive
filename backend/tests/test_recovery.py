@@ -290,3 +290,30 @@ def test_password_recovery_requests_are_rate_limited() -> None:
         )
         assert blocked.status_code == 429
         assert int(blocked.headers["retry-after"]) >= 1
+
+
+def test_recovery_email_password_checks_are_rate_limited() -> None:
+    settings = recovery_settings(
+        auth_rate_limit_attempts=2,
+        auth_rate_limit_window_seconds=60,
+    )
+    with recovery_test_client(settings) as (client, sessions):
+        add_recovery_user(sessions)
+        login(client)
+        payload = {
+            "email": "viewer@example.com",
+            "current_password": "wrong password",
+        }
+
+        assert client.post("/api/auth/email", json=payload).status_code == 400
+        assert client.post("/api/auth/email", json=payload).status_code == 400
+        blocked = client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "a sufficiently long password",
+                "new_password": "a completely different password",
+            },
+        )
+
+        assert blocked.status_code == 429
+        assert int(blocked.headers["retry-after"]) >= 1

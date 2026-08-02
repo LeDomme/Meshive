@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -86,8 +87,24 @@ class Settings(BaseSettings):
         if not all(value and value.strip() for value in values):
             return False
         assert self.public_url is not None
-        if not self.public_url.strip().startswith(("https://", "http://")):
+        public_url = self.public_url.strip()
+        try:
+            parsed_public_url = urlsplit(public_url)
+            public_hostname = parsed_public_url.hostname
+        except ValueError:
             return False
+        if (
+            parsed_public_url.scheme not in {"https", "http"}
+            or not public_hostname
+            or parsed_public_url.username is not None
+            or parsed_public_url.password is not None
+            or parsed_public_url.query
+            or parsed_public_url.fragment
+        ):
+            return False
+        if self.environment == "production":
+            if parsed_public_url.scheme != "https" or self.smtp_security == "none":
+                return False
         if any("\r" in value or "\n" in value for value in values if value):
             return False
         if self.smtp_password is None:
