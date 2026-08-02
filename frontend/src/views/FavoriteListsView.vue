@@ -354,6 +354,15 @@ onMounted(async () => {
               >
                 <img
                   v-if="favoritePreview(item)"
+                  class="favorite-item-preview-backdrop"
+                  :src="favoritePreview(item) || ''"
+                  alt=""
+                  aria-hidden="true"
+                  loading="lazy"
+                >
+                <img
+                  v-if="favoritePreview(item)"
+                  class="favorite-item-preview-image"
                   :src="favoritePreview(item) || ''"
                   :alt="item.label"
                   loading="lazy"
@@ -368,6 +377,15 @@ onMounted(async () => {
               <div v-else class="favorite-item-preview favorite-item-preview--unavailable">
                 <img
                   v-if="favoritePreview(item)"
+                  class="favorite-item-preview-backdrop"
+                  :src="favoritePreview(item) || ''"
+                  alt=""
+                  aria-hidden="true"
+                  loading="lazy"
+                >
+                <img
+                  v-if="favoritePreview(item)"
+                  class="favorite-item-preview-image"
                   :src="favoritePreview(item) || ''"
                   :alt="item.label"
                   loading="lazy"
