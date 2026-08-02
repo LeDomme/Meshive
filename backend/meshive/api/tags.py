@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import delete, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -7,13 +7,33 @@ from meshive.auth.dependencies import get_current_user, require_admin
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
 from meshive.models.library_source import LibrarySource
-from meshive.models.tag import FolderTagRule, ModelTag, Tag
-from meshive.schemas.tag import FolderRuleCreate, FolderRuleRead, TagCreate, TagRead
+from meshive.models.tag import (
+    AutomaticTagMatch,
+    AutomaticTagRule,
+    FolderTagRule,
+    ModelTag,
+    Tag,
+)
+from meshive.schemas.tag import (
+    AutomaticTagEvaluationRead,
+    AutomaticTagRuleCreate,
+    AutomaticTagRuleRead,
+    FolderRuleCreate,
+    FolderRuleRead,
+    TagCreate,
+    TagRead,
+)
 from meshive.services.library_paths import PathPatternError, normalize_relative_path
-from meshive.services.tags import recompute_inherited_tags
+from meshive.services.tags import (
+    normalize_automatic_pattern,
+    recompute_automatic_tags,
+    recompute_inherited_tags,
+)
 
 router = APIRouter(prefix="/tags", tags=["tags"], dependencies=[Depends(get_current_user)])
-admin_router = APIRouter(prefix="/admin", tags=["tag administration"], dependencies=[Depends(require_admin)])
+admin_router = APIRouter(
+    prefix="/admin", tags=["tag administration"], dependencies=[Depends(require_admin)]
+)
 
 
 @router.get("", response_model=list[TagRead])
@@ -29,7 +49,9 @@ def create_tag(payload: TagCreate, session: Session = Depends(get_session)) -> T
         session.commit()
     except IntegrityError as error:
         session.rollback()
-        raise HTTPException(status_code=409, detail="A tag with this name already exists") from error
+        raise HTTPException(
+            status_code=409, detail="A tag with this name already exists"
+        ) from error
     session.refresh(tag)
     return tag
 
@@ -52,7 +74,15 @@ def add_model_tag(model_id: int, tag_id: int, session: Session = Depends(get_ses
         select(ModelTag).where(ModelTag.model_id == model_id, ModelTag.tag_id == tag_id)
     )
     if assignment is None:
-        session.add(ModelTag(model_id=model_id, tag_id=tag_id, is_direct=True, is_inherited=False))
+        session.add(
+            ModelTag(
+                model_id=model_id,
+                tag_id=tag_id,
+                is_direct=True,
+                is_inherited=False,
+                is_automatic=False,
+            )
+        )
     else:
         assignment.is_direct = True
     session.commit()
@@ -60,13 +90,15 @@ def add_model_tag(model_id: int, tag_id: int, session: Session = Depends(get_ses
 
 
 @admin_router.delete("/models/{model_id}/tags/{tag_id}", status_code=204)
-def remove_model_tag(model_id: int, tag_id: int, session: Session = Depends(get_session)) -> Response:
+def remove_model_tag(
+    model_id: int, tag_id: int, session: Session = Depends(get_session)
+) -> Response:
     assignment = session.scalar(
         select(ModelTag).where(ModelTag.model_id == model_id, ModelTag.tag_id == tag_id)
     )
     if assignment is not None:
         assignment.is_direct = False
-        if not assignment.is_inherited:
+        if not assignment.is_inherited and not assignment.is_automatic:
             session.delete(assignment)
         session.commit()
     return Response(status_code=204)
@@ -76,9 +108,12 @@ def remove_model_tag(model_id: int, tag_id: int, session: Session = Depends(get_
 def list_rules(session: Session = Depends(get_session)) -> list[FolderRuleRead]:
     return [
         FolderRuleRead(
-            id=rule.id, library_source_id=rule.library_source_id,
-            relative_path=rule.relative_path, tag_id=rule.tag_id,
-            recursive=rule.recursive, tag_name=name,
+            id=rule.id,
+            library_source_id=rule.library_source_id,
+            relative_path=rule.relative_path,
+            tag_id=rule.tag_id,
+            recursive=rule.recursive,
+            tag_name=name,
         )
         for rule, name in session.execute(
             select(FolderTagRule, Tag.name).join(Tag, Tag.id == FolderTagRule.tag_id)
@@ -87,7 +122,9 @@ def list_rules(session: Session = Depends(get_session)) -> list[FolderRuleRead]:
 
 
 @admin_router.post("/folder-tag-rules", response_model=FolderRuleRead, status_code=201)
-def create_rule(payload: FolderRuleCreate, session: Session = Depends(get_session)) -> FolderRuleRead:
+def create_rule(
+    payload: FolderRuleCreate, session: Session = Depends(get_session)
+) -> FolderRuleRead:
     source = session.get(LibrarySource, payload.library_source_id)
     tag = session.get(Tag, payload.tag_id)
     if source is None or tag is None:
@@ -97,8 +134,10 @@ def create_rule(payload: FolderRuleCreate, session: Session = Depends(get_sessio
     except PathPatternError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     rule = FolderTagRule(
-        library_source_id=source.id, relative_path=path,
-        tag_id=tag.id, recursive=payload.recursive,
+        library_source_id=source.id,
+        relative_path=path,
+        tag_id=tag.id,
+        recursive=payload.recursive,
     )
     session.add(rule)
     try:
@@ -107,8 +146,17 @@ def create_rule(payload: FolderRuleCreate, session: Session = Depends(get_sessio
         session.commit()
     except IntegrityError as error:
         session.rollback()
-        raise HTTPException(status_code=409, detail="This folder tag rule already exists") from error
-    return FolderRuleRead(id=rule.id, library_source_id=source.id, relative_path=path, tag_id=tag.id, recursive=rule.recursive, tag_name=tag.name)
+        raise HTTPException(
+            status_code=409, detail="This folder tag rule already exists"
+        ) from error
+    return FolderRuleRead(
+        id=rule.id,
+        library_source_id=source.id,
+        relative_path=path,
+        tag_id=tag.id,
+        recursive=rule.recursive,
+        tag_name=tag.name,
+    )
 
 
 @admin_router.delete("/folder-tag-rules/{rule_id}", status_code=204)
@@ -122,3 +170,153 @@ def delete_rule(rule_id: int, session: Session = Depends(get_session)) -> Respon
     recompute_inherited_tags(session, source_id)
     session.commit()
     return Response(status_code=204)
+
+
+@admin_router.get("/automatic-tag-rules", response_model=list[AutomaticTagRuleRead])
+def list_automatic_rules(
+    session: Session = Depends(get_session),
+) -> list[AutomaticTagRuleRead]:
+    return [
+        AutomaticTagRuleRead(
+            id=rule.id,
+            tag_id=rule.tag_id,
+            tag_name=tag_name,
+            pattern=rule.pattern,
+            enabled=rule.enabled,
+            match_count=match_count,
+            created_at=rule.created_at,
+            updated_at=rule.updated_at,
+        )
+        for rule, tag_name, match_count in session.execute(
+            select(
+                AutomaticTagRule,
+                Tag.name,
+                func.count(AutomaticTagMatch.id),
+            )
+            .join(Tag, Tag.id == AutomaticTagRule.tag_id)
+            .outerjoin(
+                AutomaticTagMatch,
+                AutomaticTagMatch.automatic_tag_rule_id == AutomaticTagRule.id,
+            )
+            .group_by(AutomaticTagRule.id, Tag.name)
+            .order_by(AutomaticTagRule.id)
+        )
+    ]
+
+
+@admin_router.post(
+    "/automatic-tag-rules",
+    response_model=AutomaticTagRuleRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_automatic_rule(
+    payload: AutomaticTagRuleCreate,
+    session: Session = Depends(get_session),
+) -> AutomaticTagRuleRead:
+    tag = session.get(Tag, payload.tag_id)
+    if tag is None:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    pattern, pattern_key = _automatic_pattern(payload.pattern)
+    rule = AutomaticTagRule(
+        tag_id=tag.id,
+        pattern=pattern,
+        pattern_key=pattern_key,
+        enabled=payload.enabled,
+    )
+    session.add(rule)
+    try:
+        session.flush()
+        recompute_automatic_tags(session)
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This automatic tag rule already exists",
+        ) from error
+    session.refresh(rule)
+    return _automatic_rule_read(session, rule, tag.name)
+
+
+@admin_router.put("/automatic-tag-rules/{rule_id}", response_model=AutomaticTagRuleRead)
+def update_automatic_rule(
+    rule_id: int,
+    payload: AutomaticTagRuleCreate,
+    session: Session = Depends(get_session),
+) -> AutomaticTagRuleRead:
+    rule = session.get(AutomaticTagRule, rule_id)
+    tag = session.get(Tag, payload.tag_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Automatic tag rule not found")
+    if tag is None:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    rule.pattern, rule.pattern_key = _automatic_pattern(payload.pattern)
+    rule.tag_id = tag.id
+    rule.enabled = payload.enabled
+    try:
+        session.flush()
+        recompute_automatic_tags(session)
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This automatic tag rule already exists",
+        ) from error
+    session.refresh(rule)
+    return _automatic_rule_read(session, rule, tag.name)
+
+
+@admin_router.delete("/automatic-tag-rules/{rule_id}", status_code=204)
+def delete_automatic_rule(rule_id: int, session: Session = Depends(get_session)) -> Response:
+    rule = session.get(AutomaticTagRule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Automatic tag rule not found")
+    session.delete(rule)
+    session.flush()
+    recompute_automatic_tags(session)
+    session.commit()
+    return Response(status_code=204)
+
+
+@admin_router.post(
+    "/automatic-tag-rules/re-evaluate",
+    response_model=AutomaticTagEvaluationRead,
+)
+def reevaluate_automatic_rules(
+    session: Session = Depends(get_session),
+) -> AutomaticTagEvaluationRead:
+    result = recompute_automatic_tags(session)
+    session.commit()
+    return AutomaticTagEvaluationRead(**result.__dict__)
+
+
+def _automatic_pattern(value: str) -> tuple[str, str]:
+    pattern = value.strip()
+    pattern_key = normalize_automatic_pattern(pattern)
+    if not pattern_key:
+        raise HTTPException(status_code=422, detail="Pattern cannot be empty")
+    return pattern, pattern_key
+
+
+def _automatic_rule_read(
+    session: Session, rule: AutomaticTagRule, tag_name: str
+) -> AutomaticTagRuleRead:
+    match_count = (
+        session.scalar(
+            select(func.count(AutomaticTagMatch.id)).where(
+                AutomaticTagMatch.automatic_tag_rule_id == rule.id
+            )
+        )
+        or 0
+    )
+    return AutomaticTagRuleRead(
+        id=rule.id,
+        tag_id=rule.tag_id,
+        tag_name=tag_name,
+        pattern=rule.pattern,
+        enabled=rule.enabled,
+        match_count=match_count,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at,
+    )

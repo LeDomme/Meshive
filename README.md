@@ -94,6 +94,9 @@ Per-source scan scheduling is documented in
 Private per-user favorite lists are documented in
 [`docs/favorite-lists.md`](docs/favorite-lists.md).
 
+Case-insensitive automatic tags derived from archive entry names and paths are
+documented in [`docs/automatic-tagging.md`](docs/automatic-tagging.md).
+
 Scan and download concurrency settings are documented in
 [`docs/resource-limits.md`](docs/resource-limits.md).
 

@@ -16,6 +16,9 @@ class ScanRunRead(BaseModel):
     models_added: int
     models_updated: int
     models_missing: int
+    automatic_tag_matches: int
+    automatic_tags_added: int
+    automatic_tags_removed: int
     issues_count: int
     error_message: str | None
     created_at: datetime

@@ -17,9 +17,7 @@ from meshive.database import Base
 
 class LibraryModel(Base):
     __tablename__ = "library_models"
-    __table_args__ = (
-        UniqueConstraint("library_source_id", "relative_path"),
-    )
+    __table_args__ = (UniqueConstraint("library_source_id", "relative_path"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     library_source_id: Mapped[int] = mapped_column(
@@ -42,9 +40,7 @@ class LibraryModel(Base):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -104,9 +100,7 @@ class ModelImage(Base):
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     is_available: Mapped[bool] = mapped_column(Boolean, default=True)
     thumbnail_key: Mapped[str | None] = mapped_column(Text, nullable=True)
-    thumbnail_status: Mapped[str] = mapped_column(
-        String(30), default="pending", index=True
-    )
+    thumbnail_status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
     thumbnail_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -125,11 +119,12 @@ class ScanRun(Base):
     models_added: Mapped[int] = mapped_column(Integer, default=0)
     models_updated: Mapped[int] = mapped_column(Integer, default=0)
     models_missing: Mapped[int] = mapped_column(Integer, default=0)
+    automatic_tag_matches: Mapped[int] = mapped_column(Integer, default=0)
+    automatic_tags_added: Mapped[int] = mapped_column(Integer, default=0)
+    automatic_tags_removed: Mapped[int] = mapped_column(Integer, default=0)
     issues_count: Mapped[int] = mapped_column(Integer, default=0)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ScanIssue(Base):
@@ -146,6 +141,4 @@ class ScanIssue(Base):
     severity: Mapped[str] = mapped_column(String(20))
     code: Mapped[str] = mapped_column(String(60), index=True)
     message: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

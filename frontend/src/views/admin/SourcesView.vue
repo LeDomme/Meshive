@@ -39,6 +39,9 @@ interface ScanRun {
   models_added: number
   models_updated: number
   models_missing: number
+  automatic_tag_matches: number
+  automatic_tags_added: number
+  automatic_tags_removed: number
   issues_count: number
   error_message: string | null
   issues?: ScanIssue[]
@@ -496,6 +499,14 @@ onBeforeUnmount(() => {
             Scan: <strong>{{ latestScans[source.id].status }}</strong>
             · {{ latestScans[source.id].trigger }}
             · {{ latestScans[source.id].models_found }} models
+            · {{ latestScans[source.id].automatic_tag_matches }} automatic tag matches
+            <template
+              v-if="latestScans[source.id].automatic_tags_added
+                || latestScans[source.id].automatic_tags_removed"
+            >
+              ({{ latestScans[source.id].automatic_tags_added }} added,
+              {{ latestScans[source.id].automatic_tags_removed }} removed)
+            </template>
             · {{ latestScans[source.id].issues_count }} issues
           </p>
           <p v-if="latestScans[source.id]?.error_message" class="form-error">
