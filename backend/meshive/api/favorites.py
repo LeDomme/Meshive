@@ -1,7 +1,7 @@
 import unicodedata
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from meshive.auth.dependencies import get_current_user
 from meshive.auth.sessions import utc_now
 from meshive.database import get_session
-from meshive.models.catalog import LibraryModel
+from meshive.models.catalog import LibraryModel, ModelImage
 from meshive.models.favorite import FavoriteList, FavoriteListItem
 from meshive.models.tag import Tag
 from meshive.models.user import User
@@ -19,6 +19,8 @@ from meshive.schemas.favorite import (
     FavoriteListItemRead,
     FavoriteListSummary,
     FavoriteListWrite,
+    FavoriteMembershipList,
+    FavoriteModelMembership,
 )
 
 router = APIRouter(prefix="/favorite-lists", tags=["favorite lists"])
@@ -71,6 +73,52 @@ def create_favorite_list(
         ) from error
     session.refresh(favorite)
     return _summary(favorite, 0)
+
+
+@router.get("/model-memberships", response_model=list[FavoriteModelMembership])
+def model_favorite_memberships(
+    model_ids: list[int] = Query(...),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> list[FavoriteModelMembership]:
+    unique_ids = list(dict.fromkeys(model_ids))
+    if any(model_id < 1 for model_id in unique_ids):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Model IDs must be positive integers",
+        )
+    if len(unique_ids) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="At most 100 model IDs may be checked at once",
+        )
+    memberships: dict[int, list[FavoriteMembershipList]] = {
+        model_id: [] for model_id in unique_ids
+    }
+    rows = session.execute(
+        select(
+            FavoriteListItem.model_id,
+            FavoriteList.id,
+            FavoriteList.name,
+            FavoriteListItem.id,
+        )
+        .join(FavoriteList, FavoriteList.id == FavoriteListItem.favorite_list_id)
+        .where(
+            FavoriteList.user_id == user.id,
+            FavoriteListItem.entity_type == "model",
+            FavoriteListItem.model_id.in_(unique_ids),
+        )
+        .order_by(FavoriteList.name.collate("NOCASE"), FavoriteList.id)
+    )
+    for model_id, favorite_list_id, name, item_id in rows:
+        memberships[model_id].append(
+            FavoriteMembershipList(id=favorite_list_id, name=name, item_id=item_id)
+        )
+    return [
+        FavoriteModelMembership(model_id=model_id, lists=memberships[model_id])
+        for model_id in unique_ids
+        if memberships[model_id]
+    ]
 
 
 @router.get("/{favorite_list_id}", response_model=FavoriteListDetail)
@@ -263,6 +311,17 @@ def _item_reads(
             select(LibraryModel).where(LibraryModel.id.in_(model_ids))
         )
     }
+    thumbnail_model_ids = set(
+        session.scalars(
+            select(ModelImage.model_id).where(
+                ModelImage.model_id.in_(model_ids),
+                ModelImage.is_primary.is_(True),
+                ModelImage.is_available.is_(True),
+                ModelImage.thumbnail_status == "ready",
+                ModelImage.thumbnail_key.is_not(None),
+            )
+        )
+    )
     tags = {
         tag.id: tag
         for tag in session.scalars(select(Tag).where(Tag.id.in_(tag_ids)))
@@ -283,6 +342,7 @@ def _item_reads(
         label = item.label
         url = None
         is_available = False
+        model = None
         if item.entity_type == "model" and item.model_id in models:
             model = models[item.model_id]
             label = _model_label(model)
@@ -307,6 +367,18 @@ def _item_reads(
                 url=url,
                 is_available=is_available,
                 created_at=item.created_at,
+                model_id=model.id if model else None,
+                thumbnail_url=(
+                    f"/api/models/{model.id}/thumbnail"
+                    if model and model.id in thumbnail_model_ids
+                    else None
+                ),
+                variant=model.variant if model else None,
+                creator=model.creator if model else None,
+                franchise=model.franchise if model else None,
+                series=model.series if model else None,
+                collection=model.collection if model else None,
+                status=model.status if model else None,
             )
         )
     return reads

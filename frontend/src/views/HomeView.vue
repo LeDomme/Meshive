@@ -7,7 +7,13 @@ import AccountMenu from "../components/AccountMenu.vue"
 import BrandLogo from "../components/BrandLogo.vue"
 import FavoriteSaveDialog from "../components/FavoriteSaveDialog.vue"
 import SearchableFilter from "../components/SearchableFilter.vue"
-import { favoriteTargetsForModel } from "../favorites"
+import {
+  favoriteTargetsForModel,
+  type FavoriteListSummary,
+  type FavoriteMembershipList,
+  type FavoriteModelMembership,
+  type FavoriteTarget,
+} from "../favorites"
 import { useAuthStore } from "../stores/auth"
 
 interface ModelSummary {
@@ -117,6 +123,7 @@ const favoriteModel = ref<ModelSummary | null>(null)
 const favoriteDialogTargets = computed(() =>
   favoriteModel.value ? favoriteTargetsForModel(favoriteModel.value) : [],
 )
+const favoriteMemberships = ref<Record<number, FavoriteMembershipList[]>>({})
 const filters = ref<CatalogueFilters>({
   models: [],
   creators: [],
@@ -218,6 +225,7 @@ async function loadCatalogue(targetPage = 1) {
   void router.replace({ query: locationQuery })
   try {
     page.value = await apiRequest<ModelPage>(`/api/models?${parameters}`)
+    await loadFavoriteMemberships(page.value.items.map((model) => model.id))
   } catch (error) {
     errorMessage.value =
       error instanceof ApiError ? error.message : "Unable to load the catalogue"
@@ -368,8 +376,44 @@ function formatBytes(value: number | null) {
   return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
 }
 
+async function loadFavoriteMemberships(modelIds: number[]) {
+  if (!modelIds.length) {
+    favoriteMemberships.value = {}
+    return
+  }
+  const parameters = new URLSearchParams()
+  modelIds.forEach((modelId) => parameters.append("model_ids", String(modelId)))
+  try {
+    const result = await apiRequest<FavoriteModelMembership[]>(
+      `/api/favorite-lists/model-memberships?${parameters}`,
+    )
+    favoriteMemberships.value = Object.fromEntries(
+      result.map((membership) => [membership.model_id, membership.lists]),
+    )
+  } catch {
+    favoriteMemberships.value = {}
+  }
+}
+
 function openFavoriteDialog(model: ModelSummary) {
   favoriteModel.value = model
+}
+
+function favoriteSaved(list: FavoriteListSummary, target: FavoriteTarget) {
+  if (target.entity_type !== "model" || !target.model_id) return
+  const memberships = favoriteMemberships.value[target.model_id] ?? []
+  if (memberships.some((membership) => membership.id === list.id)) return
+  favoriteMemberships.value = {
+    ...favoriteMemberships.value,
+    [target.model_id]: [...memberships, list],
+  }
+}
+
+function favoriteButtonLabel(modelId: number) {
+  const memberships = favoriteMemberships.value[modelId] ?? []
+  if (!memberships.length) return "Save"
+  if (memberships.length === 1) return memberships[0].name
+  return `${memberships.length} lists`
 }
 
 let filterTimer: ReturnType<typeof setTimeout> | undefined
@@ -616,10 +660,15 @@ onMounted(async () => {
           </p>
           <button
             class="secondary-button model-favorite-button"
+            :class="{ 'favorite-active': favoriteMemberships[model.id]?.length }"
             type="button"
+            :title="favoriteMemberships[model.id]?.map((list) => list.name).join(', ')"
             @click="openFavoriteDialog(model)"
           >
-            <span aria-hidden="true">&#9825;</span> Save
+            <span aria-hidden="true">
+              {{ favoriteMemberships[model.id]?.length ? "♥" : "♡" }}
+            </span>
+            <span>{{ favoriteButtonLabel(model.id) }}</span>
           </button>
           <button
             v-if="auth.user?.role === 'admin' && model.status === 'missing'"
@@ -729,7 +778,9 @@ onMounted(async () => {
     <FavoriteSaveDialog
       :open="Boolean(favoriteModel)"
       :targets="favoriteDialogTargets"
+      :existing-model-lists="favoriteModel ? favoriteMemberships[favoriteModel.id] : []"
       @close="favoriteModel = null"
+      @saved="favoriteSaved"
     />
   </main>
 </template>

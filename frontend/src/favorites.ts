@@ -21,6 +21,14 @@ export interface FavoriteListItem {
   url: string | null
   is_available: boolean
   created_at: string
+  model_id: number | null
+  thumbnail_url: string | null
+  variant: string | null
+  creator: string | null
+  franchise: string | null
+  series: string | null
+  collection: string | null
+  status: string | null
 }
 
 export interface FavoriteListDetail extends FavoriteListSummary {
@@ -34,6 +42,17 @@ export interface FavoriteTarget {
   model_id?: number
   tag_id?: number
   value?: string
+}
+
+export interface FavoriteMembershipList {
+  id: number
+  name: string
+  item_id?: number
+}
+
+export interface FavoriteModelMembership {
+  model_id: number
+  lists: FavoriteMembershipList[]
 }
 
 interface FavoriteModelContext {
