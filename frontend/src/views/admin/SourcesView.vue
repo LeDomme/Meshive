@@ -349,8 +349,8 @@ onBeforeUnmount(() => {
           <small>
             Enter one pattern per line. The first matching pattern is used.
             <code>{variant}</code> accepts free-form values; put variant patterns
-            first and use a literal marker such as <code>[{variant}]</code> when
-            layouts could overlap.
+            first and use a literal marker such as
+            <code>variant {variant}</code> when layouts could overlap.
           </small>
         </label>
 

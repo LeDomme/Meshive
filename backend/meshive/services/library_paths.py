@@ -102,7 +102,7 @@ def model_pattern_warnings(value: str | None) -> list[str]:
             warnings.append(
                 f"Patterns {left_index + 1} and {right_index + 1} are structurally "
                 "ambiguous around {variant}; the first matching pattern wins. "
-                "Add a literal marker such as [{variant}] if both layouts occur."
+                "Add a literal marker such as variant {variant} if both layouts occur."
             )
     return warnings
 

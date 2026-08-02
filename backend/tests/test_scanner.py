@@ -166,7 +166,7 @@ def test_model_candidate_requires_supported_file(tmp_path) -> None:
 
 
 def test_rescan_splits_variant_without_creating_duplicate(tmp_path, monkeypatch) -> None:
-    folder_name = "Marvel - X-Men - Psylocke - [Chibi version] - by E.S Monster"
+    folder_name = "Marvel - X-Men - Psylocke - variant Chibi - by E.S Monster"
     model_directory = tmp_path / "Marvel" / folder_name
     model_directory.mkdir(parents=True)
     (model_directory / "psylocke.7z").write_bytes(b"archive")
@@ -209,7 +209,7 @@ def test_rescan_splits_variant_without_creating_duplicate(tmp_path, monkeypatch)
         assert model.variant is None
 
         source.model_pattern = (
-            "{franchise} - {series} - {model} - [{variant}] - by {creator}"
+            "{franchise} - {series} - {model} - variant {variant} - by {creator}"
         )
         session.commit()
         second_scan = make_scan(session, source.id)
@@ -219,7 +219,7 @@ def test_rescan_splits_variant_without_creating_duplicate(tmp_path, monkeypatch)
         assert len(models) == 1
         assert models[0].id == model_id
         assert models[0].name == "Psylocke"
-        assert models[0].variant == "Chibi version"
+        assert models[0].variant == "Chibi"
         assert models[0].creator == "E.S Monster"
         assert models[0].franchise == "Marvel"
         assert models[0].series == "X-Men"
