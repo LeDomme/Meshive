@@ -81,7 +81,7 @@ const directFavoriteLabel = computed(() =>
 function favoritePreview(item: FavoriteListItem) {
   if (item.thumbnail_url) return item.thumbnail_url
   if (item.artwork_url) return item.artwork_url
-  if (["creator", "franchise", "collection"].includes(item.entity_type)) {
+  if (["creator", "franchise", "series", "collection", "tag"].includes(item.entity_type)) {
     return `/favorite-fallbacks/favorite-${item.entity_type}.webp`
   }
   return null
