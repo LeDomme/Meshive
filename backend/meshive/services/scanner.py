@@ -767,7 +767,7 @@ def _sync_archive_images(
                     image.thumbnail_status = "ready"
                     image.thumbnail_error = None
             except (ArchiveImageError, ThumbnailError) as error:
-                session.delete(image)
+                _discard_archive_image(session, image)
                 _add_issue(
                     session,
                     scan,
@@ -783,6 +783,13 @@ def _sync_archive_images(
         if primary is None:
             primary = image
     return primary
+
+
+def _discard_archive_image(session: Session, image: ModelImage) -> None:
+    if image.id is None:
+        session.expunge(image)
+        return
+    session.delete(image)
 
 
 def _archive_image_cache_is_current(
