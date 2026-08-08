@@ -59,6 +59,7 @@ class Settings(BaseSettings):
         le=250_000_000,
     )
     archive_image_timeout_seconds: int = Field(default=30, ge=1, le=600)
+    archive_image_threads: int = Field(default=1, ge=1, le=8)
     backup_max_restore_bytes: int = Field(
         default=5 * 1024 * 1024 * 1024,
         ge=16 * 1024 * 1024,
@@ -84,6 +85,7 @@ class Settings(BaseSettings):
         ge=64 * 1024,
         le=10 * 1024 * 1024,
     )
+    archive_image_webp_method: int = Field(default=4, ge=0, le=6)
 
     model_config = SettingsConfigDict(
         env_file=".env",

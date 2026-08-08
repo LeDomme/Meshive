@@ -83,6 +83,32 @@ def test_extracts_binary_output_to_a_bounded_file(tmp_path) -> None:
     assert destination.read_bytes() == bytes(range(256)) * 4
 
 
+def test_archive_image_extraction_limits_7zip_to_configured_threads(
+    tmp_path, monkeypatch
+) -> None:
+    received: list[str] = []
+
+    def fake_extraction(arguments, **_kwargs) -> int:
+        received.extend(arguments)
+        return 0
+
+    monkeypatch.setattr(
+        "meshive.archives.sevenzip_cli._run_bounded_extraction", fake_extraction
+    )
+
+    extract_archive_entry(
+        "model.7z",
+        "cover.jpg",
+        tmp_path / "cover.jpg",
+        command="7z",
+        timeout_seconds=30,
+        max_output_bytes=1024,
+        threads=1,
+    )
+
+    assert "-mmt=1" in received
+
+
 def test_bounded_extraction_removes_partial_output_when_limit_is_exceeded(
     tmp_path,
 ) -> None:
