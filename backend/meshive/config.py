@@ -37,6 +37,28 @@ class Settings(BaseSettings):
     archive_max_output_bytes: int = Field(
         default=64 * 1024 * 1024, ge=1024 * 1024, le=1024 * 1024 * 1024
     )
+    archive_image_max_candidates: int = Field(default=12, ge=1, le=100)
+    archive_image_max_entry_bytes: int = Field(
+        default=32 * 1024 * 1024,
+        ge=1024 * 1024,
+        le=1024 * 1024 * 1024,
+    )
+    archive_image_max_compressed_bytes: int = Field(
+        default=32 * 1024 * 1024,
+        ge=1024 * 1024,
+        le=1024 * 1024 * 1024,
+    )
+    archive_image_max_total_bytes: int = Field(
+        default=128 * 1024 * 1024,
+        ge=1024 * 1024,
+        le=4 * 1024 * 1024 * 1024,
+    )
+    archive_image_max_pixels: int = Field(
+        default=40_000_000,
+        ge=1_000_000,
+        le=250_000_000,
+    )
+    archive_image_timeout_seconds: int = Field(default=30, ge=1, le=600)
     backup_max_restore_bytes: int = Field(
         default=5 * 1024 * 1024 * 1024,
         ge=16 * 1024 * 1024,

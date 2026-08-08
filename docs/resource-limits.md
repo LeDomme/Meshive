@@ -32,6 +32,19 @@ output in application memory.
 This limit only applies to the textual archive-content listing. It does not
 limit archive file sizes or authenticated downloads.
 
+## Images from archives
+
+Archive-image candidate discovery is bounded before extraction begins. The
+defaults allow at most 12 candidates, 32 MiB declared uncompressed and
+compressed size per entry, and 128 MiB declared uncompressed size in total per
+model. Decoded images are limited to 40 megapixels, and an archive-image
+operation has a 30-second deadline.
+
+The settings are documented together with the deterministic selection rules in
+[Images from archives](archive-images.md). Nested archives are never inspected
+for images, and generated WebP files are stored only in Meshive's writable
+cache.
+
 ## Archive downloads
 
 `MESHIVE_MAX_CONCURRENT_DOWNLOADS` controls the number of archive responses
@@ -55,6 +68,12 @@ environment:
   MESHIVE_ARCHIVE_TIMEOUT_SECONDS: 120
   MESHIVE_ARCHIVE_MAX_ENTRIES: 100000
   MESHIVE_ARCHIVE_MAX_OUTPUT_BYTES: 67108864
+  MESHIVE_ARCHIVE_IMAGE_MAX_CANDIDATES: 12
+  MESHIVE_ARCHIVE_IMAGE_MAX_ENTRY_BYTES: 33554432
+  MESHIVE_ARCHIVE_IMAGE_MAX_COMPRESSED_BYTES: 33554432
+  MESHIVE_ARCHIVE_IMAGE_MAX_TOTAL_BYTES: 134217728
+  MESHIVE_ARCHIVE_IMAGE_MAX_PIXELS: 40000000
+  MESHIVE_ARCHIVE_IMAGE_TIMEOUT_SECONDS: 30
 ```
 
 Increase the values gradually and observe CPU, memory, disk, and network usage.
