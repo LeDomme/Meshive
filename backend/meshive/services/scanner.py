@@ -730,6 +730,7 @@ def _sync_archive_images(
                     max_output_bytes=settings.archive_image_max_entry_bytes,
                     max_compressed_bytes=settings.archive_image_max_compressed_bytes,
                     max_pixels=settings.archive_image_max_pixels,
+                    threads=settings.archive_image_threads,
                 ) as validated:
                     signature = (
                         f"archive/{model.library_source_id}/{archive.relative_path}/"
@@ -745,6 +746,7 @@ def _sync_archive_images(
                         max_size=settings.archive_image_detail_size,
                         quality=settings.thumbnail_quality,
                         max_output_bytes=settings.archive_image_detail_max_bytes,
+                        webp_method=settings.archive_image_webp_method,
                     )
                     image.thumbnail_key = generate_thumbnail(
                         validated.path,

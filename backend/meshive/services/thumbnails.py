@@ -20,6 +20,7 @@ def generate_thumbnail(
     max_size: int,
     quality: int,
     max_output_bytes: int,
+    webp_method: int = 6,
 ) -> str:
     return generate_cached_webp(
         source_path,
@@ -31,6 +32,7 @@ def generate_thumbnail(
         max_size=max_size,
         quality=quality,
         max_output_bytes=max_output_bytes,
+        webp_method=webp_method,
     )
 
 
@@ -45,6 +47,7 @@ def generate_cached_webp(
     max_size: int,
     quality: int,
     max_output_bytes: int,
+    webp_method: int = 6,
 ) -> str:
     namespace = PurePosixPath(cache_namespace)
     if (
@@ -57,6 +60,7 @@ def generate_cached_webp(
     signature = (
         f"{relative_source_path}\0{source_size}\0{source_modified_ns}\0"
         f"{namespace.as_posix()}\0{max_size}\0{quality}\0{max_output_bytes}"
+        f"\0{webp_method}"
     )
     digest = hashlib.sha256(signature.encode("utf-8")).hexdigest()
     key = PurePosixPath(namespace, digest[:2], f"{digest}.webp").as_posix()
@@ -78,6 +82,7 @@ def generate_cached_webp(
                 temporary_path,
                 quality=quality,
                 max_output_bytes=max_output_bytes,
+                webp_method=webp_method,
             )
         os.replace(temporary_path, output_path)
     except (
@@ -97,6 +102,7 @@ def _save_bounded_webp(
     *,
     quality: int,
     max_output_bytes: int,
+    webp_method: int,
 ) -> None:
     if max_output_bytes <= 0:
         raise ThumbnailError("Thumbnail output limit must be positive")
@@ -108,7 +114,7 @@ def _save_bounded_webp(
 
     while True:
         for candidate_quality in quality_steps:
-            last_encoded = _encode_webp(working, candidate_quality)
+            last_encoded = _encode_webp(working, candidate_quality, webp_method)
             if len(last_encoded) <= max_output_bytes:
                 output_path.write_bytes(last_encoded)
                 return
@@ -139,9 +145,9 @@ def _quality_steps(initial_quality: int) -> tuple[int, ...]:
     return tuple(steps)
 
 
-def _encode_webp(image: Image.Image, quality: int) -> bytes:
+def _encode_webp(image: Image.Image, quality: int, method: int) -> bytes:
     output = BytesIO()
-    image.save(output, format="WEBP", quality=quality, method=6)
+    image.save(output, format="WEBP", quality=quality, method=method)
     return output.getvalue()
 
 

@@ -115,6 +115,7 @@ def open_validated_archive_image(
     max_output_bytes: int,
     max_compressed_bytes: int,
     max_pixels: int,
+    threads: int = 1,
 ) -> Iterator[ValidatedArchiveImage]:
     if not _is_eligible_image(
         candidate,
@@ -139,6 +140,7 @@ def open_validated_archive_image(
                     command=command,
                     timeout_seconds=timeout_seconds,
                     max_output_bytes=max_output_bytes,
+                    threads=threads,
                 )
             except ArchiveReadError as error:
                 raise ArchiveImageError(str(error)) from error
