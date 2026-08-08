@@ -97,6 +97,7 @@ const selectedTagId = ref("")
 const loading = ref(true)
 const errorMessage = ref("")
 const selectedImage = ref<ModelImage | null>(null)
+const pictureNotice = ref("")
 const archiveFilter = ref("")
 const selectedArchiveIndex = ref(0)
 const collapsedFolders = ref<Set<string>>(new Set())
@@ -200,6 +201,54 @@ function toggleFolder(path: string) {
   collapsedFolders.value = next
 }
 
+function selectAdjacentImage(direction: -1 | 1) {
+  const images = model.value?.images ?? []
+  if (images.length < 2) return
+  const currentIndex = Math.max(
+    0,
+    images.findIndex((image) => image.id === selectedImage.value?.id),
+  )
+  selectedImage.value = images[(currentIndex + direction + images.length) % images.length]
+}
+
+async function setPrimaryImage(image: ModelImage) {
+  if (!model.value || image.is_primary) return
+  errorMessage.value = ""
+  pictureNotice.value = ""
+  try {
+    await apiRequest(`/api/admin/models/${model.value.id}/images/${image.id}/primary`, {
+      method: "PUT",
+    })
+    model.value.images.forEach((candidate) => {
+      candidate.is_primary = candidate.id === image.id
+    })
+    selectedImage.value = image
+    pictureNotice.value = "Primary picture saved."
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError ? error.message : "Unable to save primary picture"
+  }
+}
+
+async function resetPictures() {
+  if (!model.value) return
+  if (!window.confirm("Reset all Meshive picture records for this model? Re-scan the source to rebuild them.")) {
+    return
+  }
+  errorMessage.value = ""
+  pictureNotice.value = ""
+  try {
+    const result = await apiRequest<{ deleted: number }>(
+      `/api/admin/models/${model.value.id}/images`,
+      { method: "DELETE" },
+    )
+    model.value.images = []
+    selectedImage.value = null
+    pictureNotice.value = `${result.deleted} picture record${result.deleted === 1 ? "" : "s"} reset. Re-scan the source to rebuild previews.`
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError ? error.message : "Unable to reset pictures"
+  }
+}
+
 function selectArchive(index: number) {
   selectedArchiveIndex.value = index
   archiveFilter.value = ""
@@ -223,6 +272,12 @@ function closeLightbox() {
 
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === "Escape" && lightboxOpen.value) closeLightbox()
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
+  const target = event.target as HTMLElement | null
+  if (!lightboxOpen.value && target?.matches("input, select, textarea")) return
+  if ((model.value?.images.length ?? 0) < 2) return
+  event.preventDefault()
+  selectAdjacentImage(event.key === "ArrowLeft" ? -1 : 1)
 }
 
 function formatBytes(value: number | null) {
@@ -399,6 +454,15 @@ onBeforeUnmount(() => {
         <div class="panel image-gallery">
           <div class="detail-image-frame" :style="imageFrameStyle">
             <button
+              v-if="model.images.length > 1"
+              class="gallery-nav gallery-nav-previous"
+              type="button"
+              aria-label="Previous picture"
+              @click.stop="selectAdjacentImage(-1)"
+            >
+              ‹
+            </button>
+            <button
               v-if="selectedImage"
               ref="detailImageButton"
               class="detail-image-button"
@@ -412,7 +476,28 @@ onBeforeUnmount(() => {
               >
               <span class="image-open-hint">View full image</span>
             </button>
+            <button
+              v-if="model.images.length > 1"
+              class="gallery-nav gallery-nav-next"
+              type="button"
+              aria-label="Next picture"
+              @click.stop="selectAdjacentImage(1)"
+            >
+              ›
+            </button>
             <div v-else class="thumbnail-placeholder">No images found</div>
+          </div>
+          <div v-if="auth.user?.role === 'admin'" class="image-admin-controls">
+            <p v-if="pictureNotice" class="form-success" role="status">{{ pictureNotice }}</p>
+            <button
+              class="secondary-button"
+              type="button"
+              :disabled="!selectedImage || selectedImage.is_primary"
+              @click="selectedImage && setPrimaryImage(selectedImage)"
+            >
+              {{ selectedImage?.is_primary ? "Primary picture" : "Use as primary" }}
+            </button>
+            <button class="danger-button" type="button" @click="resetPictures">Reset pictures</button>
           </div>
           <div v-if="model.images.length > 1" class="image-strip">
             <button
@@ -696,10 +781,28 @@ onBeforeUnmount(() => {
           :class="`mode-${lightboxMode}`"
           @click.self="closeLightbox"
         >
+          <button
+            v-if="model.images.length > 1"
+            class="gallery-nav gallery-nav-previous"
+            type="button"
+            aria-label="Previous picture"
+            @click.stop="selectAdjacentImage(-1)"
+          >
+            ‹
+          </button>
           <img
             :src="selectedImage.url"
             :alt="`${model.name} — ${selectedImage.filename}`"
           >
+          <button
+            v-if="model.images.length > 1"
+            class="gallery-nav gallery-nav-next"
+            type="button"
+            aria-label="Next picture"
+            @click.stop="selectAdjacentImage(1)"
+          >
+            ›
+          </button>
         </div>
       </div>
 

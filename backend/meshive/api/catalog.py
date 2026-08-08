@@ -568,6 +568,68 @@ def model_thumbnail(
     )
 
 
+@admin_router.put("/{model_id}/images/{image_id}/primary")
+def set_primary_model_image(
+    model_id: int,
+    image_id: int,
+    session: Session = Depends(get_session),
+) -> dict[str, int]:
+    image = session.scalar(
+        select(ModelImage).where(
+            ModelImage.id == image_id,
+            ModelImage.model_id == model_id,
+            ModelImage.is_available.is_(True),
+        )
+    )
+    if image is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+    session.execute(
+        update(ModelImage)
+        .where(ModelImage.model_id == model_id)
+        .values(is_primary=False, is_primary_override=False)
+    )
+    image.is_primary = True
+    image.is_primary_override = True
+    session.commit()
+    return {"image_id": image.id}
+
+
+@admin_router.delete("/{model_id}/images")
+def reset_model_images(
+    model_id: int,
+    session: Session = Depends(get_session),
+) -> dict[str, int]:
+    model = session.get(LibraryModel, model_id)
+    if model is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
+    cache_keys = [
+        key
+        for key in session.scalars(
+            select(ModelImage.thumbnail_key).where(
+                ModelImage.model_id == model_id,
+                ModelImage.thumbnail_key.is_not(None),
+            )
+        )
+        if key
+    ] + [
+        key
+        for key in session.scalars(
+            select(ModelImage.cache_key).where(
+                ModelImage.model_id == model_id,
+                ModelImage.cache_key.is_not(None),
+            )
+        )
+        if key
+    ]
+    deleted = session.execute(
+        delete(ModelImage).where(ModelImage.model_id == model_id)
+    ).rowcount
+    session.commit()
+    for key in cache_keys:
+        remove_cached_file(get_settings().cache_dir, key)
+    return {"deleted": deleted or 0}
+
+
 @admin_router.delete("/missing")
 def delete_all_missing_models(
     session: Session = Depends(get_session),

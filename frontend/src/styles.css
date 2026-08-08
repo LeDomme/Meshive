@@ -2571,6 +2571,54 @@ summary {
   opacity: 1;
 }
 
+.gallery-nav {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  place-items: center;
+  border: 1px solid rgb(125 211 252 / 72%);
+  border-radius: 999px;
+  color: #e0f2fe;
+  background: rgb(3 7 18 / 72%);
+  box-shadow: 0 0.4rem 1.25rem rgb(2 6 23 / 40%);
+  font-size: 2.4rem;
+  line-height: 1;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.gallery-nav:hover,
+.gallery-nav:focus-visible {
+  border-color: var(--meshive-cyan);
+  color: white;
+  background: rgb(8 47 73 / 92%);
+}
+
+.gallery-nav-previous {
+  left: 1rem;
+}
+
+.gallery-nav-next {
+  right: 1rem;
+}
+
+.image-admin-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.85rem;
+}
+
+.image-admin-controls .form-success {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .image-strip {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr));
@@ -2837,6 +2885,11 @@ summary {
   min-height: 0;
   padding: 0;
   overflow: auto;
+}
+
+.lightbox-image-area .gallery-nav {
+  position: fixed;
+  z-index: 2;
 }
 
 .lightbox-image-area img {

@@ -13,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, get_session
 from meshive.main import app
-from meshive.models.catalog import Archive, ArchiveEntry, LibraryModel
+from meshive.models.catalog import Archive, ArchiveEntry, LibraryModel, ModelImage
 from meshive.models.library_source import LibrarySource
 
 
@@ -323,6 +323,76 @@ def test_admin_can_only_delete_missing_models() -> None:
         with sessions() as session:
             remaining = list(session.scalars(select(LibraryModel)))
             assert [model.id for model in remaining] == [available_id]
+
+
+def test_admin_can_choose_primary_picture_and_reset_picture_records() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(
+                name="Pictures",
+                root_path="/models/pictures",
+                directory_pattern="{model}",
+                archive_formats=["7z"],
+                image_formats=["jpg"],
+                is_active=True,
+                scan_enabled=True,
+            )
+            session.add(source)
+            session.flush()
+            model = LibraryModel(
+                library_source_id=source.id,
+                relative_path="Cammy",
+                name="Cammy",
+                status="available",
+            )
+            session.add(model)
+            session.flush()
+            session.add_all(
+                [
+                    ModelImage(
+                        model_id=model.id,
+                        filename="first.jpg",
+                        relative_path="Cammy/first.jpg",
+                        format="jpg",
+                        size_bytes=100,
+                        modified_ns=1,
+                        is_primary=True,
+                    ),
+                    ModelImage(
+                        model_id=model.id,
+                        filename="second.jpg",
+                        relative_path="Cammy/second.jpg",
+                        format="jpg",
+                        size_bytes=200,
+                        modified_ns=2,
+                    ),
+                ]
+            )
+            session.commit()
+            model_id = model.id
+            second_id = session.scalar(
+                select(ModelImage.id).where(ModelImage.filename == "second.jpg")
+            )
+
+        selected = client.put(f"/api/admin/models/{model_id}/images/{second_id}/primary")
+        assert selected.status_code == 200
+        assert selected.json() == {"image_id": second_id}
+        with sessions() as session:
+            images = list(
+                session.scalars(
+                    select(ModelImage)
+                    .where(ModelImage.model_id == model_id)
+                    .order_by(ModelImage.id)
+                )
+            )
+            assert [image.is_primary for image in images] == [False, True]
+            assert [image.is_primary_override for image in images] == [False, True]
+
+        reset = client.delete(f"/api/admin/models/{model_id}/images")
+        assert reset.status_code == 200
+        assert reset.json() == {"deleted": 2}
+        with sessions() as session:
+            assert list(session.scalars(select(ModelImage))) == []
 
 
 def test_catalogue_pagination_boundaries() -> None:
