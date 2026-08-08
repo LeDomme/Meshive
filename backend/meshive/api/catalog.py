@@ -116,7 +116,8 @@ def list_models(
             .where(Archive.model_id == LibraryModel.id)
             .scalar_subquery()
             .label("archive_count"),
-            ModelImage.thumbnail_key.label("thumbnail_key"),
+        ModelImage.id.label("thumbnail_image_id"),
+        ModelImage.thumbnail_key.label("thumbnail_key"),
         )
         .join(LibrarySource, LibrarySource.id == LibraryModel.library_source_id)
         .outerjoin(
@@ -150,7 +151,9 @@ def list_models(
             archive_size_bytes=archive_size_bytes,
             archive_count=archive_count,
             thumbnail_url=(
-                f"/api/models/{model.id}/thumbnail" if thumbnail_key else None
+                f"/api/models/{model.id}/thumbnail?v={thumbnail_image_id}"
+                if thumbnail_key
+                else None
             ),
             tags=_model_tags(session, model.id),
         )
@@ -160,6 +163,7 @@ def list_models(
             archive_format,
             archive_size_bytes,
             archive_count,
+            thumbnail_image_id,
             thumbnail_key,
         ) in session.execute(statement)
     ]
