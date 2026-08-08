@@ -2575,24 +2575,29 @@ summary {
   position: absolute;
   z-index: 3;
   top: 50%;
+  display: grid;
   width: 4.5rem;
   height: 7rem;
+  place-items: center;
+  padding: 0;
   border: 0;
-  color: rgb(224 242 254 / 28%);
-  background: linear-gradient(90deg, rgb(2 6 23 / 38%), transparent);
-  box-shadow: 0 0 1rem rgb(2 6 23 / 30%);
+  color: rgb(224 242 254 / 32%);
+  background: transparent;
+  box-shadow: none;
   font-size: 4.8rem;
   line-height: 1;
+  text-shadow: 0 0 0.55rem rgb(2 6 23 / 92%), 0 0 1.2rem rgb(2 6 23 / 78%);
   cursor: pointer;
   transform: translateY(-50%);
-  transition: background 180ms ease, color 180ms ease, text-shadow 180ms ease;
+  transition: color 180ms ease, text-shadow 180ms ease;
 }
 
 .gallery-nav:hover,
 .gallery-nav:focus-visible {
   color: #f8fdff;
-  background: linear-gradient(90deg, rgb(2 6 23 / 74%), transparent);
-  text-shadow: 0 0 0.8rem rgb(3 7 18 / 96%);
+  background: transparent;
+  outline: none;
+  text-shadow: 0 0 0.7rem rgb(8 145 178 / 95%), 0 0 1.4rem rgb(2 6 23 / 92%);
 }
 
 .gallery-nav-previous {
@@ -2601,12 +2606,6 @@ summary {
 
 .gallery-nav-next {
   right: 0;
-  background: linear-gradient(270deg, rgb(2 6 23 / 38%), transparent);
-}
-
-.gallery-nav-next:hover,
-.gallery-nav-next:focus-visible {
-  background: linear-gradient(270deg, rgb(2 6 23 / 74%), transparent);
 }
 
 .image-admin-controls {
