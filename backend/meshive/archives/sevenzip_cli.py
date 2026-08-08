@@ -60,6 +60,7 @@ def extract_archive_entry(
     command: str,
     timeout_seconds: int,
     max_output_bytes: int,
+    threads: int = 1,
 ) -> int:
     if (
         not entry_path
@@ -67,12 +68,15 @@ def extract_archive_entry(
         or any(character in entry_path for character in ("\x00", "\r", "\n", "*", "?"))
     ):
         raise ArchiveReadError("Archive entry path cannot be extracted safely")
+    if threads <= 0:
+        raise ArchiveReadError("Archive extraction thread count must be positive")
 
     environment = {**os.environ, "LC_ALL": "C", "LANG": "C"}
     return _run_bounded_extraction(
         [
             command,
             "x",
+            f"-mmt={threads}",
             "-so",
             "-bd",
             "-bb0",
