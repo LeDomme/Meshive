@@ -343,6 +343,7 @@ def _scan_model(
         _sync_fallback_or_report_missing(
             session, scan, model, relative_path, fallback_primary
         )
+        _apply_primary_override(session, model)
         _apply_automatic_tags(session, scan, model)
         return
 
@@ -367,6 +368,7 @@ def _scan_model(
             )
             .values(is_primary=False)
         )
+    _apply_primary_override(session, model)
     _apply_automatic_tags(session, scan, model)
     if not archives_ok:
         model.status = "error"
@@ -805,6 +807,26 @@ def _archive_image_cache_is_current(
         )
     except ThumbnailError:
         return False
+
+
+def _apply_primary_override(session: Session, model: LibraryModel) -> None:
+    override = session.scalar(
+        select(ModelImage)
+        .where(
+            ModelImage.model_id == model.id,
+            ModelImage.is_available.is_(True),
+            ModelImage.is_primary_override.is_(True),
+        )
+        .order_by(ModelImage.id)
+    )
+    if override is None:
+        return
+    session.execute(
+        update(ModelImage)
+        .where(ModelImage.model_id == model.id)
+        .values(is_primary=False)
+    )
+    override.is_primary = True
 
 
 def _sync_primary_thumbnail(

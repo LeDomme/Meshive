@@ -104,6 +104,7 @@ class ModelImage(Base):
     archive_entry_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     cache_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_primary_override: Mapped[bool] = mapped_column(Boolean, default=False)
     is_available: Mapped[bool] = mapped_column(Boolean, default=True)
     thumbnail_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     thumbnail_status: Mapped[str] = mapped_column(String(30), default="pending", index=True)

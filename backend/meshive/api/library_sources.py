@@ -19,7 +19,7 @@ from meshive.services.library_paths import (
     parse_library_path,
     validate_library_root,
 )
-from meshive.services.thumbnails import remove_cached_thumbnail
+from meshive.services.thumbnails import remove_cached_file
 
 router = APIRouter(
     prefix="/admin/library-sources",
@@ -74,11 +74,11 @@ def update_library_source(
 def delete_library_source(
     source_id: int, session: Session = Depends(get_session)
 ) -> Response:
-    thumbnail_keys = repository.delete_source(
+    cache_keys = repository.delete_source(
         session, _get_source_or_404(session, source_id)
     )
-    for key in thumbnail_keys:
-        remove_cached_thumbnail(get_settings().cache_dir, key)
+    for key in cache_keys:
+        remove_cached_file(get_settings().cache_dir, key)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

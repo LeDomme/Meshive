@@ -62,13 +62,27 @@ def delete_source(session: Session, source: LibrarySource) -> list[str]:
         if model_ids
         else []
     )
-    thumbnail_keys = (
+    cache_keys = (
         [
             key
             for key in session.scalars(
                 select(ModelImage.thumbnail_key).where(
                     ModelImage.model_id.in_(model_ids),
                     ModelImage.thumbnail_key.is_not(None),
+                )
+            )
+            if key
+        ]
+        if model_ids
+        else []
+    )
+    cache_keys += (
+        [
+            key
+            for key in session.scalars(
+                select(ModelImage.cache_key).where(
+                    ModelImage.model_id.in_(model_ids),
+                    ModelImage.cache_key.is_not(None),
                 )
             )
             if key
@@ -102,4 +116,4 @@ def delete_source(session: Session, source: LibrarySource) -> list[str]:
     )
     session.delete(source)
     session.commit()
-    return thumbnail_keys
+    return cache_keys

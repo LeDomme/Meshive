@@ -48,12 +48,13 @@ def test_existing_folder_images_survive_archive_image_cache_migration(
         with engine.connect() as connection:
             migrated = connection.execute(
                 text(
-                    "SELECT filename, storage_kind, archive_id, archive_entry_path, cache_key "
+                    "SELECT filename, storage_kind, archive_id, archive_entry_path, cache_key, "
+                    "is_primary_override "
                     "FROM model_images WHERE id = 1"
                 )
             ).one()
         engine.dispose()
 
-        assert migrated == ("cover.jpg", "source", None, None, None)
+        assert migrated == ("cover.jpg", "source", None, None, None, 0)
     finally:
         get_settings.cache_clear()
