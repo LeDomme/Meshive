@@ -1,7 +1,15 @@
+from io import BytesIO
+
 import pytest
+from PIL import Image
 
 from meshive.archives.sevenzip_cli import ListedArchiveEntry
-from meshive.services.archive_images import select_archive_image_candidates
+from meshive.services import archive_images
+from meshive.services.archive_images import (
+    ArchiveImageError,
+    open_validated_archive_image,
+    select_archive_image_candidates,
+)
 
 
 def _entry(
@@ -67,6 +75,8 @@ def test_ignores_texture_system_unsafe_and_nested_archive_entries() -> None:
             _entry(".hidden.jpg"),
             _entry("../outside.jpg"),
             _entry("C:/outside.jpg"),
+            _entry("@entries.jpg"),
+            _entry("Gallery/image?.jpg"),
             _entry("extras.zip"),
             _entry("Gallery", is_directory=True, size_bytes=0),
             _entry("Gallery/valid.jpg"),
@@ -105,3 +115,114 @@ def test_accepts_missing_compressed_size_when_uncompressed_size_is_bounded() -> 
     selected = _select([_entry("cover.jpg", compressed_size_bytes=None)])
 
     assert [entry.path for entry in selected] == ["cover.jpg"]
+
+
+def _image_bytes(format_name: str, size: tuple[int, int] = (32, 24)) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", size, color=(20, 180, 160)).save(output, format=format_name)
+    return output.getvalue()
+
+
+def _install_fake_extractor(monkeypatch, content: bytes, *, reported_size: int | None = None):
+    def fake_extract(
+        _archive_path: str,
+        _entry_path: str,
+        destination_path,
+        **_kwargs,
+    ) -> int:
+        destination_path.write_bytes(content)
+        return len(content) if reported_size is None else reported_size
+
+    monkeypatch.setattr(archive_images, "extract_archive_entry", fake_extract)
+
+
+def test_extracts_validates_and_cleans_up_supported_image(tmp_path, monkeypatch) -> None:
+    content = _image_bytes("PNG")
+    _install_fake_extractor(monkeypatch, content)
+    candidate = _entry("Gallery/cover.jpg", size_bytes=len(content))
+    temporary_root = tmp_path / "data" / "tmp" / "archive-images"
+
+    with open_validated_archive_image(
+        tmp_path / "model.7z",
+        candidate,
+        command="7z",
+        data_dir=tmp_path / "data",
+        timeout_seconds=30,
+        max_output_bytes=1024 * 1024,
+        max_compressed_bytes=1024 * 1024,
+        max_pixels=1_000_000,
+    ) as image:
+        assert image.path.is_file()
+        assert temporary_root in image.path.parents
+        assert image.format == "png"
+        assert (image.width, image.height) == (32, 24)
+        assert image.size_bytes == len(content)
+
+    assert temporary_root.is_dir()
+    assert list(temporary_root.iterdir()) == []
+
+
+def test_rejects_invalid_image_content_and_cleans_up(tmp_path, monkeypatch) -> None:
+    content = b"not an image"
+    _install_fake_extractor(monkeypatch, content)
+    candidate = _entry("cover.jpg", size_bytes=len(content))
+    temporary_root = tmp_path / "data" / "tmp" / "archive-images"
+
+    with (
+        pytest.raises(ArchiveImageError, match="valid image"),
+        open_validated_archive_image(
+            tmp_path / "model.7z",
+            candidate,
+            command="7z",
+            data_dir=tmp_path / "data",
+            timeout_seconds=30,
+            max_output_bytes=1024 * 1024,
+            max_compressed_bytes=1024 * 1024,
+            max_pixels=1_000_000,
+        ),
+    ):
+        pass
+
+    assert list(temporary_root.iterdir()) == []
+
+
+def test_rejects_image_above_pixel_limit(tmp_path, monkeypatch) -> None:
+    content = _image_bytes("WEBP", (100, 100))
+    _install_fake_extractor(monkeypatch, content)
+    candidate = _entry("cover.webp", size_bytes=len(content))
+
+    with (
+        pytest.raises(ArchiveImageError, match="pixel limit"),
+        open_validated_archive_image(
+            tmp_path / "model.7z",
+            candidate,
+            command="7z",
+            data_dir=tmp_path / "data",
+            timeout_seconds=30,
+            max_output_bytes=1024 * 1024,
+            max_compressed_bytes=1024 * 1024,
+            max_pixels=9_999,
+        ),
+    ):
+        pass
+
+
+def test_rejects_extracted_size_mismatch(tmp_path, monkeypatch) -> None:
+    content = _image_bytes("JPEG")
+    _install_fake_extractor(monkeypatch, content, reported_size=len(content) - 1)
+    candidate = _entry("cover.jpg", size_bytes=len(content))
+
+    with (
+        pytest.raises(ArchiveImageError, match="differs"),
+        open_validated_archive_image(
+            tmp_path / "model.7z",
+            candidate,
+            command="7z",
+            data_dir=tmp_path / "data",
+            timeout_seconds=30,
+            max_output_bytes=1024 * 1024,
+            max_compressed_bytes=1024 * 1024,
+            max_pixels=1_000_000,
+        ),
+    ):
+        pass

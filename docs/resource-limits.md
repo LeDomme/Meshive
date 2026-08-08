@@ -38,7 +38,8 @@ Archive-image candidate discovery is bounded before extraction begins. The
 defaults allow at most 12 candidates, 32 MiB declared uncompressed and
 compressed size per entry, and 128 MiB declared uncompressed size in total per
 model. Decoded images are limited to 40 megapixels, and an archive-image
-operation has a 30-second deadline.
+7-Zip extraction has a 30-second deadline. Image decoding remains bounded by
+the extracted-byte and pixel limits.
 
 The settings are documented together with the deterministic selection rules in
 [Images from archives](archive-images.md). Nested archives are never inspected
