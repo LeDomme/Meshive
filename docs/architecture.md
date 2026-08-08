@@ -82,8 +82,11 @@ internally; arbitrary executable expressions are not accepted.
 
 Original JPEG, PNG, and WebP images remain read-only. Meshive detects changes
 using relative path, size, and modification time and regenerates derived WebP
-thumbnails in its cache. Manual primary-image choices survive rescans while
-the selected image exists.
+thumbnails in its cache. Embedded archive-image candidates are selected with
+bounded, deterministic rules and are never extracted into a library source.
+Valid archive images take presentation priority while images beside archives
+remain available as a fallback. Manual primary-image choices survive rescans
+while the selected image exists.
 
 Generated thumbnails are addressed by a source signature rather than their
 original filename and are delivered through authenticated API routes.

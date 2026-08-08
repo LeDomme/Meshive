@@ -11,6 +11,12 @@ from meshive.config import Settings
         {"session_lifetime_days": 0},
         {"archive_timeout_seconds": 0},
         {"archive_max_entries": 0},
+        {"archive_image_max_candidates": 0},
+        {"archive_image_max_entry_bytes": 1024},
+        {"archive_image_max_compressed_bytes": 1024},
+        {"archive_image_max_total_bytes": 1024},
+        {"archive_image_max_pixels": 1000},
+        {"archive_image_timeout_seconds": 0},
         {"thumbnail_size": 32},
         {"thumbnail_quality": 101},
         {"smtp_port": 0},
@@ -22,6 +28,17 @@ from meshive.config import Settings
 def test_invalid_runtime_limits_are_rejected(override: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **override)
+
+
+def test_archive_image_limits_have_conservative_defaults() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.archive_image_max_candidates == 12
+    assert settings.archive_image_max_entry_bytes == 32 * 1024 * 1024
+    assert settings.archive_image_max_compressed_bytes == 32 * 1024 * 1024
+    assert settings.archive_image_max_total_bytes == 128 * 1024 * 1024
+    assert settings.archive_image_max_pixels == 40_000_000
+    assert settings.archive_image_timeout_seconds == 30
 
 
 def test_complete_smtp_configuration_enables_email_delivery() -> None:
