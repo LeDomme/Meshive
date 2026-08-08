@@ -122,6 +122,14 @@ if frontend_favorite_fallbacks.is_dir():
         name="favorite-fallbacks",
     )
 
+frontend_model_fallbacks = frontend_dist / "model-fallbacks"
+if frontend_model_fallbacks.is_dir():
+    app.mount(
+        "/model-fallbacks",
+        StaticFiles(directory=frontend_model_fallbacks),
+        name="model-fallbacks",
+    )
+
 
 @app.get("/meshhive_logo.png", include_in_schema=False)
 def brand_logo() -> FileResponse:

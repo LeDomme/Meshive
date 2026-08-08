@@ -206,6 +206,11 @@ const sortOptions = [
   { value: "creator_desc", label: "Creator: Z–A" },
 ]
 
+function modelFallbackUrl(modelId: number): string {
+  const number = String(((modelId - 1) % 10) + 1).padStart(2, "0")
+  return `/model-fallbacks/fallback-model-${number}.jpg`
+}
+
 async function loadCatalogue(targetPage = 1) {
   loading.value = true
   errorMessage.value = ""
@@ -650,12 +655,10 @@ onMounted(async () => {
           :to="{ name: 'model-detail', params: { id: model.id } }"
         >
           <img
-            v-if="model.thumbnail_url"
-            :src="model.thumbnail_url"
-            :alt="model.name"
+            :src="model.thumbnail_url || modelFallbackUrl(model.id)"
+            :alt="model.thumbnail_url ? model.name : `${model.name} fallback preview`"
             loading="lazy"
           >
-          <div v-else class="thumbnail-placeholder">No preview</div>
           <span v-if="model.status !== 'available'" class="model-status">
             {{ model.status }}
           </span>
