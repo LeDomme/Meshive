@@ -18,7 +18,7 @@ from meshive.models.catalog import (
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import AutomaticTagRule, ModelTag, Tag
 from meshive.services import scanner
-from meshive.services.archive_images import ValidatedArchiveImage
+from meshive.services.archive_images import ArchiveImageError, ValidatedArchiveImage
 
 
 def make_source_tree(root: Path) -> Path:
@@ -258,6 +258,74 @@ def test_scan_prefers_validated_archive_image_when_folder_has_none(
         assert (settings.cache_dir / image.cache_key).is_file()
         assert session.scalar(select(LibraryModel)).status == "available"
 
+    engine.dispose()
+
+
+def test_scan_falls_back_when_a_new_archive_image_cannot_be_processed(
+    tmp_path, monkeypatch
+) -> None:
+    model_directory = make_source_tree(tmp_path)
+    engine = create_engine(f"sqlite:///{tmp_path / 'archive-image-fallback.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(
+        scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path)
+    )
+    monkeypatch.setattr(
+        scanner,
+        "list_archive",
+        lambda *_args, **_kwargs: [
+            ListedArchiveEntry(
+                path="cover.jpg",
+                name="cover.jpg",
+                is_directory=False,
+                size_bytes=1024,
+                compressed_size_bytes=512,
+                crc="COVER123",
+                modified_at="2026-08-08 12:00:00",
+            )
+        ],
+    )
+
+    @contextmanager
+    def failed_archive_image(*_args, **_kwargs):
+        raise ArchiveImageError("Unsupported image content")
+        yield  # pragma: no cover - makes this a context manager for typing.
+
+    monkeypatch.setattr(scanner, "open_validated_archive_image", failed_archive_image)
+    monkeypatch.setattr(
+        scanner,
+        "generate_thumbnail",
+        lambda *_args, **_kwargs: "thumbnails/fallback.webp",
+    )
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Fallback",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{franchise}/{model_folder}",
+            model_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.commit()
+        scan = make_scan(session, source.id)
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        images = list(session.scalars(select(ModelImage)))
+        assert len(images) == 1
+        assert images[0].storage_kind == "source"
+        assert images[0].is_primary is True
+        assert session.scalar(select(LibraryModel)).status == "available"
+        assert session.get(ScanRun, scan.id).status == "completed_with_errors"
+        assert "archive_image_failed" in {
+            issue.code for issue in session.scalars(select(scanner.ScanIssue))
+        }
+
+    assert model_directory.is_dir()
     engine.dispose()
 
 
