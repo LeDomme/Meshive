@@ -4,6 +4,7 @@ from PIL import Image
 
 from meshive.services.thumbnails import (
     ThumbnailError,
+    generate_cached_webp,
     generate_thumbnail,
     safe_cache_path,
 )
@@ -77,6 +78,30 @@ def test_output_limit_changes_thumbnail_cache_key(tmp_path) -> None:
     bounded_key = generate_thumbnail(source, **common, max_output_bytes=100 * 1024)
 
     assert bounded_key != larger_key
+
+
+def test_archive_derivative_uses_separate_cache_namespace(tmp_path) -> None:
+    source = tmp_path / "source.jpg"
+    cache = tmp_path / "cache"
+    Image.new("RGB", (1200, 600), color=(20, 180, 160)).save(source, format="JPEG")
+    stat = source.stat()
+
+    key = generate_cached_webp(
+        source,
+        relative_source_path="1/Franchise/Model/archive/cover.jpg",
+        source_size=stat.st_size,
+        source_modified_ns=stat.st_mtime_ns,
+        cache_root=cache,
+        cache_namespace="archive-images",
+        max_size=1600,
+        quality=82,
+        max_output_bytes=768 * 1024,
+    )
+
+    output = safe_cache_path(cache, key)
+    assert key.startswith("archive-images/")
+    assert output.is_file()
+    assert output.stat().st_size <= 768 * 1024
 
 
 def test_rejects_unsafe_cache_key(tmp_path) -> None:

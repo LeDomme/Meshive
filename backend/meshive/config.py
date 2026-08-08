@@ -78,6 +78,12 @@ class Settings(BaseSettings):
         ge=16 * 1024,
         le=10 * 1024 * 1024,
     )
+    archive_image_detail_size: int = Field(default=1600, ge=256, le=4096)
+    archive_image_detail_max_bytes: int = Field(
+        default=768 * 1024,
+        ge=64 * 1024,
+        le=10 * 1024 * 1024,
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -20,6 +20,8 @@ from meshive.config import Settings
         {"thumbnail_size": 32},
         {"thumbnail_quality": 101},
         {"thumbnail_max_bytes": 1024},
+        {"archive_image_detail_size": 32},
+        {"archive_image_detail_max_bytes": 1024},
         {"smtp_port": 0},
         {"smtp_security": "tls"},
         {"password_reset_lifetime_minutes": 1},
@@ -41,6 +43,8 @@ def test_archive_image_limits_have_conservative_defaults() -> None:
     assert settings.archive_image_max_pixels == 40_000_000
     assert settings.archive_image_timeout_seconds == 30
     assert settings.thumbnail_max_bytes == 100 * 1024
+    assert settings.archive_image_detail_size == 1600
+    assert settings.archive_image_detail_max_bytes == 768 * 1024
 
 
 def test_complete_smtp_configuration_enables_email_delivery() -> None:

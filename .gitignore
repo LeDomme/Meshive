@@ -42,6 +42,7 @@ venv/
 env/
 .pytest_cache/
 .ruff_cache/
+backend/.test-tmp/
 
 # Environment / Secrets
 .env
