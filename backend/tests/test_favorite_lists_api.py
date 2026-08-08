@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from meshive.auth.dependencies import get_current_user
@@ -119,6 +120,9 @@ def test_favorite_lists_are_private_and_resolve_catalogue_targets(tmp_path) -> N
             session.commit()
             model_id = model.id
             tag_id = tag.id
+            image_id = session.scalar(
+                select(ModelImage.id).where(ModelImage.model_id == model_id)
+            )
 
         created = client.post("/api/favorite-lists", json={"name": "Print next"})
         assert created.status_code == 201
@@ -183,7 +187,9 @@ def test_favorite_lists_are_private_and_resolve_catalogue_targets(tmp_path) -> N
         assert items["model"]["label"] == "Psylocke — Chibi"
         assert items["model"]["url"] == f"/models/{model_id}"
         assert items["model"]["model_id"] == model_id
-        assert items["model"]["thumbnail_url"] == f"/api/models/{model_id}/thumbnail"
+        assert items["model"]["thumbnail_url"] == (
+            f"/api/models/{model_id}/thumbnail?v={image_id}"
+        )
         assert items["model"]["variant"] == "Chibi"
         assert items["model"]["creator"] == "E.S Monster"
         assert items["creator"]["label"] == "E.S Monster"

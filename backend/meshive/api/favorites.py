@@ -312,9 +312,10 @@ def _item_reads(
             select(LibraryModel).where(LibraryModel.id.in_(model_ids))
         )
     }
-    thumbnail_model_ids = set(
-        session.scalars(
-            select(ModelImage.model_id).where(
+    thumbnail_image_ids = {
+        model_id: image_id
+        for model_id, image_id in session.execute(
+            select(ModelImage.model_id, ModelImage.id).where(
                 ModelImage.model_id.in_(model_ids),
                 ModelImage.is_primary.is_(True),
                 ModelImage.is_available.is_(True),
@@ -322,7 +323,7 @@ def _item_reads(
                 ModelImage.thumbnail_key.is_not(None),
             )
         )
-    )
+    }
     tags = {
         tag.id: tag
         for tag in session.scalars(select(Tag).where(Tag.id.in_(tag_ids)))
@@ -381,8 +382,8 @@ def _item_reads(
                 created_at=item.created_at,
                 model_id=model.id if model else None,
                 thumbnail_url=(
-                    f"/api/models/{model.id}/thumbnail"
-                    if model and model.id in thumbnail_model_ids
+                f"/api/models/{model.id}/thumbnail?v={thumbnail_image_ids[model.id]}"
+                if model and model.id in thumbnail_image_ids
                     else None
                 ),
                 artwork_url=(
