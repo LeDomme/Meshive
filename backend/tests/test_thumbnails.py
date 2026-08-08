@@ -1,3 +1,5 @@
+import random
+
 from PIL import Image
 
 from meshive.services.thumbnails import (
@@ -21,6 +23,7 @@ def test_generates_bounded_webp_thumbnail(tmp_path) -> None:
         cache_root=cache,
         max_size=480,
         quality=82,
+        max_output_bytes=100 * 1024,
     )
 
     output = safe_cache_path(cache, key)
@@ -28,6 +31,52 @@ def test_generates_bounded_webp_thumbnail(tmp_path) -> None:
     with Image.open(output) as thumbnail:
         assert thumbnail.format == "WEBP"
         assert thumbnail.size == (480, 240)
+    assert output.stat().st_size <= 100 * 1024
+
+
+def test_reduces_quality_and_dimensions_to_hard_output_limit(tmp_path) -> None:
+    source = tmp_path / "complex.png"
+    cache = tmp_path / "cache"
+    pixels = random.Random(42).randbytes(900 * 900 * 3)
+    Image.frombytes("RGB", (900, 900), pixels).save(source, format="PNG")
+    stat = source.stat()
+
+    key = generate_thumbnail(
+        source,
+        relative_source_path="1/Franchise/Model/complex.png",
+        source_size=stat.st_size,
+        source_modified_ns=stat.st_mtime_ns,
+        cache_root=cache,
+        max_size=480,
+        quality=95,
+        max_output_bytes=20 * 1024,
+    )
+
+    output = safe_cache_path(cache, key)
+    assert output.stat().st_size <= 20 * 1024
+    with Image.open(output) as thumbnail:
+        assert thumbnail.format == "WEBP"
+        assert max(thumbnail.size) <= 480
+
+
+def test_output_limit_changes_thumbnail_cache_key(tmp_path) -> None:
+    source = tmp_path / "source.jpg"
+    cache = tmp_path / "cache"
+    Image.new("RGB", (200, 200), color=(20, 180, 160)).save(source, format="JPEG")
+    stat = source.stat()
+
+    common = {
+        "relative_source_path": "1/Franchise/Model/source.jpg",
+        "source_size": stat.st_size,
+        "source_modified_ns": stat.st_mtime_ns,
+        "cache_root": cache,
+        "max_size": 480,
+        "quality": 82,
+    }
+    larger_key = generate_thumbnail(source, **common, max_output_bytes=200 * 1024)
+    bounded_key = generate_thumbnail(source, **common, max_output_bytes=100 * 1024)
+
+    assert bounded_key != larger_key
 
 
 def test_rejects_unsafe_cache_key(tmp_path) -> None:

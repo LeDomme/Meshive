@@ -42,3 +42,9 @@ of their filename extension before they are accepted.
 
 The limits cover candidate selection and the upcoming extraction pipeline.
 They do not restrict authenticated downloads of the original archive.
+
+Catalogue thumbnails use the shared Meshive thumbnail pipeline and are hard
+limited to `MESHIVE_THUMBNAIL_MAX_BYTES`, which defaults to 102400 bytes
+(100 KiB). Encoding first reduces WebP quality and then image dimensions as
+needed. The configured maximum dimensions and byte limit are both included in
+the cache signature, so changing either setting produces a fresh derivative.

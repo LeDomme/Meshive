@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     max_concurrent_downloads: int = Field(default=4, ge=1, le=64)
     thumbnail_size: int = Field(default=480, ge=64, le=2048)
     thumbnail_quality: int = Field(default=82, ge=1, le=100)
+    thumbnail_max_bytes: int = Field(
+        default=100 * 1024,
+        ge=16 * 1024,
+        le=10 * 1024 * 1024,
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
