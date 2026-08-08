@@ -21,12 +21,45 @@ def generate_thumbnail(
     quality: int,
     max_output_bytes: int,
 ) -> str:
+    return generate_cached_webp(
+        source_path,
+        relative_source_path=relative_source_path,
+        source_size=source_size,
+        source_modified_ns=source_modified_ns,
+        cache_root=cache_root,
+        cache_namespace="thumbnails",
+        max_size=max_size,
+        quality=quality,
+        max_output_bytes=max_output_bytes,
+    )
+
+
+def generate_cached_webp(
+    source_path: Path,
+    *,
+    relative_source_path: str,
+    source_size: int,
+    source_modified_ns: int,
+    cache_root: Path,
+    cache_namespace: str,
+    max_size: int,
+    quality: int,
+    max_output_bytes: int,
+) -> str:
+    namespace = PurePosixPath(cache_namespace)
+    if (
+        not namespace.parts
+        or namespace.is_absolute()
+        or ".." in namespace.parts
+        or len(namespace.parts) != 1
+    ):
+        raise ThumbnailError("Unsafe image cache namespace")
     signature = (
         f"{relative_source_path}\0{source_size}\0{source_modified_ns}\0"
-        f"{max_size}\0{quality}\0{max_output_bytes}"
+        f"{namespace.as_posix()}\0{max_size}\0{quality}\0{max_output_bytes}"
     )
     digest = hashlib.sha256(signature.encode("utf-8")).hexdigest()
-    key = PurePosixPath("thumbnails", digest[:2], f"{digest}.webp").as_posix()
+    key = PurePosixPath(namespace, digest[:2], f"{digest}.webp").as_posix()
     output_path = safe_cache_path(cache_root, key)
     if output_path.is_file():
         return key
@@ -123,7 +156,7 @@ def safe_cache_path(cache_root: Path, key: str) -> Path:
     return path
 
 
-def remove_cached_thumbnail(cache_root: Path, key: str | None) -> None:
+def remove_cached_file(cache_root: Path, key: str | None) -> None:
     if not key:
         return
     try:
@@ -131,3 +164,7 @@ def remove_cached_thumbnail(cache_root: Path, key: str | None) -> None:
     except OSError:
         # Stale cache files are harmless and can be cleaned by maintenance later.
         return
+
+
+def remove_cached_thumbnail(cache_root: Path, key: str | None) -> None:
+    remove_cached_file(cache_root, key)

@@ -16,8 +16,8 @@ Candidate order is deterministic. Filenames containing `cover`, `preview`,
 followed by shallower paths and a case-insensitive path sort. This makes repeat
 scans stable without relying on archive entry order.
 
-Once image extraction is enabled, valid archive images take precedence for the
-catalogue and model gallery. Existing images beside an archive remain indexed
+Valid archive images take precedence for the catalogue and model gallery.
+Existing images beside an archive remain indexed
 as a fallback when an archive contains no usable image or processing fails.
 Meshive never removes or changes those source images.
 
@@ -33,6 +33,8 @@ Selection and processing use conservative defaults:
 | `MESHIVE_ARCHIVE_IMAGE_MAX_TOTAL_BYTES` | `134217728` | Maximum declared total size selected per model |
 | `MESHIVE_ARCHIVE_IMAGE_MAX_PIXELS` | `40000000` | Maximum decoded pixel count per image |
 | `MESHIVE_ARCHIVE_IMAGE_TIMEOUT_SECONDS` | `30` | Processing deadline for an archive-image operation |
+| `MESHIVE_ARCHIVE_IMAGE_DETAIL_SIZE` | `1600` | Maximum edge length of the full archive-image gallery variant |
+| `MESHIVE_ARCHIVE_IMAGE_DETAIL_MAX_BYTES` | `786432` | Hard byte limit for the full archive-image gallery variant |
 
 Entries without a declared uncompressed size are skipped. Some solid archives
 do not expose a useful compressed size for every entry; in that case the
@@ -56,9 +58,11 @@ still be identified by its real content.
 The limits cover candidate selection and the bounded extraction pipeline. They
 do not restrict authenticated downloads of the original archive.
 
-The extraction and validation primitive is intentionally isolated from model
-records in its first 1.3 development step. Source scans continue using folder
-images until the following cache-derivative and scanner integration is enabled.
+For every accepted archive image, Meshive creates a full WebP gallery variant
+and a catalogue thumbnail in its writable cache. The full variant is limited
+to 1600 pixels on its longest edge and 768 KiB by default; the thumbnail stays
+limited to 100 KiB. Archive images are never extracted into the source mount
+and their temporary extraction files are deleted after processing.
 
 Catalogue thumbnails use the shared Meshive thumbnail pipeline and are hard
 limited to `MESHIVE_THUMBNAIL_MAX_BYTES`, which defaults to 102400 bytes

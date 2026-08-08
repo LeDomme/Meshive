@@ -97,6 +97,12 @@ class ModelImage(Base):
     format: Mapped[str] = mapped_column(String(10))
     size_bytes: Mapped[int] = mapped_column(Integer)
     modified_ns: Mapped[int] = mapped_column(Integer)
+    storage_kind: Mapped[str] = mapped_column(String(20), default="source", index=True)
+    archive_id: Mapped[int | None] = mapped_column(
+        ForeignKey("archives.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    archive_entry_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cache_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     is_available: Mapped[bool] = mapped_column(Boolean, default=True)
     thumbnail_key: Mapped[str | None] = mapped_column(Text, nullable=True)

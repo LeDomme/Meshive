@@ -1,5 +1,5 @@
-from pathlib import Path
 import re
+from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
@@ -23,9 +23,9 @@ from meshive.models.creator import CreatorLink
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import ModelTag, Tag
 from meshive.schemas.catalog import (
-    CatalogueFilters,
     ArchiveEntryRead,
     ArchiveRead,
+    CatalogueFilters,
     FilterOption,
     ModelDetail,
     ModelImageRead,
@@ -39,7 +39,7 @@ from meshive.services.archive_bundle import BundleArchive, stream_archive_bundle
 from meshive.services.download_limiter import claim_download, release_download
 from meshive.services.thumbnails import (
     ThumbnailError,
-    remove_cached_thumbnail,
+    remove_cached_file,
     safe_cache_path,
 )
 
@@ -286,6 +286,9 @@ def model_detail(
         )
         .order_by(ModelImage.is_primary.desc(), ModelImage.filename.collate("NOCASE"))
     ).all()
+    archive_images = [image for image in images if image.storage_kind == "archive"]
+    if archive_images:
+        images = archive_images
     archives = session.scalars(
         select(Archive)
         .where(Archive.model_id == model.id)
@@ -502,7 +505,15 @@ def model_image(
             status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
         )
     image, root_path = row
-    path = _safe_source_file(root_path, image.relative_path)
+    if image.storage_kind == "archive":
+        try:
+            path = safe_cache_path(get_settings().cache_dir, image.cache_key or "")
+        except ThumbnailError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+            ) from error
+    else:
+        path = _safe_source_file(root_path, image.relative_path)
     if path is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
@@ -515,7 +526,11 @@ def model_image(
     }
     return FileResponse(
         path,
-        media_type=media_types.get(image.format, "application/octet-stream"),
+        media_type=(
+            "image/webp"
+            if image.storage_kind == "archive"
+            else media_types.get(image.format, "application/octet-stream")
+        ),
         headers={"Cache-Control": "private, max-age=3600"},
     )
 
@@ -562,9 +577,9 @@ def delete_all_missing_models(
             select(LibraryModel.id).where(LibraryModel.status == "missing")
         )
     )
-    thumbnail_keys = _delete_model_records(session, model_ids)
-    for key in thumbnail_keys:
-        remove_cached_thumbnail(get_settings().cache_dir, key)
+    cache_keys = _delete_model_records(session, model_ids)
+    for key in cache_keys:
+        remove_cached_file(get_settings().cache_dir, key)
     return {"deleted": len(model_ids)}
 
 
@@ -583,20 +598,29 @@ def delete_missing_model(
             detail="Only missing models can be deleted from the database",
         )
 
-    thumbnail_keys = _delete_model_records(session, [model.id])
-    for key in thumbnail_keys:
-        remove_cached_thumbnail(get_settings().cache_dir, key)
+    cache_keys = _delete_model_records(session, [model.id])
+    for key in cache_keys:
+        remove_cached_file(get_settings().cache_dir, key)
 
 
 def _delete_model_records(session: Session, model_ids: list[int]) -> list[str]:
     if not model_ids:
         return []
-    thumbnail_keys = [
+    cache_keys = [
         key
         for key in session.scalars(
             select(ModelImage.thumbnail_key).where(
                 ModelImage.model_id.in_(model_ids),
                 ModelImage.thumbnail_key.is_not(None),
+            )
+        )
+        if key
+    ] + [
+        key
+        for key in session.scalars(
+            select(ModelImage.cache_key).where(
+                ModelImage.model_id.in_(model_ids),
+                ModelImage.cache_key.is_not(None),
             )
         )
         if key
@@ -620,7 +644,7 @@ def _delete_model_records(session: Session, model_ids: list[int]) -> list[str]:
     session.execute(delete(Archive).where(Archive.model_id.in_(model_ids)))
     session.execute(delete(LibraryModel).where(LibraryModel.id.in_(model_ids)))
     session.commit()
-    return thumbnail_keys
+    return cache_keys
 
 
 def _model_filters(

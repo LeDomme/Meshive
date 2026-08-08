@@ -1,5 +1,7 @@
+from contextlib import contextmanager
 from pathlib import Path
 
+from PIL import Image
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -16,6 +18,7 @@ from meshive.models.catalog import (
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import AutomaticTagRule, ModelTag, Tag
 from meshive.services import scanner
+from meshive.services.archive_images import ValidatedArchiveImage
 
 
 def make_source_tree(root: Path) -> Path:
@@ -178,6 +181,82 @@ def test_scans_model_archive_image_and_marks_missing(tmp_path, monkeypatch) -> N
 
         assert model.status == "missing"
         assert session.get(ScanRun, second_scan.id).models_missing == 1
+
+    engine.dispose()
+
+
+def test_scan_prefers_validated_archive_image_when_folder_has_none(
+    tmp_path, monkeypatch
+) -> None:
+    model_directory = tmp_path / "Street Fighter" / "Cammy"
+    model_directory.mkdir(parents=True)
+    (model_directory / "cammy.7z").write_bytes(b"archive")
+    extracted = tmp_path / "cover.jpg"
+    Image.new("RGB", (1200, 600), color=(20, 180, 160)).save(extracted, format="JPEG")
+    stat = extracted.stat()
+    engine = create_engine(f"sqlite:///{tmp_path / 'archive-image.db'}")
+    Base.metadata.create_all(engine)
+    settings = Settings(
+        allowed_library_root=tmp_path,
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+    )
+    monkeypatch.setattr(scanner, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        scanner,
+        "list_archive",
+        lambda *_args, **_kwargs: [
+            ListedArchiveEntry(
+                path="images/cover.jpg",
+                name="cover.jpg",
+                is_directory=False,
+                size_bytes=stat.st_size,
+                compressed_size_bytes=stat.st_size,
+                crc="COVER123",
+                modified_at="2026-08-08 12:00:00",
+            )
+        ],
+    )
+
+    @contextmanager
+    def fake_open_image(*_args, **_kwargs):
+        yield ValidatedArchiveImage(
+            path=extracted,
+            format="jpg",
+            width=1200,
+            height=600,
+            size_bytes=stat.st_size,
+        )
+
+    monkeypatch.setattr(scanner, "open_validated_archive_image", fake_open_image)
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Archive only",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{franchise}/{model_folder}",
+            model_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.commit()
+        scan = make_scan(session, source.id)
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        image = session.scalar(select(ModelImage))
+        assert image is not None
+        assert image.storage_kind == "archive"
+        assert image.is_primary is True
+        assert image.archive_entry_path == "images/cover.jpg"
+        assert image.thumbnail_key is not None
+        assert image.cache_key is not None
+        assert (settings.cache_dir / image.thumbnail_key).is_file()
+        assert (settings.cache_dir / image.cache_key).is_file()
+        assert session.scalar(select(LibraryModel)).status == "available"
 
     engine.dispose()
 
