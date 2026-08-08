@@ -40,8 +40,25 @@ compressed-size filter is best effort while the uncompressed output limit
 remains mandatory. Image bytes will also be validated by Pillow independently
 of their filename extension before they are accepted.
 
-The limits cover candidate selection and the upcoming extraction pipeline.
-They do not restrict authenticated downloads of the original archive.
+Selected entries are extracted one at a time through 7-Zip's standard output;
+the command is invoked without a shell and is terminated as soon as its time or
+byte budget is exceeded. Wildcards, listfile syntax, control characters, and
+nested archive traversal are rejected. The temporary file exists only below
+`MESHIVE_DATA_DIR/tmp/archive-images` for the duration of validation and is
+removed on success or failure.
+
+Pillow detects the actual image format from its contents, verifies the file,
+fully decodes it, and checks its pixel count before any cached derivative is
+created. A filename ending in `.jpg` therefore cannot make arbitrary or broken
+data pass validation; a valid supported image with a mismatched extension can
+still be identified by its real content.
+
+The limits cover candidate selection and the bounded extraction pipeline. They
+do not restrict authenticated downloads of the original archive.
+
+The extraction and validation primitive is intentionally isolated from model
+records in its first 1.3 development step. Source scans continue using folder
+images until the following cache-derivative and scanner integration is enabled.
 
 Catalogue thumbnails use the shared Meshive thumbnail pipeline and are hard
 limited to `MESHIVE_THUMBNAIL_MAX_BYTES`, which defaults to 102400 bytes

@@ -1,7 +1,17 @@
-from collections.abc import Iterable
-from pathlib import PurePosixPath
+import tempfile
+import warnings
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
 
-from meshive.archives.sevenzip_cli import ListedArchiveEntry
+from PIL import Image, UnidentifiedImageError
+
+from meshive.archives.sevenzip_cli import (
+    ArchiveReadError,
+    ListedArchiveEntry,
+    extract_archive_entry,
+)
 
 SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS = frozenset({".jpeg", ".jpg", ".png", ".webp"})
 
@@ -25,6 +35,25 @@ _PREFERRED_NAME_MARKERS = (
     "beauty",
     "thumbnail",
 )
+
+_DETECTED_IMAGE_FORMATS = {
+    "JPEG": "jpg",
+    "PNG": "png",
+    "WEBP": "webp",
+}
+
+
+class ArchiveImageError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class ValidatedArchiveImage:
+    path: Path
+    format: str
+    width: int
+    height: int
+    size_bytes: int
 
 
 def select_archive_image_candidates(
@@ -75,6 +104,98 @@ def select_archive_image_candidates(
     return selected
 
 
+@contextmanager
+def open_validated_archive_image(
+    archive_path: Path,
+    candidate: ListedArchiveEntry,
+    *,
+    command: str,
+    data_dir: Path,
+    timeout_seconds: int,
+    max_output_bytes: int,
+    max_compressed_bytes: int,
+    max_pixels: int,
+) -> Iterator[ValidatedArchiveImage]:
+    if not _is_eligible_image(
+        candidate,
+        max_entry_bytes=max_output_bytes,
+        max_compressed_bytes=max_compressed_bytes,
+    ):
+        raise ArchiveImageError("Archive entry is not an eligible image candidate")
+    assert candidate.size_bytes is not None
+
+    temporary_root = data_dir / "tmp" / "archive-images"
+    try:
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="archive-image-", dir=temporary_root
+        ) as work:
+            extracted_path = Path(work) / "candidate.bin"
+            try:
+                extracted_size = extract_archive_entry(
+                    str(archive_path),
+                    candidate.path,
+                    extracted_path,
+                    command=command,
+                    timeout_seconds=timeout_seconds,
+                    max_output_bytes=max_output_bytes,
+                )
+            except ArchiveReadError as error:
+                raise ArchiveImageError(str(error)) from error
+            if (
+                extracted_size != candidate.size_bytes
+                or extracted_path.stat().st_size != candidate.size_bytes
+            ):
+                raise ArchiveImageError(
+                    "Extracted archive image size differs from its archive listing"
+                )
+            yield _validate_extracted_image(extracted_path, max_pixels=max_pixels)
+    except OSError as error:
+        raise ArchiveImageError(str(error)) from error
+
+
+def _validate_extracted_image(
+    path: Path,
+    *,
+    max_pixels: int,
+) -> ValidatedArchiveImage:
+    if max_pixels <= 0:
+        raise ArchiveImageError("Archive image pixel limit must be positive")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(path) as image:
+                detected_format = _DETECTED_IMAGE_FORMATS.get(image.format or "")
+                if detected_format is None:
+                    raise ArchiveImageError("Archive entry is not a supported image")
+                width, height = image.size
+                if width <= 0 or height <= 0 or width * height > max_pixels:
+                    raise ArchiveImageError(
+                        f"Archive image exceeds the {max_pixels} pixel limit"
+                    )
+                image.verify()
+            with Image.open(path) as image:
+                image.load()
+    except ArchiveImageError:
+        raise
+    except (
+        OSError,
+        ValueError,
+        UnidentifiedImageError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+    ) as error:
+        raise ArchiveImageError("Archive entry does not contain a valid image") from error
+
+    return ValidatedArchiveImage(
+        path=path,
+        format=detected_format,
+        width=width,
+        height=height,
+        size_bytes=path.stat().st_size,
+    )
+
+
 def _is_eligible_image(
     entry: ListedArchiveEntry,
     *,
@@ -97,7 +218,8 @@ def _is_eligible_image(
         or path.is_absolute()
         or ".." in path.parts
         or ":" in path.parts[0]
-        or "\x00" in entry.path
+        or entry.path.startswith("@")
+        or any(character in entry.path for character in ("\x00", "\r", "\n", "*", "?"))
         or path.name.startswith(".")
     ):
         return False
