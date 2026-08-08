@@ -108,10 +108,14 @@ const lightboxMode = ref<"height" | "width" | "original">("height")
 const detailImageButton = ref<HTMLButtonElement | null>(null)
 const lightboxCloseButton = ref<HTMLButtonElement | null>(null)
 
+const modelFallbackUrl = computed(() => {
+  if (!model.value) return ""
+  const number = String(((model.value.id - 1) % 10) + 1).padStart(2, "0")
+  return `/model-fallbacks/fallback-model-${number}.jpg`
+})
+
 const imageFrameStyle = computed(() => ({
-  "--detail-image": selectedImage.value
-    ? `url("${selectedImage.value.url.replaceAll('"', '\\"')}")`
-    : "none",
+  "--detail-image": `url("${(selectedImage.value?.url || modelFallbackUrl.value).replaceAll('"', '\\"')}")`,
 }))
 const currentArchive = computed(
   () => model.value?.archives[selectedArchiveIndex.value] ?? null,
@@ -485,7 +489,7 @@ onBeforeUnmount(() => {
             >
               ›
             </button>
-            <div v-else class="thumbnail-placeholder">No images found</div>
+            <div v-else class="thumbnail-placeholder">Fallback preview</div>
           </div>
           <div v-if="auth.user?.role === 'admin'" class="image-admin-controls">
             <p v-if="pictureNotice" class="form-success" role="status">{{ pictureNotice }}</p>
