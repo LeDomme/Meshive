@@ -45,6 +45,12 @@ The settings are documented together with the deterministic selection rules in
 for images, and generated WebP files are stored only in Meshive's writable
 cache.
 
+All catalogue thumbnails, whether derived from a folder image or an archive
+image, are capped at `MESHIVE_THUMBNAIL_MAX_BYTES`. The default is 102400 bytes
+(100 KiB). Meshive lowers WebP quality and, for complex images, dimensions
+until the hard byte limit is met. `MESHIVE_THUMBNAIL_SIZE` remains the maximum
+edge length and never forces an image to be enlarged.
+
 ## Archive downloads
 
 `MESHIVE_MAX_CONCURRENT_DOWNLOADS` controls the number of archive responses
@@ -74,6 +80,7 @@ environment:
   MESHIVE_ARCHIVE_IMAGE_MAX_TOTAL_BYTES: 134217728
   MESHIVE_ARCHIVE_IMAGE_MAX_PIXELS: 40000000
   MESHIVE_ARCHIVE_IMAGE_TIMEOUT_SECONDS: 30
+  MESHIVE_THUMBNAIL_MAX_BYTES: 102400
 ```
 
 Increase the values gradually and observe CPU, memory, disk, and network usage.

@@ -589,6 +589,7 @@ def _sync_primary_thumbnail(
             cache_root=settings.cache_dir,
             max_size=settings.thumbnail_size,
             quality=settings.thumbnail_quality,
+            max_output_bytes=settings.thumbnail_max_bytes,
         )
     except ThumbnailError as error:
         image.thumbnail_status = "error"

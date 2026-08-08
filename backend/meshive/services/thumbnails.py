@@ -1,5 +1,6 @@
 import hashlib
 import os
+from io import BytesIO
 from pathlib import Path, PurePosixPath
 
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -18,10 +19,11 @@ def generate_thumbnail(
     cache_root: Path,
     max_size: int,
     quality: int,
+    max_output_bytes: int,
 ) -> str:
     signature = (
         f"{relative_source_path}\0{source_size}\0{source_modified_ns}\0"
-        f"{max_size}\0{quality}"
+        f"{max_size}\0{quality}\0{max_output_bytes}"
     )
     digest = hashlib.sha256(signature.encode("utf-8")).hexdigest()
     key = PurePosixPath("thumbnails", digest[:2], f"{digest}.webp").as_posix()
@@ -38,11 +40,11 @@ def generate_thumbnail(
             image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
             if image.mode not in {"RGB", "RGBA"}:
                 image = image.convert("RGBA" if "transparency" in image.info else "RGB")
-            image.save(
+            _save_bounded_webp(
+                image,
                 temporary_path,
-                format="WEBP",
                 quality=quality,
-                method=6,
+                max_output_bytes=max_output_bytes,
             )
         os.replace(temporary_path, output_path)
     except (
@@ -54,6 +56,60 @@ def generate_thumbnail(
         temporary_path.unlink(missing_ok=True)
         raise ThumbnailError(str(error)) from error
     return key
+
+
+def _save_bounded_webp(
+    image: Image.Image,
+    output_path: Path,
+    *,
+    quality: int,
+    max_output_bytes: int,
+) -> None:
+    if max_output_bytes <= 0:
+        raise ThumbnailError("Thumbnail output limit must be positive")
+
+    quality_steps = _quality_steps(quality)
+    original = image.copy()
+    working = original
+    last_encoded = b""
+
+    while True:
+        for candidate_quality in quality_steps:
+            last_encoded = _encode_webp(working, candidate_quality)
+            if len(last_encoded) <= max_output_bytes:
+                output_path.write_bytes(last_encoded)
+                return
+
+        longest_edge = max(working.size)
+        if longest_edge <= 64:
+            break
+        size_ratio = (max_output_bytes / len(last_encoded)) ** 0.5
+        scale = max(0.5, min(0.85, size_ratio * 0.95))
+        next_edge = max(64, int(longest_edge * scale))
+        if next_edge >= longest_edge:
+            next_edge = longest_edge - 1
+        working = original.copy()
+        working.thumbnail((next_edge, next_edge), Image.Resampling.LANCZOS)
+
+    raise ThumbnailError(
+        f"Thumbnail could not be encoded below {max_output_bytes} bytes"
+    )
+
+
+def _quality_steps(initial_quality: int) -> tuple[int, ...]:
+    steps = [initial_quality]
+    candidate = initial_quality
+    while candidate > 5:
+        candidate = max(5, candidate - 10)
+        if candidate not in steps:
+            steps.append(candidate)
+    return tuple(steps)
+
+
+def _encode_webp(image: Image.Image, quality: int) -> bytes:
+    output = BytesIO()
+    image.save(output, format="WEBP", quality=quality, method=6)
+    return output.getvalue()
 
 
 def safe_cache_path(cache_root: Path, key: str) -> Path:
