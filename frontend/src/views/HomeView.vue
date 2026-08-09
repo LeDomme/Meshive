@@ -229,6 +229,8 @@ const defaultFilterOrder: CatalogueFilterKey[] = [
 ]
 const filterOrder = ref<CatalogueFilterKey[]>([...defaultFilterOrder])
 const draggedFilter = ref<CatalogueFilterKey | null>(null)
+const dragPreviewTarget = ref<CatalogueFilterKey | null>(null)
+const filterOrderChanged = ref(false)
 
 function normalizeFilterOrder(value: unknown): CatalogueFilterKey[] {
   const received = Array.isArray(value) ? value : []
@@ -270,25 +272,73 @@ async function saveFilterOrder() {
 
 function startFilterDrag(key: CatalogueFilterKey, event: DragEvent) {
   draggedFilter.value = key
+  dragPreviewTarget.value = null
+  filterOrderChanged.value = false
   event.dataTransfer?.setData("text/plain", key)
   if (event.dataTransfer) event.dataTransfer.effectAllowed = "move"
 }
 
-function dropFilter(target: CatalogueFilterKey, event: DragEvent) {
-  const source = draggedFilter.value ?? (event.dataTransfer?.getData("text/plain") as CatalogueFilterKey)
-  draggedFilter.value = null
-  if (!defaultFilterOrder.includes(source) || source === target) return
+function moveFilter(source: CatalogueFilterKey, target: CatalogueFilterKey): boolean {
+  if (!defaultFilterOrder.includes(source) || source === target) return false
   const next = [...filterOrder.value]
   const sourceIndex = next.indexOf(source)
   const targetIndex = next.indexOf(target)
+  if (sourceIndex === targetIndex) return false
   next.splice(sourceIndex, 1)
   next.splice(targetIndex, 0, source)
   filterOrder.value = next
-  void saveFilterOrder()
+  return true
+}
+
+async function previewFilterDrop(target: CatalogueFilterKey) {
+  const source = draggedFilter.value
+  if (!source || source === target || dragPreviewTarget.value === target) return
+
+  const previousPositions = new Map(
+    [...document.querySelectorAll<HTMLElement>(".catalogue-filters [data-filter-key]")]
+      .map((element) => [element.dataset.filterKey, element.getBoundingClientRect()]),
+  )
+  if (!moveFilter(source, target)) return
+
+  filterOrderChanged.value = true
+  dragPreviewTarget.value = target
+  await nextTick()
+  for (const element of document.querySelectorAll<HTMLElement>(
+    ".catalogue-filters [data-filter-key]",
+  )) {
+    const previous = previousPositions.get(element.dataset.filterKey)
+    if (!previous) continue
+    const current = element.getBoundingClientRect()
+    const x = previous.left - current.left
+    const y = previous.top - current.top
+    if (x || y) {
+      element.animate(
+        [
+          { transform: `translate(${x}px, ${y}px)` },
+          { transform: "translate(0, 0)" },
+        ],
+        { duration: 180, easing: "cubic-bezier(0.2, 0.75, 0.25, 1)" },
+      )
+    }
+  }
+}
+
+function dropFilter(target: CatalogueFilterKey, event: DragEvent) {
+  event.preventDefault()
+  void previewFilterDrop(target)
+  if (filterOrderChanged.value) {
+    void saveFilterOrder()
+    filterOrderChanged.value = false
+  }
+  dragPreviewTarget.value = null
+  draggedFilter.value = null
 }
 
 function endFilterDrag() {
+  if (filterOrderChanged.value) void saveFilterOrder()
   draggedFilter.value = null
+  dragPreviewTarget.value = null
+  filterOrderChanged.value = false
 }
 
 function modelFallbackUrl(modelId: number): string {
@@ -634,11 +684,12 @@ onMounted(async () => {
       </div>
 
       <SearchableFilter
+        data-filter-key="model"
         :style="{ order: filterPosition('model') }"
         draggable="true"
         title="Drag to reorder filter"
         @dragstart="startFilterDrag('model', $event)"
-        @dragover.prevent
+        @dragover.prevent="previewFilterDrop('model')"
         @drop="dropFilter('model', $event)"
         @dragend="endFilterDrag"
         v-model="query.model"
@@ -650,11 +701,12 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        data-filter-key="creator"
         :style="{ order: filterPosition('creator') }"
         draggable="true"
         title="Drag to reorder filter"
         @dragstart="startFilterDrag('creator', $event)"
-        @dragover.prevent
+        @dragover.prevent="previewFilterDrop('creator')"
         @drop="dropFilter('creator', $event)"
         @dragend="endFilterDrag"
         v-model="query.creator"
@@ -666,11 +718,12 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        data-filter-key="franchise"
         :style="{ order: filterPosition('franchise') }"
         draggable="true"
         title="Drag to reorder filter"
         @dragstart="startFilterDrag('franchise', $event)"
-        @dragover.prevent
+        @dragover.prevent="previewFilterDrop('franchise')"
         @drop="dropFilter('franchise', $event)"
         @dragend="endFilterDrag"
         v-model="query.franchise"
@@ -682,11 +735,12 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        data-filter-key="series"
         :style="{ order: filterPosition('series') }"
         draggable="true"
         title="Drag to reorder filter"
         @dragstart="startFilterDrag('series', $event)"
-        @dragover.prevent
+        @dragover.prevent="previewFilterDrop('series')"
         @drop="dropFilter('series', $event)"
         @dragend="endFilterDrag"
         v-model="query.series"
@@ -698,11 +752,12 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        data-filter-key="source"
         :style="{ order: filterPosition('source') }"
         draggable="true"
         title="Drag to reorder filter"
         @dragstart="startFilterDrag('source', $event)"
-        @dragover.prevent
+        @dragover.prevent="previewFilterDrop('source')"
         @drop="dropFilter('source', $event)"
         @dragend="endFilterDrag"
         v-model="query.source_id"
@@ -715,11 +770,12 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        data-filter-key="tag"
         :style="{ order: filterPosition('tag') }"
         draggable="true"
         title="Drag to reorder filter"
         @dragstart="startFilterDrag('tag', $event)"
-        @dragover.prevent
+        @dragover.prevent="previewFilterDrop('tag')"
         @drop="dropFilter('tag', $event)"
         @dragend="endFilterDrag"
         v-model="query.tag_id"
@@ -733,11 +789,12 @@ onMounted(async () => {
 
       <SearchableFilter
         v-if="auth.user?.role === 'admin'"
+        data-filter-key="status"
         :style="{ order: filterPosition('status') }"
         draggable="true"
         title="Drag to reorder filter"
         @dragstart="startFilterDrag('status', $event)"
-        @dragover.prevent
+        @dragover.prevent="previewFilterDrop('status')"
         @drop="dropFilter('status', $event)"
         @dragend="endFilterDrag"
         v-model="query.status"
@@ -750,11 +807,12 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        data-filter-key="sort"
         :style="{ order: filterPosition('sort') }"
         draggable="true"
         title="Drag to reorder filter"
         @dragstart="startFilterDrag('sort', $event)"
-        @dragover.prevent
+        @dragover.prevent="previewFilterDrop('sort')"
         @drop="dropFilter('sort', $event)"
         @dragend="endFilterDrag"
         v-model="query.sort"
