@@ -336,6 +336,7 @@ type FacetKey =
   | "collection"
   | "source_id"
   | "tag_id"
+  | "status"
 let lastChangedFacet: FacetKey | null = null
 
 function facetChanged(key: FacetKey) {
