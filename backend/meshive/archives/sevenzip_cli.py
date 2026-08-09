@@ -215,7 +215,7 @@ def _run_bounded_command(
         process.wait(timeout=max(remaining, 0.001))
     except subprocess.TimeoutExpired as error:
         raise ArchiveReadError(
-            f"Archive listing exceeded the {timeout_seconds} second limit"
+            f"Archive command exceeded the {timeout_seconds} second limit"
         ) from error
     finally:
         stopping.set()

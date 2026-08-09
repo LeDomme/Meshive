@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from io import BytesIO
 
 import pytest
@@ -7,6 +8,7 @@ from meshive.archives.sevenzip_cli import ListedArchiveEntry
 from meshive.services import archive_images
 from meshive.services.archive_images import (
     ArchiveImageError,
+    iter_extracted_archive_image_batches,
     open_extracted_archive_images,
     open_validated_archive_image,
     select_archive_image_candidates,
@@ -263,3 +265,34 @@ def test_batch_extracts_candidates_once_and_cleans_up(tmp_path, monkeypatch) -> 
     assert calls == [["Gallery/cover.png", "Gallery/render.png"]]
     assert temporary_root.is_dir()
     assert not list(temporary_root.iterdir())
+
+
+def test_splits_timed_out_archive_image_batch(tmp_path, monkeypatch) -> None:
+    candidates = [_entry("cover.jpg"), _entry("render.jpg")]
+    attempts: list[list[str]] = []
+
+    @contextmanager
+    def fake_open(_archive_path, batch, **_kwargs):
+        selected = list(batch)
+        attempts.append([candidate.path for candidate in selected])
+        if len(selected) > 1:
+            raise ArchiveImageError("Archive command exceeded 90 second limit")
+        yield {selected[0].path: tmp_path / selected[0].name}
+
+    monkeypatch.setattr(archive_images, "open_extracted_archive_images", fake_open)
+
+    batches = list(
+        iter_extracted_archive_image_batches(
+            tmp_path / "model.7z",
+            candidates,
+            command="7z",
+            data_dir=tmp_path / "data",
+            timeout_seconds=90,
+            max_entry_bytes=1024 * 1024,
+            max_compressed_bytes=1024 * 1024,
+        )
+    )
+
+    assert attempts == [["cover.jpg", "render.jpg"], ["cover.jpg"], ["render.jpg"]]
+    assert [batch[0][0].path for batch in batches] == ["cover.jpg", "render.jpg"]
+    assert all(batch[2] is None for batch in batches)
