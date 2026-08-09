@@ -9,9 +9,6 @@ interface LibrarySource {
   root_path: string
   directory_pattern: string
   model_pattern: string | null
-  default_creator: string | null
-  default_franchise: string | null
-  default_collection: string | null
   archive_formats: string[]
   image_formats: string[]
   is_active: boolean
@@ -81,9 +78,6 @@ const form = reactive({
   root_path: "/models/",
   directory_pattern: "{franchise}/{model_folder}",
   model_pattern: "{franchise} - {model} - by {creator}",
-  default_creator: "",
-  default_franchise: "",
-  default_collection: "",
   relative_path: "",
   is_active: true,
   scan_enabled: true,
@@ -168,9 +162,6 @@ function payload() {
     root_path: form.root_path,
     directory_pattern: form.directory_pattern,
     model_pattern: form.model_pattern || null,
-    default_creator: form.default_creator || null,
-    default_franchise: form.default_franchise || null,
-    default_collection: form.default_collection || null,
     archive_formats: ["7z", "zip", "rar"],
     image_formats: ["jpg", "jpeg", "png", "webp"],
     is_active: form.is_active,
@@ -219,9 +210,6 @@ async function previewPath() {
           directory_pattern: form.directory_pattern,
           model_pattern: form.model_pattern || null,
           relative_path: form.relative_path,
-          default_creator: form.default_creator || null,
-          default_franchise: form.default_franchise || null,
-          default_collection: form.default_collection || null,
         }),
       },
     )
@@ -236,9 +224,6 @@ function editSource(source: LibrarySource) {
   form.root_path = source.root_path
   form.directory_pattern = source.directory_pattern
   form.model_pattern = source.model_pattern ?? ""
-  form.default_creator = source.default_creator ?? ""
-  form.default_franchise = source.default_franchise ?? ""
-  form.default_collection = source.default_collection ?? ""
   form.is_active = source.is_active
   form.scan_enabled = source.scan_enabled
   form.auto_scan_enabled = source.auto_scan_enabled
@@ -269,9 +254,6 @@ function resetForm() {
   form.root_path = "/models/"
   form.directory_pattern = "{franchise}/{model_folder}"
   form.model_pattern = "{franchise} - {model} - by {creator}"
-  form.default_creator = ""
-  form.default_franchise = ""
-  form.default_collection = ""
   form.relative_path = ""
   form.is_active = true
   form.scan_enabled = true
@@ -359,14 +341,6 @@ onBeforeUnmount(() => {
           </small>
         </label>
 
-        <details>
-          <summary>Default metadata</summary>
-          <div class="detail-fields">
-            <label><span>Creator</span><input v-model="form.default_creator"></label>
-            <label><span>Franchise</span><input v-model="form.default_franchise"></label>
-            <label><span>Collection</span><input v-model="form.default_collection"></label>
-          </div>
-        </details>
 
         <div class="check-row">
           <label><input v-model="form.is_active" type="checkbox"> Active</label>

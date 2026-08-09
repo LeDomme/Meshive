@@ -3196,3 +3196,12 @@ code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.9em;
 }
+
+
+.catalogue-filters > .searchable-filter[draggable="true"] {
+  cursor: grab;
+}
+
+.catalogue-filters > .searchable-filter[draggable="true"]:active {
+  cursor: grabbing;
+}

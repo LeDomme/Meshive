@@ -21,6 +21,7 @@ from meshive.models.catalog import (
 )
 from meshive.models.creator import CreatorLink
 from meshive.models.library_source import LibrarySource
+from meshive.models.user import User
 from meshive.models.tag import ModelTag, Tag
 from meshive.schemas.catalog import (
     ArchiveEntryRead,
@@ -78,8 +79,11 @@ def list_models(
     ] = "name_asc",
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=48, ge=1, le=100),
+    user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> ModelPage:
+    if model_status is not None and user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     filters = _model_filters(
         search=search,
         model_name=model_name,
@@ -181,8 +185,11 @@ def catalogue_filters(
     tag_id: int | None = None,
     source_id: int | None = None,
     model_status: str | None = Query(default=None, alias="status", max_length=30),
+    user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> CatalogueFilters:
+    if model_status is not None and user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     values = {
         "search": search,
         "model_name": model_name,
@@ -216,8 +223,12 @@ def catalogue_filters(
         collections=_text_filter_options(
             session, LibraryModel.collection, facet_filters("collection")
         ),
-        statuses=_text_filter_options(
-            session, LibraryModel.status, facet_filters("model_status")
+        statuses=(
+            _text_filter_options(
+                session, LibraryModel.status, facet_filters("model_status")
+            )
+            if user.role == "admin"
+            else []
         ),
         tags=[
             TagRead(id=tag.id, name=tag.name, color=tag.color, description=tag.description)

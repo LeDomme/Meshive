@@ -167,11 +167,6 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
                     directory_pattern=source.directory_pattern,
                     model_pattern=source.model_pattern,
                     relative_path=relative_path,
-                    defaults={
-                        "creator": source.default_creator,
-                        "franchise": source.default_franchise,
-                        "collection": source.default_collection,
-                    },
                 )
             except PathPatternError as error:
                 _add_issue(

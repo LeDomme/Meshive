@@ -19,9 +19,6 @@ class LibrarySourceFields(BaseModel):
     root_path: str
     directory_pattern: str
     model_pattern: str | None = None
-    default_creator: str | None = Field(default=None, max_length=255)
-    default_franchise: str | None = Field(default=None, max_length=255)
-    default_collection: str | None = Field(default=None, max_length=255)
     archive_formats: list[str] = Field(default_factory=lambda: ["7z", "zip", "rar"])
     image_formats: list[str] = Field(
         default_factory=lambda: ["jpg", "jpeg", "png", "webp"]
@@ -38,7 +35,7 @@ class LibrarySourceFields(BaseModel):
         default="Europe/Berlin", min_length=1, max_length=64
     )
 
-    @field_validator("name", "default_creator", "default_franchise", "default_collection")
+    @field_validator("name")
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -101,9 +98,6 @@ class PathPreviewRequest(BaseModel):
     directory_pattern: str
     model_pattern: str | None = None
     relative_path: str
-    default_creator: str | None = None
-    default_franchise: str | None = None
-    default_collection: str | None = None
 
 
 class PathPreviewResponse(BaseModel):

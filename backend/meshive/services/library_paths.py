@@ -117,7 +117,6 @@ def parse_library_path(
     directory_pattern: str,
     relative_path: str,
     model_pattern: str | None = None,
-    defaults: dict[str, str | None] | None = None,
 ) -> tuple[str, dict[str, str]]:
     directory_pattern = validate_directory_pattern(directory_pattern)
     model_pattern = validate_model_pattern(model_pattern)
@@ -164,9 +163,6 @@ def parse_library_path(
     elif "model" not in values and "model_folder" in values:
         values["model"] = values["model_folder"]
 
-    for key, value in (defaults or {}).items():
-        if value and key not in values:
-            values[key] = value.strip()
 
     if not values.get("model"):
         raise PathPatternError("No model name could be resolved")
