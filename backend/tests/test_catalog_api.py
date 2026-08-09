@@ -538,6 +538,53 @@ def test_catalogue_sorting_applies_before_pagination() -> None:
         ]
 
 
+def test_model_navigation_follows_catalogue_filters_and_sorting() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(
+                name="Navigation",
+                root_path="/models/navigation",
+                directory_pattern="{model}",
+                archive_formats=["7z"],
+                image_formats=["jpg"],
+                is_active=True,
+                scan_enabled=True,
+            )
+            session.add(source)
+            session.flush()
+            models = [
+                LibraryModel(
+                    library_source_id=source.id,
+                    relative_path=name,
+                    name=name,
+                    franchise="Marvel" if name != "Unrelated" else "DC",
+                    status="available",
+                )
+                for name in ["Alpha", "Beta", "Gamma", "Unrelated"]
+            ]
+            session.add_all(models)
+            session.commit()
+
+            response = client.get(
+                f"/api/models/{models[1].id}/navigation",
+                params={"franchise": "Marvel", "sort": "name_desc"},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "previous": {"id": models[2].id, "name": "Gamma", "variant": None},
+            "next": {"id": models[0].id, "name": "Alpha", "variant": None},
+        }
+
+        boundary = client.get(
+            f"/api/models/{models[2].id}/navigation",
+            params={"franchise": "Marvel", "sort": "name_desc"},
+        )
+        assert boundary.status_code == 200
+        assert boundary.json()["previous"] is None
+        assert boundary.json()["next"]["id"] == models[1].id
+
+
 def test_filter_options_follow_other_selected_facets() -> None:
     with catalog_client() as (client, sessions):
         with sessions() as session:

@@ -30,6 +30,8 @@ from meshive.schemas.catalog import (
     FilterOption,
     ModelDetail,
     ModelImageRead,
+    ModelNavigation,
+    ModelNavigationItem,
     ModelPage,
     ModelSummary,
     SourceFilterOption,
@@ -172,6 +174,71 @@ def list_models(
         ) in session.execute(statement)
     ]
     return ModelPage(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/{model_id}/navigation", response_model=ModelNavigation)
+def model_navigation(
+    model_id: int,
+    search: str | None = Query(default=None, max_length=200),
+    model_name: str | None = Query(default=None, alias="model", max_length=255),
+    creator: str | None = Query(default=None, max_length=255),
+    franchise: str | None = Query(default=None, max_length=255),
+    series: str | None = Query(default=None, max_length=255),
+    collection: str | None = Query(default=None, max_length=255),
+    tag_id: int | None = None,
+    source_id: int | None = None,
+    model_status: str | None = Query(default=None, alias="status", max_length=30),
+    sort: Literal[
+        "meshive_newest",
+        "meshive_oldest",
+        "files_newest",
+        "files_oldest",
+        "name_asc",
+        "name_desc",
+        "creator_asc",
+        "creator_desc",
+    ] = "name_asc",
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ModelNavigation:
+    if model_status is not None and user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+
+    filters = _model_filters(
+        search=search,
+        model_name=model_name,
+        creator=creator,
+        franchise=franchise,
+        series=series,
+        collection=collection,
+        tag_id=tag_id,
+        source_id=source_id,
+        model_status=model_status,
+    )
+    models = list(
+        session.execute(
+            select(LibraryModel.id, LibraryModel.name, LibraryModel.variant)
+            .where(*filters)
+            .order_by(*_model_order(sort))
+        )
+    )
+    current_index = next(
+        (index for index, row in enumerate(models) if row.id == model_id),
+        None,
+    )
+
+    def item_at(index: int) -> ModelNavigationItem | None:
+        if index < 0 or index >= len(models):
+            return None
+        row = models[index]
+        return ModelNavigationItem(id=row.id, name=row.name, variant=row.variant)
+
+    if current_index is None:
+        return ModelNavigation(previous=None, next=None)
+    return ModelNavigation(
+        previous=item_at(current_index - 1),
+        next=item_at(current_index + 1),
+    )
 
 
 @router.get("/filters", response_model=CatalogueFilters)

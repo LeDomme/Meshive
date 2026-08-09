@@ -2058,6 +2058,36 @@ summary {
   gap: 0.75rem;
 }
 
+.detail-model-navigation {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.detail-model-navigation-button {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  border-radius: 0.65rem;
+  color: var(--meshive-cyan);
+  background: transparent;
+  font-size: 2rem;
+  line-height: 1;
+  text-shadow: 0 0 0.55rem rgb(8 145 178 / 55%), 0 0 0.95rem rgb(2 6 23 / 95%);
+  cursor: pointer;
+}
+
+.detail-model-navigation-button:hover:not(:disabled),
+.detail-model-navigation-button:focus-visible {
+  color: white;
+  background: rgb(8 145 178 / 16%);
+  outline: 0;
+}
+
+.detail-model-navigation-button:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
 .detail-favorite-button {
   display: flex;
   align-items: center;

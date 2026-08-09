@@ -346,6 +346,19 @@ function modelFallbackUrl(modelId: number): string {
   return `/model-fallbacks/fallback-model-${number}.webp`
 }
 
+function detailRoute(modelId: number) {
+  const detailQuery: Record<string, string> = {}
+  for (const [key, value] of Object.entries(query)) {
+    if (value) detailQuery[key] = value
+  }
+  if (page.value.page > 1) detailQuery.page = String(page.value.page)
+  return {
+    name: "model-detail",
+    params: { id: modelId },
+    query: detailQuery,
+  }
+}
+
 async function loadCatalogue(targetPage = 1) {
   loading.value = true
   errorMessage.value = ""
@@ -848,7 +861,7 @@ onMounted(async () => {
       <article v-for="model in page.items" :key="model.id" class="model-card">
         <RouterLink
           class="thumbnail-frame"
-          :to="{ name: 'model-detail', params: { id: model.id } }"
+          :to="detailRoute(model.id)"
         >
           <img
             :src="model.thumbnail_url || modelFallbackUrl(model.id)"
@@ -868,7 +881,7 @@ onMounted(async () => {
           <h2>
             <RouterLink
               class="model-title-link"
-              :to="{ name: 'model-detail', params: { id: model.id } }"
+              :to="detailRoute(model.id)"
             >
               {{ model.name }}
             </RouterLink>

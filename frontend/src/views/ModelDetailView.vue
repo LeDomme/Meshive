@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
-import { RouterLink, useRoute } from "vue-router"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { RouterLink, useRoute, useRouter } from "vue-router"
 
 import { ApiError, apiRequest } from "../api"
 import FavoriteSaveDialog from "../components/FavoriteSaveDialog.vue"
@@ -71,6 +71,17 @@ interface ModelDetail {
   tags: Tag[]
 }
 
+interface ModelNavigationItem {
+  id: number
+  name: string
+  variant: string | null
+}
+
+interface ModelNavigation {
+  previous: ModelNavigationItem | null
+  next: ModelNavigationItem | null
+}
+
 interface ArchiveTreeNode {
   key: string
   name: string
@@ -90,6 +101,7 @@ type CatalogueFilterKey =
   | "tag_id"
 
 const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 const model = ref<ModelDetail | null>(null)
 const availableTags = ref<Tag[]>([])
@@ -107,6 +119,7 @@ const favoriteMemberships = ref<FavoriteMembershipList[]>([])
 const lightboxMode = ref<"height" | "width" | "original">("height")
 const detailImageButton = ref<HTMLButtonElement | null>(null)
 const lightboxCloseButton = ref<HTMLButtonElement | null>(null)
+const navigation = ref<ModelNavigation | null>(null)
 
 const modelFallbackUrl = computed(() => {
   if (!model.value) return ""
@@ -306,6 +319,46 @@ function catalogueFilterLink(
   }
 }
 
+function navigationParameters() {
+  const parameters = new URLSearchParams()
+  for (const key of [
+    "search",
+    "model",
+    "creator",
+    "franchise",
+    "series",
+    "collection",
+    "tag_id",
+    "source_id",
+    "status",
+    "sort",
+  ]) {
+    const value = route.query[key]
+    if (typeof value === "string" && value) parameters.set(key, value)
+  }
+  return parameters
+}
+
+function navigationRoute(modelId: number) {
+  return {
+    name: "model-detail",
+    params: { id: modelId },
+    query: route.query,
+  }
+}
+
+function navigateModel(target: ModelNavigationItem | null) {
+  if (target) void router.push(navigationRoute(target.id))
+}
+
+async function loadNavigation(modelId: number) {
+  const parameters = navigationParameters()
+  const suffix = parameters.size ? `?${parameters}` : ""
+  navigation.value = await apiRequest<ModelNavigation>(
+    `/api/models/${modelId}/navigation${suffix}`,
+  )
+}
+
 function favoriteButtonLabel() {
   if (!favoriteMemberships.value.length) return "Save to favorites"
   if (favoriteMemberships.value.length === 1) {
@@ -382,20 +435,37 @@ async function removeTag(tag: Tag) {
   model.value = await apiRequest<ModelDetail>(`/api/models/${route.params.id}`)
 }
 
-onMounted(async () => {
-  window.addEventListener("keydown", handleKeydown)
+async function loadModel() {
+  loading.value = true
+  errorMessage.value = ""
+  navigation.value = null
   try {
-    model.value = await apiRequest<ModelDetail>(`/api/models/${route.params.id}`)
-    availableTags.value = await apiRequest<Tag[]>("/api/tags")
+    const modelId = String(route.params.id)
+    const [detail, tags] = await Promise.all([
+      apiRequest<ModelDetail>(`/api/models/${modelId}`),
+      apiRequest<Tag[]>("/api/tags"),
+    ])
+    model.value = detail
+    availableTags.value = tags
     selectedImage.value = model.value.images[0] ?? null
-    await loadFavoriteMemberships(model.value.id)
+    await Promise.all([
+      loadFavoriteMemberships(model.value.id),
+      loadNavigation(model.value.id),
+    ])
   } catch (error) {
     errorMessage.value =
       error instanceof ApiError ? error.message : "Unable to load the model"
   } finally {
     loading.value = false
   }
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", handleKeydown)
+  void loadModel()
 })
+
+watch(() => route.params.id, () => void loadModel())
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleKeydown)
@@ -405,7 +475,10 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="detail-shell">
-    <RouterLink class="text-link detail-back" to="/">← Back to catalogue</RouterLink>
+    <RouterLink
+      class="text-link detail-back"
+      :to="{ name: 'home', query: route.query }"
+    >← Back to catalogue</RouterLink>
 
     <p v-if="loading" class="muted">Loading…</p>
     <p v-else-if="errorMessage" class="form-error error-panel" role="alert">
@@ -427,6 +500,28 @@ onBeforeUnmount(() => {
           </p>
         </div>
         <div class="detail-header-actions">
+          <nav
+            v-if="navigation"
+            class="detail-model-navigation"
+            aria-label="Catalogue model navigation"
+          >
+            <button
+              class="detail-model-navigation-button"
+              type="button"
+              :disabled="!navigation.previous"
+              :title="navigation.previous ? `Previous: ${navigation.previous.name}` : 'No previous model'"
+              aria-label="Previous model"
+              @click="navigateModel(navigation.previous)"
+            >&#8249;</button>
+            <button
+              class="detail-model-navigation-button"
+              type="button"
+              :disabled="!navigation.next"
+              :title="navigation.next ? `Next: ${navigation.next.name}` : 'No next model'"
+              aria-label="Next model"
+              @click="navigateModel(navigation.next)"
+            >&#8250;</button>
+          </nav>
           <span v-if="model.status !== 'available'" class="detail-status">
             {{ model.status }}
           </span>
