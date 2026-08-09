@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from io import BytesIO
 
 import pytest
