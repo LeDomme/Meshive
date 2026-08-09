@@ -7,6 +7,7 @@ from meshive.archives.sevenzip_cli import ListedArchiveEntry
 from meshive.services import archive_images
 from meshive.services.archive_images import (
     ArchiveImageError,
+    open_extracted_archive_images,
     open_validated_archive_image,
     select_archive_image_candidates,
 )
@@ -226,3 +227,39 @@ def test_rejects_extracted_size_mismatch(tmp_path, monkeypatch) -> None:
         ),
     ):
         pass
+
+
+def test_batch_extracts_candidates_once_and_cleans_up(tmp_path, monkeypatch) -> None:
+    content = _image_bytes("PNG")
+    candidates = [
+        _entry("Gallery/cover.png", size_bytes=len(content)),
+        _entry("Gallery/render.png", size_bytes=len(content)),
+    ]
+    calls: list[list[str]] = []
+
+    def fake_extract(_archive_path, entry_paths, destination, **_kwargs):
+        calls.append(entry_paths)
+        for entry_path in entry_paths:
+            path = destination.joinpath(*entry_path.split("/"))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+
+    monkeypatch.setattr(archive_images, "extract_archive_entries", fake_extract)
+    temporary_root = tmp_path / "data" / "tmp" / "archive-images"
+
+    with open_extracted_archive_images(
+        tmp_path / "model.7z",
+        candidates,
+        command="7z",
+        data_dir=tmp_path / "data",
+        timeout_seconds=90,
+        max_entry_bytes=1024 * 1024,
+        max_compressed_bytes=1024 * 1024,
+        max_total_bytes=1024 * 1024,
+    ) as extracted:
+        assert sorted(extracted) == ["Gallery/cover.png", "Gallery/render.png"]
+        assert all(path.is_file() for path in extracted.values())
+
+    assert calls == [["Gallery/cover.png", "Gallery/render.png"]]
+    assert temporary_root.is_dir()
+    assert not list(temporary_root.iterdir())

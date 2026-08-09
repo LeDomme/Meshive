@@ -219,16 +219,21 @@ def test_scan_prefers_validated_archive_image_when_folder_has_none(
     )
 
     @contextmanager
-    def fake_open_image(*_args, **_kwargs):
-        yield ValidatedArchiveImage(
+    def fake_open_images(*_args, **_kwargs):
+        yield {"images/cover.jpg": extracted}
+
+    monkeypatch.setattr(scanner, "open_extracted_archive_images", fake_open_images)
+    monkeypatch.setattr(
+        scanner,
+        "validate_extracted_archive_image",
+        lambda *_args, **_kwargs: ValidatedArchiveImage(
             path=extracted,
             format="jpg",
             width=1200,
             height=600,
             size_bytes=stat.st_size,
-        )
-
-    monkeypatch.setattr(scanner, "open_validated_archive_image", fake_open_image)
+        ),
+    )
 
     with Session(engine, expire_on_commit=False) as session:
         source = LibrarySource(
@@ -287,11 +292,11 @@ def test_scan_falls_back_when_a_new_archive_image_cannot_be_processed(
     )
 
     @contextmanager
-    def failed_archive_image(*_args, **_kwargs):
+    def failed_archive_images(*_args, **_kwargs):
         raise ArchiveImageError("Unsupported image content")
         yield  # pragma: no cover - makes this a context manager for typing.
 
-    monkeypatch.setattr(scanner, "open_validated_archive_image", failed_archive_image)
+    monkeypatch.setattr(scanner, "open_extracted_archive_images", failed_archive_images)
     monkeypatch.setattr(
         scanner,
         "generate_thumbnail",
@@ -321,7 +326,7 @@ def test_scan_falls_back_when_a_new_archive_image_cannot_be_processed(
         assert images[0].is_primary is True
         assert session.scalar(select(LibraryModel)).status == "available"
         assert session.get(ScanRun, scan.id).status == "completed_with_errors"
-        assert "archive_image_failed" in {
+    assert "archive_image_batch_failed" in {
             issue.code for issue in session.scalars(select(scanner.ScanIssue))
         }
 

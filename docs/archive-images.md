@@ -32,7 +32,7 @@ Selection and processing use conservative defaults:
 | `MESHIVE_ARCHIVE_IMAGE_MAX_COMPRESSED_BYTES` | `33554432` | Maximum declared compressed size per image |
 | `MESHIVE_ARCHIVE_IMAGE_MAX_TOTAL_BYTES` | `134217728` | Maximum declared total size selected per model |
 | `MESHIVE_ARCHIVE_IMAGE_MAX_PIXELS` | `40000000` | Maximum decoded pixel count per image |
-| `MESHIVE_ARCHIVE_IMAGE_TIMEOUT_SECONDS` | `30` | Processing deadline for an archive-image operation |
+| `MESHIVE_ARCHIVE_IMAGE_TIMEOUT_SECONDS` | `90` | Processing deadline for one bounded archive-image batch |
 | `MESHIVE_ARCHIVE_IMAGE_THREADS` | `1` | 7-Zip threads used only while extracting an archive image |
 | `MESHIVE_ARCHIVE_IMAGE_DETAIL_SIZE` | `1600` | Maximum edge length of the full archive-image gallery variant |
 | `MESHIVE_ARCHIVE_IMAGE_DETAIL_MAX_BYTES` | `786432` | Hard byte limit for the full archive-image gallery variant |

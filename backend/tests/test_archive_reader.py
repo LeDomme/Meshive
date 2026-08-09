@@ -8,6 +8,7 @@ from meshive.archives.sevenzip_cli import (
     _run_bounded_command,
     _run_bounded_extraction,
     extract_archive_entry,
+    extract_archive_entries,
     parse_technical_listing,
 )
 
@@ -181,3 +182,30 @@ def test_rejects_unsafe_archive_entry_selection(entry_path: str, tmp_path) -> No
             timeout_seconds=10,
             max_output_bytes=1024,
         )
+
+
+def test_archive_image_batch_extraction_runs_7zip_once(tmp_path, monkeypatch) -> None:
+    received: list[str] = []
+
+    def fake_run(arguments, **_kwargs):
+        received.extend(arguments)
+        return 0, ""
+
+    monkeypatch.setattr("meshive.archives.sevenzip_cli._run_bounded_command", fake_run)
+    destination = tmp_path / "images"
+    extract_archive_entries(
+        "model.7z",
+        ["previews/cover.jpg", "previews/render.png"],
+        destination,
+        command="7z",
+        timeout_seconds=90,
+        max_output_bytes=1024 * 1024,
+        threads=1,
+    )
+
+    assert destination.is_dir()
+    assert received.count("model.7z") == 1
+    assert "previews/cover.jpg" in received
+    assert "previews/render.png" in received
+    assert "-mmt=1" in received
+    assert any(argument.startswith(f"-o{destination}") for argument in received)

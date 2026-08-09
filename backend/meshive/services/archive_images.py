@@ -10,6 +10,7 @@ from PIL import Image, UnidentifiedImageError
 from meshive.archives.sevenzip_cli import (
     ArchiveReadError,
     ListedArchiveEntry,
+    extract_archive_entries,
     extract_archive_entry,
 )
 
@@ -154,6 +155,87 @@ def open_validated_archive_image(
             yield _validate_extracted_image(extracted_path, max_pixels=max_pixels)
     except OSError as error:
         raise ArchiveImageError(str(error)) from error
+
+
+@contextmanager
+def open_extracted_archive_images(
+    archive_path: Path,
+    candidates: Iterable[ListedArchiveEntry],
+    *,
+    command: str,
+    data_dir: Path,
+    timeout_seconds: int,
+    max_entry_bytes: int,
+    max_compressed_bytes: int,
+    max_total_bytes: int,
+    threads: int = 1,
+) -> Iterator[dict[str, Path]]:
+    """Extract selected images once per archive into a temporary directory.
+
+    The caller validates each resulting file independently, allowing one bad
+    image to be reported without discarding the other images from the batch.
+    """
+    selected = list(candidates)
+    if not selected:
+        yield {}
+        return
+    if threads <= 0:
+        raise ArchiveImageError("Archive extraction thread count must be positive")
+
+    selected_bytes = 0
+    for candidate in selected:
+        if not _is_eligible_image(
+            candidate,
+            max_entry_bytes=max_entry_bytes,
+            max_compressed_bytes=max_compressed_bytes,
+        ):
+            raise ArchiveImageError("Archive entry is not an eligible image candidate")
+        assert candidate.size_bytes is not None
+        selected_bytes += candidate.size_bytes
+    if selected_bytes > max_total_bytes:
+        raise ArchiveImageError("Archive image batch exceeds configured extraction limit")
+
+    temporary_root = data_dir / "tmp" / "archive-images"
+    try:
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="archive-image-batch-", dir=temporary_root
+        ) as work:
+            work_path = Path(work).resolve()
+            try:
+                extract_archive_entries(
+                    str(archive_path),
+                    [candidate.path for candidate in selected],
+                    work_path,
+                    command=command,
+                    timeout_seconds=timeout_seconds,
+                    max_output_bytes=max_total_bytes,
+                    threads=threads,
+                )
+            except ArchiveReadError as error:
+                raise ArchiveImageError(str(error)) from error
+
+            extracted: dict[str, Path] = {}
+            for candidate in selected:
+                relative_path = PurePosixPath(candidate.path.replace("\\", "/"))
+                extracted_path = work_path.joinpath(*relative_path.parts).resolve()
+                if work_path not in extracted_path.parents or not extracted_path.is_file():
+                    raise ArchiveImageError("Archive image was not extracted safely")
+                assert candidate.size_bytes is not None
+                if extracted_path.stat().st_size != candidate.size_bytes:
+                    raise ArchiveImageError(
+                        "Extracted archive image size differs from its archive listing"
+                    )
+                extracted[candidate.path] = extracted_path
+            yield extracted
+    except OSError as error:
+        raise ArchiveImageError(str(error)) from error
+
+
+def validate_extracted_archive_image(
+    path: Path, *, max_pixels: int
+) -> ValidatedArchiveImage:
+    return _validate_extracted_image(path, max_pixels=max_pixels)
 
 
 def _validate_extracted_image(
