@@ -384,16 +384,8 @@ async function loadFilterOptions() {
 }
 
 function clearFilters() {
-  Object.assign(query, {
-    search: "",
-    model: "",
-    creator: "",
-    franchise: "",
-    series: "",
-    collection: "",
-    source_id: "",
-    tag_id: "",
-  })
+  Object.assign(query, defaultQuery)
+  window.dispatchEvent(new Event("meshive:reset-filter-scroll"))
   catalogueSearchOpen.value = false
 }
 

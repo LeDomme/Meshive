@@ -104,6 +104,11 @@ function rememberOptionScroll(event: Event) {
   optionScrollTop.value = (event.currentTarget as HTMLElement).scrollTop
 }
 
+function resetOptionScroll() {
+  optionScrollTop.value = 0
+  if (optionList.value) optionList.value.scrollTop = 0
+}
+
 function focusFirstOption() {
   optionList.value?.querySelector<HTMLButtonElement>("button")?.focus()
 }
@@ -112,10 +117,14 @@ function handleDocumentPointerDown(event: PointerEvent) {
   if (isOpen.value && !root.value?.contains(event.target as Node)) close()
 }
 
-onMounted(() => document.addEventListener("pointerdown", handleDocumentPointerDown))
-onBeforeUnmount(() =>
-  document.removeEventListener("pointerdown", handleDocumentPointerDown),
-)
+onMounted(() => {
+  document.addEventListener("pointerdown", handleDocumentPointerDown)
+  window.addEventListener("meshive:reset-filter-scroll", resetOptionScroll)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", handleDocumentPointerDown)
+  window.removeEventListener("meshive:reset-filter-scroll", resetOptionScroll)
+})
 </script>
 
 <template>
@@ -135,6 +144,11 @@ onBeforeUnmount(() =>
       :aria-controls="listboxId"
       @click="toggle"
     >
+      <span
+        v-if="$attrs.draggable === 'true'"
+        class="searchable-filter-drag-grip"
+        aria-hidden="true"
+      ></span>
       <span>{{ selectedLabel }}</span>
       <span class="searchable-filter-chevron" aria-hidden="true">⌄</span>
     </button>
