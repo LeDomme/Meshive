@@ -45,9 +45,9 @@ def test_archive_image_limits_have_conservative_defaults() -> None:
     assert settings.archive_image_max_pixels == 40_000_000
     assert settings.archive_image_timeout_seconds == 90
     assert settings.archive_image_threads == 1
-    assert settings.thumbnail_max_bytes == 100 * 1024
+    assert settings.thumbnail_max_bytes == 64 * 1024
     assert settings.archive_image_detail_size == 1600
-    assert settings.archive_image_detail_max_bytes == 768 * 1024
+    assert settings.archive_image_detail_max_bytes == 384 * 1024
     assert settings.archive_image_webp_method == 4
 
 
