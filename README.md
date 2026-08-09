@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="resources/meshhive_with_name.webp" alt="Meshive" width="460">
+</p>
+
 # Meshive
 
 Meshive is a self-hosted catalogue for archived 3D-print models.
@@ -11,8 +15,8 @@ HTTP range requests for large files and resumable transfers.
 
 ## Project status
 
-Meshive 1.1 is the current stable release series. The application is intended
-for a single self-hosted instance and has been validated with multi-terabyte,
+Meshive 1.3.0 is the current stable release series. The application is intended
+for a single self-hosted instance and is designed for multi-terabyte,
 read-only model libraries. Architecture and operating procedures live in the
 [`docs`](docs/) directory.
 
@@ -76,7 +80,7 @@ HTTPS and production mode whenever Meshive is exposed beyond that boundary.
 To build the image locally instead, run `docker build -t meshive:local .` and
 set `MESHIVE_IMAGE=meshive:local` in `.env` before starting Compose.
 
-Stable deployments should use a concrete semantic tag such as `1.2.0` or an
+Stable deployments should use a concrete semantic tag such as `1.3.0` or an
 immutable digest. `latest` is updated only by a stable version tag. The `edge`
 tag follows successful builds from `main` and is intended for testing upcoming
 changes rather than production deployments.
@@ -96,6 +100,16 @@ Private per-user favorite lists are documented in
 
 Case-insensitive automatic tags derived from archive entry names and paths are
 documented in [`docs/automatic-tagging.md`](docs/automatic-tagging.md).
+
+Meshive can select safe, bounded JPEG, PNG, and WebP gallery images from 7z,
+ZIP, and RAR archives without altering or permanently extracting the source
+archive. Selection rules, cache behaviour, and resource limits are documented
+in [`docs/archive-images.md`](docs/archive-images.md).
+
+Catalogue filters can be reordered and saved per user. Administrators can also
+filter incomplete models; that status is not exposed to regular users. Opening
+a model from the catalogue preserves the active filters and sort order, which
+are used by the previous/next model navigation on its detail page.
 
 Scan and download concurrency settings are documented in
 [`docs/resource-limits.md`](docs/resource-limits.md).

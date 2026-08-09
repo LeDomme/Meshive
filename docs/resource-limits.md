@@ -38,7 +38,7 @@ Archive-image candidate discovery is bounded before extraction begins. The
 defaults allow at most 12 candidates, 32 MiB declared uncompressed and
 compressed size per entry, and 128 MiB declared uncompressed size in total per
 model. Decoded images are limited to 40 megapixels, and an archive-image
-7-Zip extraction has a 30-second deadline. Image decoding remains bounded by
+7-Zip extraction has a 90-second deadline. Image decoding remains bounded by
 the extracted-byte and pixel limits.
 
 The settings are documented together with the deterministic selection rules in
@@ -47,8 +47,8 @@ for images, and generated WebP files are stored only in Meshive's writable
 cache.
 
 All catalogue thumbnails, whether derived from a folder image or an archive
-image, are capped at `MESHIVE_THUMBNAIL_MAX_BYTES`. The default is 102400 bytes
-(100 KiB). Meshive lowers WebP quality and, for complex images, dimensions
+image, are capped at `MESHIVE_THUMBNAIL_MAX_BYTES`. The default is 65536 bytes
+(64 KiB). Meshive lowers WebP quality and, for complex images, dimensions
 until the hard byte limit is met. `MESHIVE_THUMBNAIL_SIZE` remains the maximum
 edge length and never forces an image to be enlarged.
 
@@ -83,9 +83,9 @@ environment:
   MESHIVE_ARCHIVE_IMAGE_TIMEOUT_SECONDS: 90
   MESHIVE_ARCHIVE_IMAGE_THREADS: 1
   MESHIVE_ARCHIVE_IMAGE_DETAIL_SIZE: 1600
-  MESHIVE_ARCHIVE_IMAGE_DETAIL_MAX_BYTES: 786432
+  MESHIVE_ARCHIVE_IMAGE_DETAIL_MAX_BYTES: 393216
   MESHIVE_ARCHIVE_IMAGE_WEBP_METHOD: 4
-  MESHIVE_THUMBNAIL_MAX_BYTES: 102400
+  MESHIVE_THUMBNAIL_MAX_BYTES: 65536
 ```
 
 Increase the values gradually and observe CPU, memory, disk, and network usage.

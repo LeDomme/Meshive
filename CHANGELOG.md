@@ -5,6 +5,31 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-10
+
+### Added
+
+- Added bounded extraction of selected JPEG, PNG, and WebP gallery images from
+  7z, ZIP, and RAR archives. Derived WebP variants are stored only in the
+  Meshive-managed cache; source libraries remain read-only.
+- Added per-user drag-and-drop catalogue-filter ordering.
+- Added previous and next navigation between model details while preserving the
+  active catalogue search, filters, and sort order.
+
+### Changed
+
+- Catalogue controls now have refined keyboard and responsive behaviour,
+  animated reordering, and non-wrapping filter labels.
+- Removed unused source-default metadata. The incomplete-model status filter
+  is now available to administrators only.
+- Reduced the default maximum thumbnail size to 64 KiB and full archive-image
+  gallery variant size to 384 KiB.
+
+### Security
+
+- Archive-image processing validates actual image content and applies bounded
+  candidate, extraction, pixel, processing-time, and cache-output limits.
+
 ## [1.2.0] - 2026-08-02
 
 ### Added
@@ -136,7 +161,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
-[Unreleased]: ../../compare/v1.2.0...HEAD
+[Unreleased]: ../../compare/v1.3.0...HEAD
+[1.3.0]: ../../compare/v1.2.0...v1.3.0
 [1.2.0]: ../../compare/v1.1.0...v1.2.0
 [1.1.0]: ../../compare/v1.0.1...v1.1.0
 [1.0.1]: ../../compare/v1.0.0...v1.0.1
