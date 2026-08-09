@@ -111,7 +111,7 @@ const lightboxCloseButton = ref<HTMLButtonElement | null>(null)
 const modelFallbackUrl = computed(() => {
   if (!model.value) return ""
   const number = String(((model.value.id - 1) % 10) + 1).padStart(2, "0")
-  return `/model-fallbacks/fallback-model-${number}.jpg`
+  return `/model-fallbacks/fallback-model-${number}.webp`
 })
 
 const imageFrameStyle = computed(() => ({
@@ -285,7 +285,7 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 function formatBytes(value: number | null) {
-  if (value === null) return "—"
+  if (value === null) return "â€”"
   const units = ["B", "KB", "MB", "GB", "TB"]
   let size = value
   let unit = 0
@@ -405,9 +405,9 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="detail-shell">
-    <RouterLink class="text-link detail-back" to="/">← Back to catalogue</RouterLink>
+    <RouterLink class="text-link detail-back" to="/">â† Back to catalogue</RouterLink>
 
-    <p v-if="loading" class="muted">Loading…</p>
+    <p v-if="loading" class="muted">Loadingâ€¦</p>
     <p v-else-if="errorMessage" class="form-error error-panel" role="alert">
       {{ errorMessage }}
     </p>
@@ -418,12 +418,12 @@ onBeforeUnmount(() => {
           <p class="eyebrow">{{ model.source_name }}</p>
           <h1>{{ model.name }}</h1>
           <p v-if="model.variant" class="detail-variant">
-            Variant · {{ model.variant }}
+            Variant Â· {{ model.variant }}
           </p>
           <p class="detail-taxonomy">
             {{ [model.franchise, model.series, model.collection]
               .filter((value, index, values) => value && values.indexOf(value) === index)
-              .join(" · ") || "Uncategorised" }}
+              .join(" Â· ") || "Uncategorised" }}
           </p>
         </div>
         <div class="detail-header-actions">
@@ -441,7 +441,7 @@ onBeforeUnmount(() => {
             :title="favoriteMemberships.map((list) => list.name).join(', ')"
             @click="handleFavoriteClick"
           >
-            <span aria-hidden="true">{{ favoriteMemberships.length ? "♥" : "♡" }}</span>
+            <span aria-hidden="true">{{ favoriteMemberships.length ? "â™¥" : "â™¡" }}</span>
             <span class="favorite-button-label">{{ favoriteButtonLabel() }}</span>
             <span
               v-if="!favoriteMemberships.length"
@@ -464,7 +464,7 @@ onBeforeUnmount(() => {
               aria-label="Previous picture"
               @click.stop="selectAdjacentImage(-1)"
             >
-              ‹
+              â€¹
             </button>
             <button
               v-if="selectedImage"
@@ -476,7 +476,7 @@ onBeforeUnmount(() => {
             >
               <img
                 :src="selectedImage.url"
-                :alt="`${model.name} — ${selectedImage.filename}`"
+                :alt="`${model.name} â€” ${selectedImage.filename}`"
               >
               <span class="image-open-hint">View full image</span>
             </button>
@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
               aria-label="Next picture"
               @click.stop="selectAdjacentImage(1)"
             >
-              ›
+              â€º
             </button>
             <div v-else class="thumbnail-placeholder">Fallback preview</div>
           </div>
@@ -554,7 +554,7 @@ onBeforeUnmount(() => {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  {{ link.label }} <span aria-hidden="true">↗</span>
+                  {{ link.label }} <span aria-hidden="true">â†—</span>
                 </a>
               </dd>
             </template>
@@ -621,7 +621,7 @@ onBeforeUnmount(() => {
                     type="button"
                     :aria-label="`Remove ${tag.name} tag`"
                     @click="removeTag(tag)"
-                  >×</button>
+                  >Ã—</button>
                 </TagChip>
               </div>
               <span v-else class="muted">None</span>
@@ -634,7 +634,7 @@ onBeforeUnmount(() => {
             @submit.prevent="addTag"
           >
             <select v-model="selectedTagId" required aria-label="Tag to add">
-              <option value="">Add tag…</option>
+              <option value="">Add tagâ€¦</option>
               <option v-for="tag in availableTags" :key="tag.id" :value="String(tag.id)">
                 {{ tag.name }}
               </option>
@@ -663,8 +663,8 @@ onBeforeUnmount(() => {
             <h2>{{ currentArchive?.filename || "No archive indexed" }}</h2>
           </div>
           <p v-if="currentArchive" class="archive-summary">
-            {{ currentArchive.entry_count }} entries ·
-            {{ formatBytes(currentArchive.size_bytes) }} compressed ·
+            {{ currentArchive.entry_count }} entries Â·
+            {{ formatBytes(currentArchive.size_bytes) }} compressed Â·
             {{ formatBytes(currentArchive.uncompressed_size_bytes) }} unpacked
           </p>
         </div>
@@ -692,7 +692,7 @@ onBeforeUnmount(() => {
         <template v-if="currentArchive?.entries.length">
           <label class="archive-search">
             <span class="sr-only">Filter archive contents</span>
-            <input v-model="archiveFilter" type="search" placeholder="Filter archive contents…">
+            <input v-model="archiveFilter" type="search" placeholder="Filter archive contentsâ€¦">
           </label>
           <div class="archive-table-wrap">
             <table class="archive-table">
@@ -714,20 +714,20 @@ onBeforeUnmount(() => {
                       @click="toggleFolder(node.key)"
                     >
                       <span class="tree-chevron">
-                        {{ collapsedFolders.has(node.key) ? "▶" : "▼" }}
+                        {{ collapsedFolders.has(node.key) ? "â–¶" : "â–¼" }}
                       </span>
-                      <span>📁</span>
+                      <span>ðŸ“</span>
                       <span>{{ node.name }}</span>
                     </button>
                     <span v-else class="tree-file path-value">
-                      <span>📄</span>
+                      <span>ðŸ“„</span>
                       <span>{{ node.name }}</span>
                     </span>
                   </td>
                   <td>
-                    {{ node.isDirectory ? "—" : formatBytes(node.entry?.size_bytes ?? null) }}
+                    {{ node.isDirectory ? "â€”" : formatBytes(node.entry?.size_bytes ?? null) }}
                   </td>
-                  <td>{{ node.entry?.modified_at || "—" }}</td>
+                  <td>{{ node.entry?.modified_at || "â€”" }}</td>
                 </tr>
               </tbody>
             </table>
@@ -792,11 +792,11 @@ onBeforeUnmount(() => {
             aria-label="Previous picture"
             @click.stop="selectAdjacentImage(-1)"
           >
-            ‹
+            â€¹
           </button>
           <img
             :src="selectedImage.url"
-            :alt="`${model.name} — ${selectedImage.filename}`"
+            :alt="`${model.name} â€” ${selectedImage.filename}`"
           >
           <button
             v-if="model.images.length > 1"
@@ -805,7 +805,7 @@ onBeforeUnmount(() => {
             aria-label="Next picture"
             @click.stop="selectAdjacentImage(1)"
           >
-            ›
+            â€º
           </button>
         </div>
       </div>

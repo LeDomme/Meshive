@@ -141,6 +141,16 @@ def brand_wordmark() -> FileResponse:
     return FileResponse(frontend_dist / "meshhive_with_name.png")
 
 
+@app.get("/meshhive_logo_borderless.webp", include_in_schema=False)
+def borderless_brand_logo() -> FileResponse:
+    return FileResponse(frontend_dist / "meshhive_logo_borderless.webp")
+
+
+@app.get("/meshhive_with_name.webp", include_in_schema=False)
+def brand_wordmark_webp() -> FileResponse:
+    return FileResponse(frontend_dist / "meshhive_with_name.webp")
+
+
 @app.get("/{path:path}", include_in_schema=False)
 def frontend(path: str) -> FileResponse:
     if path == "api" or path.startswith("api/"):

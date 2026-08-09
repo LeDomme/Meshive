@@ -238,21 +238,20 @@ h1 {
 }
 
 .brand-icon {
-  position: relative;
-  display: inline-block;
+  display: inline-flex;
   flex: 0 0 auto;
-  width: 2.4rem;
-  height: 3.25rem;
-  overflow: hidden;
+  width: 2.9rem;
+  height: auto;
+  aspect-ratio: 496 / 551;
+  align-items: center;
+  justify-content: center;
 }
 
 .brand-icon img {
-  position: absolute;
-  top: -0.91rem;
-  left: -1.16rem;
-  width: 4.5rem;
-  height: 4.5rem;
-  max-width: none;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .brand-wordmark {
@@ -267,17 +266,11 @@ h1 {
 
 .login-brand-icon {
   display: block;
-  width: 4.77rem;
-  height: 7rem;
+  width: 5.5rem;
+  height: auto;
+  aspect-ratio: 496 / 551;
   margin: 0 auto 1.5rem;
   filter: drop-shadow(0 0 18px rgb(0 194 255 / 24%));
-}
-
-.login-brand-icon img {
-  top: -2rem;
-  left: -2.54rem;
-  width: 9.86rem;
-  height: 9.86rem;
 }
 
 .admin-shell {
@@ -312,7 +305,7 @@ h1 {
 .admin-brand,
 .catalogue-brand {
   --catalogue-logo-height: clamp(4.2rem, 12.3vw, 8.5rem);
-  --catalogue-logo-width: clamp(2.86rem, 8.39vw, 5.8rem);
+  --catalogue-logo-width: clamp(3.78rem, 11.07vw, 7.66rem);
 }
 
 .admin-brand .eyebrow,
@@ -333,15 +326,6 @@ h1 {
 .catalogue-title-row .brand-icon {
   width: var(--catalogue-logo-width);
   height: var(--catalogue-logo-height);
-  overflow: visible;
-}
-
-.admin-title-row .brand-icon img,
-.catalogue-title-row .brand-icon img {
-  top: -12%;
-  left: -53.2%;
-  width: 206.5%;
-  height: 140.8%;
 }
 
 .admin-title {

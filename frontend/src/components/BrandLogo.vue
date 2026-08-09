@@ -6,12 +6,12 @@ withDefaults(defineProps<{ variant?: "icon" | "wordmark" }>(), {
 
 <template>
   <span v-if="variant === 'icon'" class="brand-icon" aria-hidden="true">
-    <img src="/meshhive_logo.png" alt="">
+    <img src="/meshhive_logo_borderless.webp" alt="">
   </span>
   <img
     v-else
     class="brand-wordmark"
-    src="/meshhive_with_name.png"
+    src="/meshhive_with_name.webp"
     alt="Meshive"
   >
 </template>
