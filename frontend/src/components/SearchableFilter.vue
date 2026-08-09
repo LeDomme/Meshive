@@ -42,6 +42,7 @@ const searchInput = ref<HTMLInputElement | null>(null)
 const optionList = ref<HTMLElement | null>(null)
 const isOpen = ref(false)
 const search = ref("")
+const optionScrollTop = ref(0)
 const listboxId = `searchable-filter-${useId()}`
 
 function optionLabel(option: SearchableFilterOption) {
@@ -66,6 +67,13 @@ async function open() {
   isOpen.value = true
   await nextTick()
   searchInput.value?.focus()
+  if (optionScrollTop.value > 0) {
+    optionList.value?.scrollTo({ top: optionScrollTop.value })
+  } else {
+    optionList.value
+      ?.querySelector<HTMLButtonElement>(".searchable-filter-option.selected")
+      ?.scrollIntoView({ block: "nearest" })
+  }
 }
 
 function close() {
@@ -90,6 +98,10 @@ function selectOption(value: string) {
 function closeAndFocus() {
   close()
   trigger.value?.focus()
+}
+
+function rememberOptionScroll(event: Event) {
+  optionScrollTop.value = (event.currentTarget as HTMLElement).scrollTop
 }
 
 function focusFirstOption() {
@@ -146,6 +158,7 @@ onBeforeUnmount(() =>
         class="searchable-filter-options"
         role="listbox"
         :aria-label="label"
+        @scroll.passive="rememberOptionScroll"
       >
         <button
           v-if="showAllOption"

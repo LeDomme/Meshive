@@ -3200,6 +3200,20 @@ code {
 
 .catalogue-filters > .searchable-filter[draggable="true"] {
   cursor: grab;
+  position: relative;
+  padding-left: 0.65rem;
+}
+
+.catalogue-filters > .searchable-filter[draggable="true"]::before {
+  content: "⠿";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  color: var(--meshive-muted);
+  font-size: 1rem;
+  letter-spacing: -0.15rem;
+  pointer-events: none;
 }
 
 .catalogue-filters > .searchable-filter[draggable="true"]:active {
