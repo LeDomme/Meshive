@@ -75,13 +75,13 @@ class Settings(BaseSettings):
     thumbnail_size: int = Field(default=480, ge=64, le=2048)
     thumbnail_quality: int = Field(default=82, ge=1, le=100)
     thumbnail_max_bytes: int = Field(
-        default=100 * 1024,
+        default=64 * 1024,
         ge=16 * 1024,
         le=10 * 1024 * 1024,
     )
     archive_image_detail_size: int = Field(default=1600, ge=256, le=4096)
     archive_image_detail_max_bytes: int = Field(
-        default=768 * 1024,
+        default=384 * 1024,
         ge=64 * 1024,
         le=10 * 1024 * 1024,
     )
