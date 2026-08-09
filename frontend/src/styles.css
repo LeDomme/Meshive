@@ -1597,7 +1597,8 @@ summary {
   cursor: pointer;
 }
 
-.searchable-filter-trigger > span:first-child {
+.searchable-filter-trigger-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

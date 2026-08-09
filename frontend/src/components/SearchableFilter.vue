@@ -149,7 +149,7 @@ onBeforeUnmount(() => {
         class="searchable-filter-drag-grip"
         aria-hidden="true"
       ></span>
-      <span>{{ selectedLabel }}</span>
+      <span class="searchable-filter-trigger-label">{{ selectedLabel }}</span>
       <span class="searchable-filter-chevron" aria-hidden="true">⌄</span>
     </button>
 
