@@ -15,7 +15,7 @@ HTTP range requests for large files and resumable transfers.
 
 ## Project status
 
-Meshive 1.2 is the current stable release series. The application is intended
+Meshive 1.3.0 is the current stable release series. The application is intended
 for a single self-hosted instance and is designed for multi-terabyte,
 read-only model libraries. Architecture and operating procedures live in the
 [`docs`](docs/) directory.
