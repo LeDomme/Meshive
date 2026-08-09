@@ -212,7 +212,6 @@ type CatalogueFilterKey =
   | "creator"
   | "franchise"
   | "series"
-  | "collection"
   | "source"
   | "tag"
   | "status"
@@ -223,7 +222,6 @@ const defaultFilterOrder: CatalogueFilterKey[] = [
   "creator",
   "franchise",
   "series",
-  "collection",
   "source",
   "tag",
   "status",
@@ -705,22 +703,6 @@ onMounted(async () => {
         search-placeholder="Search series"
         :options="filters.series"
         @change="facetChanged('series')"
-      />
-
-      <SearchableFilter
-        :style="{ order: filterPosition('collection') }"
-        draggable="true"
-        title="Drag to reorder filter"
-        @dragstart="startFilterDrag('collection', $event)"
-        @dragover.prevent
-        @drop="dropFilter('collection', $event)"
-        @dragend="endFilterDrag"
-        v-model="query.collection"
-        label="Collection"
-        all-label="All collections"
-        search-placeholder="Search collections"
-        :options="filters.collections"
-        @change="facetChanged('collection')"
       />
 
       <SearchableFilter
