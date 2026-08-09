@@ -478,6 +478,11 @@ def _sync_archive(
     archive.uncompressed_size_bytes = 0
     session.flush()
 
+    # 7-Zip can take a long time on very large archives. Persist the pending
+    # state first so SQLite does not retain its single writer lock while the
+    # external process is running.
+    session.commit()
+
     settings = get_settings()
     try:
         entries = list_archive(
@@ -622,6 +627,9 @@ def _sync_fallback_or_report_missing(
         return
     image_record, image_path = fallback_primary
     image_record.is_primary = True
+    # Thumbnail generation is file I/O and can be slow for large source images.
+    # Release pending scanner writes before doing that work.
+    session.commit()
     _sync_primary_thumbnail(session, scan, model, image_record, image_path)
 
 
@@ -737,6 +745,10 @@ def _sync_archive_images(
                 )
                 for entry in pending_entries
             ]
+            # The image batch is external 7-Zip and image-processing work. Keep
+            # the database transaction short so catalogue and auth requests can
+            # continue while the batch is running.
+            session.commit()
             failed_images = 0
             failure_messages: set[str] = set()
             for batch_entries, extracted_paths, batch_error in iter_extracted_archive_image_batches(
