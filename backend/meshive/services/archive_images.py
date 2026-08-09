@@ -238,6 +238,63 @@ def validate_extracted_archive_image(
     return _validate_extracted_image(path, max_pixels=max_pixels)
 
 
+def iter_extracted_archive_image_batches(
+    archive_path: Path,
+    candidates: Iterable[ListedArchiveEntry],
+    *,
+    command: str,
+    data_dir: Path,
+    timeout_seconds: int,
+    max_entry_bytes: int,
+    max_compressed_bytes: int,
+    threads: int = 1,
+) -> Iterator[tuple[list[ListedArchiveEntry], dict[str, Path], ArchiveImageError | None]]:
+    """Yield extracted images, splitting only timed-out batches automatically."""
+    selected = list(candidates)
+    if not selected:
+        return
+
+    try:
+        with open_extracted_archive_images(
+            archive_path,
+            selected,
+            command=command,
+            data_dir=data_dir,
+            timeout_seconds=timeout_seconds,
+            max_entry_bytes=max_entry_bytes,
+            max_compressed_bytes=max_compressed_bytes,
+            max_total_bytes=sum(candidate.size_bytes or 0 for candidate in selected),
+            threads=threads,
+        ) as extracted:
+            yield selected, extracted, None
+    except ArchiveImageError as error:
+        if len(selected) == 1 or "second limit" not in str(error).casefold():
+            yield selected, {}, error
+            return
+
+        midpoint = len(selected) // 2
+        yield from iter_extracted_archive_image_batches(
+            archive_path,
+            selected[:midpoint],
+            command=command,
+            data_dir=data_dir,
+            timeout_seconds=timeout_seconds,
+            max_entry_bytes=max_entry_bytes,
+            max_compressed_bytes=max_compressed_bytes,
+            threads=threads,
+        )
+        yield from iter_extracted_archive_image_batches(
+            archive_path,
+            selected[midpoint:],
+            command=command,
+            data_dir=data_dir,
+            timeout_seconds=timeout_seconds,
+            max_entry_bytes=max_entry_bytes,
+            max_compressed_bytes=max_compressed_bytes,
+            threads=threads,
+        )
+
+
 def _validate_extracted_image(
     path: Path,
     *,

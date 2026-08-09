@@ -20,7 +20,7 @@ from meshive.models.catalog import (
 from meshive.models.library_source import LibrarySource
 from meshive.services.archive_images import (
     ArchiveImageError,
-    open_extracted_archive_images,
+    iter_extracted_archive_image_batches,
     select_archive_image_candidates,
     validate_extracted_archive_image,
 )
@@ -737,98 +737,103 @@ def _sync_archive_images(
                 )
                 for entry in pending_entries
             ]
-            try:
-                with open_extracted_archive_images(
-                    source_path,
-                    candidates,
-                    command=settings.archive_command,
-                    data_dir=settings.data_dir,
-                    timeout_seconds=settings.archive_image_timeout_seconds,
-                    max_entry_bytes=settings.archive_image_max_entry_bytes,
-                    max_compressed_bytes=settings.archive_image_max_compressed_bytes,
-                    max_total_bytes=sum(entry.size_bytes or 0 for entry in pending_entries),
-                    threads=settings.archive_image_threads,
-                ) as extracted_paths:
-                    for entry in pending_entries:
+            failed_images = 0
+            failure_messages: set[str] = set()
+            for batch_entries, extracted_paths, batch_error in iter_extracted_archive_image_batches(
+                source_path,
+                candidates,
+                command=settings.archive_command,
+                data_dir=settings.data_dir,
+                timeout_seconds=settings.archive_image_timeout_seconds,
+                max_entry_bytes=settings.archive_image_max_entry_bytes,
+                max_compressed_bytes=settings.archive_image_max_compressed_bytes,
+                threads=settings.archive_image_threads,
+            ):
+                if batch_error is not None:
+                    failed_images += len(batch_entries)
+                    failure_messages.add(str(batch_error))
+                    for entry in batch_entries:
                         relative_path = f"archive/{archive.id}/{entry.path}"
-                        image = existing.get(relative_path)
-                        if image is None:
-                            image = ModelImage(
-                                model_id=model.id,
-                                relative_path=relative_path,
-                                storage_kind="archive",
-                                archive_id=archive.id,
-                                archive_entry_path=entry.path,
-                            )
-                            session.add(image)
-                            existing[relative_path] = image
-                        try:
-                            validated = validate_extracted_archive_image(
-                                extracted_paths[entry.path],
-                                max_pixels=settings.archive_image_max_pixels,
-                            )
-                            signature = (
-                                f"archive/{model.library_source_id}/{archive.relative_path}/"
-                                f"{archive.size_bytes}/{archive.modified_ns}/{entry.path}/{entry.crc or ''}"
-                            )
-                            image.cache_key = generate_cached_webp(
-                                validated.path,
-                                relative_source_path=signature,
-                                source_size=validated.size_bytes,
-                                source_modified_ns=archive.modified_ns,
-                                cache_root=settings.cache_dir,
-                                cache_namespace="archive-images",
-                                max_size=settings.archive_image_detail_size,
-                                quality=settings.thumbnail_quality,
-                                max_output_bytes=settings.archive_image_detail_max_bytes,
-                                webp_method=settings.archive_image_webp_method,
-                            )
-                            image.thumbnail_key = generate_thumbnail(
-                                validated.path,
-                                relative_source_path=signature,
-                                source_size=validated.size_bytes,
-                                source_modified_ns=archive.modified_ns,
-                                cache_root=settings.cache_dir,
-                                max_size=settings.thumbnail_size,
-                                quality=settings.thumbnail_quality,
-                                max_output_bytes=settings.thumbnail_max_bytes,
-                            )
-                            image.format = validated.format
-                            image.filename = PurePosixPath(entry.path).name
-                            image.size_bytes = validated.size_bytes
-                            image.modified_ns = archive.modified_ns
-                            image.archive_id = archive.id
-                            image.archive_entry_path = entry.path
-                            image.thumbnail_status = "ready"
-                            image.thumbnail_error = None
-                        except (ArchiveImageError, ThumbnailError) as error:
+                        image = existing.pop(relative_path, None)
+                        if image is not None:
                             _discard_archive_image(session, image)
-                            existing.pop(relative_path, None)
-                            _add_issue(
-                                session,
-                                scan,
-                                model.relative_path,
-                                "warning",
-                                "archive_image_failed",
-                                str(error),
-                                model.id,
-                            )
-            except ArchiveImageError as error:
-                for entry in pending_entries:
+                    continue
+
+                for entry in batch_entries:
                     relative_path = f"archive/{archive.id}/{entry.path}"
-                    image = existing.pop(relative_path, None)
-                    if image is not None:
+                    image = existing.get(relative_path)
+                    if image is None:
+                        image = ModelImage(
+                            model_id=model.id,
+                            relative_path=relative_path,
+                            storage_kind="archive",
+                            archive_id=archive.id,
+                            archive_entry_path=entry.path,
+                        )
+                        session.add(image)
+                        existing[relative_path] = image
+                    try:
+                        validated = validate_extracted_archive_image(
+                            extracted_paths[entry.path],
+                            max_pixels=settings.archive_image_max_pixels,
+                        )
+                        signature = (
+                            f"archive/{model.library_source_id}/{archive.relative_path}/"
+                            f"{archive.size_bytes}/{archive.modified_ns}/{entry.path}/{entry.crc or ''}"
+                        )
+                        image.cache_key = generate_cached_webp(
+                            validated.path,
+                            relative_source_path=signature,
+                            source_size=validated.size_bytes,
+                            source_modified_ns=archive.modified_ns,
+                            cache_root=settings.cache_dir,
+                            cache_namespace="archive-images",
+                            max_size=settings.archive_image_detail_size,
+                            quality=settings.thumbnail_quality,
+                            max_output_bytes=settings.archive_image_detail_max_bytes,
+                            webp_method=settings.archive_image_webp_method,
+                        )
+                        image.thumbnail_key = generate_thumbnail(
+                            validated.path,
+                            relative_source_path=signature,
+                            source_size=validated.size_bytes,
+                            source_modified_ns=archive.modified_ns,
+                            cache_root=settings.cache_dir,
+                            max_size=settings.thumbnail_size,
+                            quality=settings.thumbnail_quality,
+                            max_output_bytes=settings.thumbnail_max_bytes,
+                        )
+                        image.format = validated.format
+                        image.filename = PurePosixPath(entry.path).name
+                        image.size_bytes = validated.size_bytes
+                        image.modified_ns = archive.modified_ns
+                        image.archive_id = archive.id
+                        image.archive_entry_path = entry.path
+                        image.thumbnail_status = "ready"
+                        image.thumbnail_error = None
+                    except (ArchiveImageError, ThumbnailError) as error:
                         _discard_archive_image(session, image)
-                    _add_issue(
-                        session,
-                        scan,
-                        model.relative_path,
-                        "warning",
-                        "archive_image_batch_failed",
-                        str(error),
-                        model.id,
-                    )
-                continue
+                        existing.pop(relative_path, None)
+                        _add_issue(
+                            session,
+                            scan,
+                            model.relative_path,
+                            "warning",
+                            "archive_image_failed",
+                            str(error),
+                            model.id,
+                        )
+            if failed_images:
+                detail = "; ".join(sorted(failure_messages))
+                _add_issue(
+                    session,
+                    scan,
+                    model.relative_path,
+                    "warning",
+                    "archive_image_batch_failed",
+                    f"{failed_images} archive image(s) could not be extracted: {detail}",
+                    model.id,
+                )
 
         for entry in archive_entries:
             image = existing.get(f"archive/{archive.id}/{entry.path}")

@@ -218,11 +218,10 @@ def test_scan_prefers_validated_archive_image_when_folder_has_none(
         ],
     )
 
-    @contextmanager
-    def fake_open_images(*_args, **_kwargs):
-        yield {"images/cover.jpg": extracted}
+    def fake_batches(_archive_path, candidates, **_kwargs):
+        yield list(candidates), {"images/cover.jpg": extracted}, None
 
-    monkeypatch.setattr(scanner, "open_extracted_archive_images", fake_open_images)
+    monkeypatch.setattr(scanner, "iter_extracted_archive_image_batches", fake_batches)
     monkeypatch.setattr(
         scanner,
         "validate_extracted_archive_image",
@@ -291,12 +290,10 @@ def test_scan_falls_back_when_a_new_archive_image_cannot_be_processed(
         ],
     )
 
-    @contextmanager
-    def failed_archive_images(*_args, **_kwargs):
-        raise ArchiveImageError("Unsupported image content")
-        yield  # pragma: no cover - makes this a context manager for typing.
+    def failed_archive_images(_archive_path, candidates, **_kwargs):
+        yield list(candidates), {}, ArchiveImageError("Unsupported image content")
 
-    monkeypatch.setattr(scanner, "open_extracted_archive_images", failed_archive_images)
+    monkeypatch.setattr(scanner, "iter_extracted_archive_image_batches", failed_archive_images)
     monkeypatch.setattr(
         scanner,
         "generate_thumbnail",
