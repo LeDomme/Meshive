@@ -326,6 +326,7 @@ h1 {
 .catalogue-title-row .brand-icon {
   width: var(--catalogue-logo-width);
   height: var(--catalogue-logo-height);
+  transform: translateY(4px);
 }
 
 .admin-title {

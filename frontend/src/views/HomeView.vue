@@ -200,10 +200,10 @@ const sortOptions = [
   { value: "meshive_oldest", label: "Meshive: oldest added" },
   { value: "files_newest", label: "Files: newest modified" },
   { value: "files_oldest", label: "Files: oldest modified" },
-  { value: "name_asc", label: "Name: Aâ€“Z" },
-  { value: "name_desc", label: "Name: Zâ€“A" },
-  { value: "creator_asc", label: "Creator: Aâ€“Z" },
-  { value: "creator_desc", label: "Creator: Zâ€“A" },
+  { value: "name_asc", label: "Name: A–Z" },
+  { value: "name_desc", label: "Name: Z–A" },
+  { value: "creator_asc", label: "Creator: A–Z" },
+  { value: "creator_desc", label: "Creator: Z–A" },
 ]
 
 function modelFallbackUrl(modelId: number): string {
@@ -641,7 +641,7 @@ onMounted(async () => {
       >
         Delete all missing ({{ missingCount }})
       </button>
-      <p v-if="loading">Loadingâ€¦</p>
+      <p v-if="loading">Loading…</p>
     </div>
 
     <p v-if="errorMessage" class="form-error error-panel" role="alert">
@@ -667,7 +667,7 @@ onMounted(async () => {
           <p class="model-franchise">
             {{ [model.franchise || model.collection, model.series]
               .filter((value, index, values) => value && values.indexOf(value) === index)
-              .join(" Â· ") || model.source_name }}
+              .join(" · ") || model.source_name }}
           </p>
           <h2>
             <RouterLink
@@ -678,7 +678,7 @@ onMounted(async () => {
             </RouterLink>
           </h2>
           <p v-if="model.variant" class="model-variant">
-            Variant Â· {{ model.variant }}
+            Variant · {{ model.variant }}
           </p>
           <p class="model-creator">{{ model.creator || "Unknown creator" }}</p>
           <div v-if="model.tags.length" class="tag-list">
@@ -712,7 +712,7 @@ onMounted(async () => {
             @click="handleFavoriteClick(model)"
           >
             <span aria-hidden="true">
-              {{ favoriteMemberships[model.id]?.length ? "â™¥" : "â™¡" }}
+              {{ favoriteMemberships[model.id]?.length ? "♥" : "♡" }}
             </span>
             <span class="favorite-button-label">{{ favoriteButtonLabel(model.id) }}</span>
             <span
