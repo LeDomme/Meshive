@@ -58,7 +58,7 @@ class Settings(BaseSettings):
         ge=1_000_000,
         le=250_000_000,
     )
-    archive_image_timeout_seconds: int = Field(default=30, ge=1, le=600)
+    archive_image_timeout_seconds: int = Field(default=90, ge=1, le=600)
     archive_image_threads: int = Field(default=1, ge=1, le=8)
     backup_max_restore_bytes: int = Field(
         default=5 * 1024 * 1024 * 1024,

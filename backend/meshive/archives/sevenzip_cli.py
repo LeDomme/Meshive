@@ -93,6 +93,55 @@ def extract_archive_entry(
     )
 
 
+def extract_archive_entries(
+    archive_path: str,
+    entry_paths: Sequence[str],
+    destination_directory: Path,
+    *,
+    command: str,
+    timeout_seconds: int,
+    max_output_bytes: int,
+    threads: int = 1,
+) -> None:
+    """Extract a bounded set of entries into a temporary directory in one run."""
+    unique_paths = list(dict.fromkeys(entry_paths))
+    if not unique_paths:
+        raise ArchiveReadError("At least one archive entry is required")
+    if any(
+        not entry_path
+        or entry_path.startswith("@")
+        or any(character in entry_path for character in ("\x00", "\r", "\n", "*", "?"))
+        for entry_path in unique_paths
+    ):
+        raise ArchiveReadError("Archive entry path cannot be extracted safely")
+    if threads <= 0:
+        raise ArchiveReadError("Archive extraction thread count must be positive")
+
+    destination_directory.mkdir(parents=True, exist_ok=True)
+    environment = {**os.environ, "LC_ALL": "C", "LANG": "C"}
+    returncode, output = _run_bounded_command(
+        [
+            command,
+            "x",
+            f"-mmt={threads}",
+            f"-o{destination_directory}",
+            "-bd",
+            "-bb0",
+            "-y",
+            "--",
+            archive_path,
+            *unique_paths,
+        ],
+        environment=environment,
+        timeout_seconds=timeout_seconds,
+        max_output_bytes=min(max_output_bytes, 64 * 1024),
+        command_name=command,
+    )
+    if returncode != 0:
+        detail = output.strip()[-2000:]
+        raise ArchiveReadError(detail or f"7-Zip exited with status {returncode}")
+
+
 def _run_bounded_command(
     arguments: Sequence[str],
     *,
