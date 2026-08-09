@@ -29,6 +29,17 @@ class ModelPage(BaseModel):
     page_size: int
 
 
+class ModelNavigationItem(BaseModel):
+    id: int
+    name: str
+    variant: str | None
+
+
+class ModelNavigation(BaseModel):
+    previous: ModelNavigationItem | None
+    next: ModelNavigationItem | None
+
+
 class ModelImageRead(BaseModel):
     id: int
     filename: str
