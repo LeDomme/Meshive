@@ -58,6 +58,10 @@ class UserRead(BaseModel):
     last_login_at: datetime | None
 
 
+class CatalogueFilterPreferences(BaseModel):
+    filter_order: list[str] = Field(default_factory=list, max_length=9)
+
+
 class PasswordChange(BaseModel):
     current_password: str = Field(min_length=1, max_length=1024)
     new_password: str = Field(min_length=12, max_length=1024)

@@ -89,11 +89,6 @@ def preview_library_path(payload: PathPreviewRequest) -> PathPreviewResponse:
             directory_pattern=payload.directory_pattern,
             model_pattern=payload.model_pattern,
             relative_path=payload.relative_path,
-            defaults={
-                "creator": payload.default_creator,
-                "franchise": payload.default_franchise,
-                "collection": payload.default_collection,
-            },
         )
     except PathPatternError as error:
         raise HTTPException(

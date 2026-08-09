@@ -157,17 +157,6 @@ def test_rejects_parent_path_segments() -> None:
         )
 
 
-def test_applies_source_defaults_for_missing_metadata() -> None:
-    _, values = parse_library_path(
-        directory_pattern="{category}/{model}",
-        relative_path="Animals/Red Panda",
-        defaults={"creator": "Example Creator", "franchise": None},
-    )
-
-    assert values["model"] == "Red Panda"
-    assert values["creator"] == "Example Creator"
-
-
 def test_library_root_must_stay_inside_allowed_root() -> None:
     assert validate_library_root("/models/bulkamancer", "/models") == "/models/bulkamancer"
 

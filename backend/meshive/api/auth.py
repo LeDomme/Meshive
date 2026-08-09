@@ -25,6 +25,7 @@ from meshive.models.user import User
 from meshive.repositories.users import get_user_by_username, normalize_username
 from meshive.schemas.user import (
     LoginRequest,
+    CatalogueFilterPreferences,
     PasswordChange,
     SessionRevocationResult,
     UserRead,
@@ -264,3 +265,34 @@ def change_password(
     session.commit()
     session.refresh(user)
     return user
+
+
+@router.get("/catalogue-preferences", response_model=CatalogueFilterPreferences)
+def get_catalogue_preferences(
+    user: User = Depends(get_current_user_allow_password_change),
+) -> CatalogueFilterPreferences:
+    return CatalogueFilterPreferences(filter_order=user.catalogue_filter_order or [])
+
+
+@router.put("/catalogue-preferences", response_model=CatalogueFilterPreferences)
+def update_catalogue_preferences(
+    payload: CatalogueFilterPreferences,
+    user: User = Depends(get_current_user_allow_password_change),
+    session: Session = Depends(get_session),
+) -> CatalogueFilterPreferences:
+    allowed_keys = {
+        "model", "creator", "franchise", "series", "collection", "source", "tag", "status", "sort"
+    }
+    if len(payload.filter_order) != len(set(payload.filter_order)):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Filter order cannot contain duplicates",
+        )
+    if any(key not in allowed_keys for key in payload.filter_order):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Filter order contains an unsupported filter",
+        )
+    user.catalogue_filter_order = payload.filter_order
+    session.commit()
+    return CatalogueFilterPreferences(filter_order=user.catalogue_filter_order)

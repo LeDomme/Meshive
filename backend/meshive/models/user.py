@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, Text, func
+from sqlalchemy import Boolean, DateTime, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from meshive.database import Base
@@ -23,6 +23,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default="user", index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    catalogue_filter_order: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

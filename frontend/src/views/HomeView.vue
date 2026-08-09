@@ -144,6 +144,7 @@ const defaultQuery = {
   collection: "",
   source_id: "",
   tag_id: "",
+  status: "",
   sort: "name_asc",
 }
 const storedState = (() => {
@@ -206,6 +207,92 @@ const sortOptions = [
   { value: "creator_desc", label: "Creator: Z–A" },
 ]
 
+type CatalogueFilterKey =
+  | "model"
+  | "creator"
+  | "franchise"
+  | "series"
+  | "collection"
+  | "source"
+  | "tag"
+  | "status"
+  | "sort"
+
+const defaultFilterOrder: CatalogueFilterKey[] = [
+  "model",
+  "creator",
+  "franchise",
+  "series",
+  "collection",
+  "source",
+  "tag",
+  "status",
+  "sort",
+]
+const filterOrder = ref<CatalogueFilterKey[]>([...defaultFilterOrder])
+const draggedFilter = ref<CatalogueFilterKey | null>(null)
+
+function normalizeFilterOrder(value: unknown): CatalogueFilterKey[] {
+  const received = Array.isArray(value) ? value : []
+  const known = new Set(defaultFilterOrder)
+  const configured = received.filter(
+    (key): key is CatalogueFilterKey =>
+      typeof key === "string" &&
+      known.has(key as CatalogueFilterKey) &&
+      !received.slice(0, received.indexOf(key)).includes(key),
+  )
+  return [...configured, ...defaultFilterOrder.filter((key) => !configured.includes(key))]
+}
+
+function filterPosition(key: CatalogueFilterKey): number {
+  return filterOrder.value.indexOf(key)
+}
+
+async function loadFilterOrder() {
+  try {
+    const preferences = await apiRequest<{ filter_order: string[] }>(
+      "/api/auth/catalogue-preferences",
+    )
+    filterOrder.value = normalizeFilterOrder(preferences.filter_order)
+  } catch {
+    filterOrder.value = [...defaultFilterOrder]
+  }
+}
+
+async function saveFilterOrder() {
+  try {
+    await apiRequest("/api/auth/catalogue-preferences", {
+      method: "PUT",
+      body: JSON.stringify({ filter_order: filterOrder.value }),
+    })
+  } catch {
+    errorMessage.value = "Unable to save the filter order"
+  }
+}
+
+function startFilterDrag(key: CatalogueFilterKey, event: DragEvent) {
+  draggedFilter.value = key
+  event.dataTransfer?.setData("text/plain", key)
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move"
+}
+
+function dropFilter(target: CatalogueFilterKey, event: DragEvent) {
+  const source = draggedFilter.value ?? (event.dataTransfer?.getData("text/plain") as CatalogueFilterKey)
+  draggedFilter.value = null
+  if (!defaultFilterOrder.includes(source) || source === target) return
+  const next = [...filterOrder.value]
+  const sourceIndex = next.indexOf(source)
+  const targetIndex = next.indexOf(target)
+  next.splice(sourceIndex, 1)
+  next.splice(targetIndex, 0, source)
+  filterOrder.value = next
+  void saveFilterOrder()
+}
+
+function endFilterDrag() {
+  draggedFilter.value = null
+}
+
 function modelFallbackUrl(modelId: number): string {
   const number = String(((modelId - 1) % 10) + 1).padStart(2, "0")
   return `/model-fallbacks/fallback-model-${number}.webp`
@@ -265,6 +352,7 @@ function reconcileFacets(result: CatalogueFilters) {
     collection: new Set(result.collections.map((item) => item.value)),
     source_id: new Set(result.sources.map((item) => String(item.id))),
     tag_id: new Set(result.tags.map((item) => String(item.id))),
+    status: new Set(result.statuses.map((item) => item.value)),
   }
   for (const key of Object.keys(validValues) as FacetKey[]) {
     if (key !== lastChangedFacet && query[key] && !validValues[key].has(query[key])) {
@@ -474,6 +562,7 @@ watch(
 )
 
 onMounted(async () => {
+  await loadFilterOrder()
   await Promise.all([
     loadFilterOptions(),
     loadCatalogue(Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1),
@@ -554,6 +643,13 @@ onMounted(async () => {
       </div>
 
       <SearchableFilter
+        :style="{ order: filterPosition('model') }"
+        draggable="true"
+        title="Drag to reorder filter"
+        @dragstart="startFilterDrag('model', $event)"
+        @dragover.prevent
+        @drop="dropFilter('model', $event)"
+        @dragend="endFilterDrag"
         v-model="query.model"
         label="Model"
         all-label="All models"
@@ -563,6 +659,13 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        :style="{ order: filterPosition('creator') }"
+        draggable="true"
+        title="Drag to reorder filter"
+        @dragstart="startFilterDrag('creator', $event)"
+        @dragover.prevent
+        @drop="dropFilter('creator', $event)"
+        @dragend="endFilterDrag"
         v-model="query.creator"
         label="Creator"
         all-label="All creators"
@@ -572,6 +675,13 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        :style="{ order: filterPosition('franchise') }"
+        draggable="true"
+        title="Drag to reorder filter"
+        @dragstart="startFilterDrag('franchise', $event)"
+        @dragover.prevent
+        @drop="dropFilter('franchise', $event)"
+        @dragend="endFilterDrag"
         v-model="query.franchise"
         label="Franchise"
         all-label="All franchises"
@@ -581,6 +691,13 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        :style="{ order: filterPosition('series') }"
+        draggable="true"
+        title="Drag to reorder filter"
+        @dragstart="startFilterDrag('series', $event)"
+        @dragover.prevent
+        @drop="dropFilter('series', $event)"
+        @dragend="endFilterDrag"
         v-model="query.series"
         label="Series"
         all-label="All series"
@@ -590,6 +707,13 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        :style="{ order: filterPosition('collection') }"
+        draggable="true"
+        title="Drag to reorder filter"
+        @dragstart="startFilterDrag('collection', $event)"
+        @dragover.prevent
+        @drop="dropFilter('collection', $event)"
+        @dragend="endFilterDrag"
         v-model="query.collection"
         label="Collection"
         all-label="All collections"
@@ -599,6 +723,13 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        :style="{ order: filterPosition('source') }"
+        draggable="true"
+        title="Drag to reorder filter"
+        @dragstart="startFilterDrag('source', $event)"
+        @dragover.prevent
+        @drop="dropFilter('source', $event)"
+        @dragend="endFilterDrag"
         v-model="query.source_id"
         label="Library source"
         all-label="All sources"
@@ -609,6 +740,13 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        :style="{ order: filterPosition('tag') }"
+        draggable="true"
+        title="Drag to reorder filter"
+        @dragstart="startFilterDrag('tag', $event)"
+        @dragover.prevent
+        @drop="dropFilter('tag', $event)"
+        @dragend="endFilterDrag"
         v-model="query.tag_id"
         label="Tag"
         all-label="All tags"
@@ -619,6 +757,31 @@ onMounted(async () => {
       />
 
       <SearchableFilter
+        v-if="auth.user?.role === 'admin'"
+        :style="{ order: filterPosition('status') }"
+        draggable="true"
+        title="Drag to reorder filter"
+        @dragstart="startFilterDrag('status', $event)"
+        @dragover.prevent
+        @drop="dropFilter('status', $event)"
+        @dragend="endFilterDrag"
+        v-model="query.status"
+        label="Status"
+        all-label="All statuses"
+        search-placeholder="Search statuses"
+        align="end"
+        :options="filters.statuses"
+        @change="facetChanged('status')"
+      />
+
+      <SearchableFilter
+        :style="{ order: filterPosition('sort') }"
+        draggable="true"
+        title="Drag to reorder filter"
+        @dragstart="startFilterDrag('sort', $event)"
+        @dragover.prevent
+        @drop="dropFilter('sort', $event)"
+        @dragend="endFilterDrag"
         v-model="query.sort"
         label="Sort models"
         all-label="Default sorting"
@@ -628,7 +791,7 @@ onMounted(async () => {
         :options="sortOptions"
       />
 
-      <button class="secondary-button" type="button" @click="clearFilters">Clear</button>
+      <button :style="{ order: 100 }" class="secondary-button" type="button" @click="clearFilters">Clear</button>
     </div>
 
     <div class="catalogue-meta">

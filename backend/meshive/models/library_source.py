@@ -14,9 +14,6 @@ class LibrarySource(Base):
     root_path: Mapped[str] = mapped_column(Text, unique=True)
     directory_pattern: Mapped[str] = mapped_column(Text)
     model_pattern: Mapped[str | None] = mapped_column(Text, nullable=True)
-    default_creator: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    default_franchise: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    default_collection: Mapped[str | None] = mapped_column(String(255), nullable=True)
     archive_formats: Mapped[list[str]] = mapped_column(
         JSON, default=lambda: ["7z", "zip", "rar"]
     )

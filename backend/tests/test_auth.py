@@ -534,3 +534,40 @@ def test_first_run_setup_rate_limits_invalid_tokens() -> None:
 
         assert blocked.status_code == 429
         assert int(blocked.headers["retry-after"]) >= 1
+
+
+def test_catalogue_filter_preferences_are_saved_per_user() -> None:
+    with authenticated_test_client() as (client, _sessions):
+        add_user(
+            _sessions,
+            username="admin",
+            password="correct horse battery staple",
+            role="admin",
+        )
+        assert client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "correct horse battery staple"},
+        ).status_code == 200
+
+        assert client.get("/api/auth/catalogue-preferences").json() == {
+            "filter_order": []
+        }
+
+        saved = client.put(
+            "/api/auth/catalogue-preferences",
+            json={"filter_order": ["creator", "model", "sort"]},
+        )
+        assert saved.status_code == 200
+        assert saved.json() == {
+            "filter_order": ["creator", "model", "sort"]
+        }
+
+        assert client.get("/api/auth/catalogue-preferences").json() == {
+            "filter_order": ["creator", "model", "sort"]
+        }
+
+        duplicate = client.put(
+            "/api/auth/catalogue-preferences",
+            json={"filter_order": ["model", "model"]},
+        )
+        assert duplicate.status_code == 422
