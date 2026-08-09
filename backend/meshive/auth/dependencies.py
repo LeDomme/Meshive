@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from meshive.auth.sessions import hash_session_token, utc_now
@@ -28,7 +29,12 @@ def get_current_session_allow_password_change(
 
     if record.last_used_at <= now - timedelta(minutes=15):
         record.last_used_at = now
-        session.commit()
+        try:
+            session.commit()
+        except OperationalError:
+            # Session activity is best-effort. A concurrent catalogue scan must
+            # never turn an otherwise valid authenticated request into a 500.
+            session.rollback()
 
     return record
 
