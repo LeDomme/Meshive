@@ -80,7 +80,7 @@ HTTPS and production mode whenever Meshive is exposed beyond that boundary.
 To build the image locally instead, run `docker build -t meshive:local .` and
 set `MESHIVE_IMAGE=meshive:local` in `.env` before starting Compose.
 
-Stable deployments should use a concrete semantic tag such as `1.2.0` or an
+Stable deployments should use a concrete semantic tag such as `1.3.0` or an
 immutable digest. `latest` is updated only by a stable version tag. The `edge`
 tag follows successful builds from `main` and is intended for testing upcoming
 changes rather than production deployments.
