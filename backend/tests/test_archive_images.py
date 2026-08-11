@@ -296,3 +296,33 @@ def test_splits_timed_out_archive_image_batch(tmp_path, monkeypatch) -> None:
     assert attempts == [["cover.jpg", "render.jpg"], ["cover.jpg"], ["render.jpg"]]
     assert [batch[0][0].path for batch in batches] == ["cover.jpg", "render.jpg"]
     assert all(batch[2] is None for batch in batches)
+
+
+def test_handles_error_detailed_logging(tmp_path, monkeypatch) -> None:
+    candidates = [_entry("cover.jpg")]
+    attempts: list[list[str]] = []
+
+    @contextmanager
+    def fake_open(_archive_path, batch, **_kwargs):
+        selected = list(batch)
+        attempts.append([candidate.path for candidate in selected])
+        raise ArchiveImageError("Detailed error message for testing")
+
+    monkeypatch.setattr(archive_images, "open_extracted_archive_images", fake_open)
+
+    batches = list(
+        iter_extracted_archive_image_batches(
+            tmp_path / "model.7z",
+            candidates,
+            command="7z",
+            data_dir=tmp_path / "data",
+            timeout_seconds=90,
+            max_entry_bytes=1024 * 1024,
+            max_compressed_bytes=1024 * 1024,
+        )
+    )
+
+    assert attempts == [["cover.jpg"]]
+    assert len(batches) == 1
+    assert batches[0][2] is not None
+    assert "Detailed error message" in str(batches[0][2])

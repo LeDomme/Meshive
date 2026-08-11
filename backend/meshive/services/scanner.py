@@ -758,7 +758,12 @@ def _sync_archive_images(
             ):
                 if batch_error is not None:
                     failed_images += len(batch_entries)
-                    failure_messages.add(str(batch_error))
+                    error_msg = str(batch_error)
+                    failure_messages.add(error_msg)
+                    # Log the error for better debugging
+                    from meshive.logger import get_logger
+                    logger = get_logger(__name__)
+                    logger.warning(f"Archive image processing failed for {len(batch_entries)} entries in {source_path}: {error_msg}")
                     for entry in batch_entries:
                         relative_path = f"archive/{archive.id}/{entry.path}"
                         image = existing.pop(relative_path, None)
