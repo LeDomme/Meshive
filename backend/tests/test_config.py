@@ -39,10 +39,10 @@ def test_archive_image_limits_have_conservative_defaults() -> None:
     settings = Settings(_env_file=None)
 
     assert settings.archive_image_max_candidates == 12
-    assert settings.archive_image_max_entry_bytes == 32 * 1024 * 1024
-    assert settings.archive_image_max_compressed_bytes == 32 * 1024 * 1024
-    assert settings.archive_image_max_total_bytes == 128 * 1024 * 1024
-    assert settings.archive_image_max_pixels == 40_000_000
+    assert settings.archive_image_max_entry_bytes == 64 * 1024 * 1024
+    assert settings.archive_image_max_compressed_bytes == 64 * 1024 * 1024
+    assert settings.archive_image_max_total_bytes == 256 * 1024 * 1024
+    assert settings.archive_image_max_pixels == 100_000_000
     assert settings.archive_image_timeout_seconds == 90
     assert settings.archive_image_threads == 1
     assert settings.thumbnail_max_bytes == 64 * 1024
