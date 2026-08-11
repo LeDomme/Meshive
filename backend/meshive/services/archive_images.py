@@ -268,10 +268,13 @@ def iter_extracted_archive_image_batches(
         ) as extracted:
             yield selected, extracted, None
     except ArchiveImageError as error:
-        if len(selected) == 1 or "second limit" not in str(error).casefold():
+        # Log detailed information about the error
+        error_msg = str(error)
+        if len(selected) == 1 or "second limit" not in error_msg.casefold():
             yield selected, {}, error
             return
 
+        # If we have more than one candidate and timeout occurred, split and retry
         midpoint = len(selected) // 2
         yield from iter_extracted_archive_image_batches(
             archive_path,
