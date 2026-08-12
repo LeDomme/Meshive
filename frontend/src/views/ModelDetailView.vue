@@ -248,7 +248,6 @@ function startImageSwipe(event: PointerEvent) {
   imageSwipeStartY = event.clientY
   imageSwipeOffset.value = 0
   imageSwipeActive.value = true
-  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
 }
 
 function moveImageSwipe(event: PointerEvent) {
@@ -287,7 +286,6 @@ function selectThumbnail(image: ModelImage) {
 
 function startThumbnailDrag(event: PointerEvent) {
   if (!thumbnailStrip.value || event.button !== 0) return
-  event.preventDefault()
   thumbnailDragStartX = event.clientX
   thumbnailDragStartScrollLeft = thumbnailStrip.value.scrollLeft
   thumbnailDragActive.value = true
@@ -300,6 +298,9 @@ function moveThumbnailDrag(event: PointerEvent) {
   const distance = event.clientX - thumbnailDragStartX
   if (Math.abs(distance) > 4) {
     thumbnailDragMoved = true
+    if (!thumbnailStrip.value.hasPointerCapture(event.pointerId)) {
+      thumbnailStrip.value.setPointerCapture(event.pointerId)
+    }
     event.preventDefault()
   }
   thumbnailStrip.value.scrollLeft = thumbnailDragStartScrollLeft - distance
