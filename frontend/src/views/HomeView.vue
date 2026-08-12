@@ -898,8 +898,10 @@ onMounted(async () => {
     </div>
 
     <div class="catalogue-meta">
-      <p>{{ page.total }} {{ page.total === 1 ? "model" : "models" }}</p>
-      <span v-if="batchSelectionMode && selectedModelCount" class="batch-selection-count">{{ selectedModelCount }} selected</span>
+      <div class="catalogue-meta-summary">
+        <p>{{ page.total }} {{ page.total === 1 ? "model" : "models" }}</p>
+        <span v-if="batchSelectionMode && selectedModelCount" class="batch-selection-count">{{ selectedModelCount }} selected</span>
+      </div>
       <div class="catalogue-meta-actions">
         <template v-if="batchSelectionMode">
           <button v-if="selectedModelCount" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('rescan')">

@@ -1745,6 +1745,13 @@ summary {
   margin: 0;
 }
 
+.catalogue-meta-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
 .catalogue-meta-actions {
   display: flex;
   align-items: center;
