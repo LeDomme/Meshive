@@ -248,7 +248,6 @@ function startImageSwipe(event: PointerEvent) {
   imageSwipeStartY = event.clientY
   imageSwipeOffset.value = 0
   imageSwipeActive.value = true
-  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
 }
 
 function moveImageSwipe(event: PointerEvent) {
@@ -256,6 +255,13 @@ function moveImageSwipe(event: PointerEvent) {
   const horizontalDistance = event.clientX - imageSwipeStartX
   const verticalDistance = event.clientY - imageSwipeStartY
   if (Math.abs(verticalDistance) > Math.abs(horizontalDistance)) return
+  if (Math.abs(horizontalDistance) > 4) {
+    const target = event.currentTarget as HTMLElement
+    if (!target.hasPointerCapture(event.pointerId)) {
+      target.setPointerCapture(event.pointerId)
+    }
+    event.preventDefault()
+  }
   imageSwipeOffset.value = Math.max(-96, Math.min(96, horizontalDistance))
 }
 
@@ -287,12 +293,10 @@ function selectThumbnail(image: ModelImage) {
 
 function startThumbnailDrag(event: PointerEvent) {
   if (!thumbnailStrip.value || event.button !== 0) return
-  event.preventDefault()
   thumbnailDragStartX = event.clientX
   thumbnailDragStartScrollLeft = thumbnailStrip.value.scrollLeft
   thumbnailDragActive.value = true
   thumbnailDragMoved = false
-  thumbnailStrip.value.setPointerCapture(event.pointerId)
 }
 
 function moveThumbnailDrag(event: PointerEvent) {
@@ -300,6 +304,9 @@ function moveThumbnailDrag(event: PointerEvent) {
   const distance = event.clientX - thumbnailDragStartX
   if (Math.abs(distance) > 4) {
     thumbnailDragMoved = true
+    if (!thumbnailStrip.value.hasPointerCapture(event.pointerId)) {
+      thumbnailStrip.value.setPointerCapture(event.pointerId)
+    }
     event.preventDefault()
   }
   thumbnailStrip.value.scrollLeft = thumbnailDragStartScrollLeft - distance
@@ -1023,10 +1030,6 @@ onBeforeUnmount(() => {
           :class="[`mode-${lightboxMode}`, { 'is-swiping': imageSwipeActive }]"
           :style="imageSwipeStyle"
           @click.self="closeLightbox"
-          @pointerdown="startImageSwipe"
-          @pointermove="moveImageSwipe"
-          @pointerup="endImageSwipe"
-          @pointercancel="endImageSwipe"
         >
           <button
             v-if="model.images.length > 1"
@@ -1040,6 +1043,12 @@ onBeforeUnmount(() => {
           <img
             :src="selectedImage.url"
             :alt="`${model.name} — ${selectedImage.filename}`"
+            draggable="false"
+            @dragstart.prevent
+            @pointerdown="startImageSwipe"
+            @pointermove="moveImageSwipe"
+            @pointerup="endImageSwipe"
+            @pointercancel="endImageSwipe"
           >
           <button
             v-if="model.images.length > 1"
