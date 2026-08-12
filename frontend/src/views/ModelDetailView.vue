@@ -1043,6 +1043,8 @@ onBeforeUnmount(() => {
           <img
             :src="selectedImage.url"
             :alt="`${model.name} — ${selectedImage.filename}`"
+            draggable="false"
+            @dragstart.prevent
             @pointerdown="startImageSwipe"
             @pointermove="moveImageSwipe"
             @pointerup="endImageSwipe"

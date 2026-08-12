@@ -3020,6 +3020,8 @@ summary {
 
 .lightbox-image-area img {
   touch-action: pan-y;
+  user-select: none;
+  -webkit-user-drag: none;
   transform: translateX(var(--image-swipe-offset, 0px));
   transition: transform 180ms ease-out;
 }
