@@ -121,6 +121,11 @@ const lightboxMode = ref<"height" | "width" | "original">("height")
 const detailImageButton = ref<HTMLButtonElement | null>(null)
 const lightboxCloseButton = ref<HTMLButtonElement | null>(null)
 const navigation = ref<ModelNavigation | null>(null)
+const thumbnailStrip = ref<HTMLDivElement | null>(null)
+let thumbnailDragStartX = 0
+let thumbnailDragStartScrollLeft = 0
+let thumbnailDragActive = false
+let thumbnailDragMoved = false
 
 const modelFallbackUrl = computed(() => {
   if (!model.value) return ""
@@ -229,6 +234,43 @@ function selectAdjacentImage(direction: -1 | 1) {
   selectedImage.value = images[(currentIndex + direction + images.length) % images.length]
 }
 
+function scrollThumbnailStrip(direction: -1 | 1) {
+  thumbnailStrip.value?.scrollBy({ left: direction * 320, behavior: "smooth" })
+}
+
+function selectThumbnail(image: ModelImage) {
+  if (thumbnailDragMoved) return
+  selectedImage.value = image
+  void nextTick(() => {
+    thumbnailStrip.value?.querySelector<HTMLElement>(`[data-image-id="${image.id}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+  })
+}
+
+function startThumbnailDrag(event: PointerEvent) {
+  if (!thumbnailStrip.value || event.button !== 0) return
+  thumbnailDragStartX = event.clientX
+  thumbnailDragStartScrollLeft = thumbnailStrip.value.scrollLeft
+  thumbnailDragActive = true
+  thumbnailDragMoved = false
+  thumbnailStrip.value.setPointerCapture(event.pointerId)
+}
+
+function moveThumbnailDrag(event: PointerEvent) {
+  if (!thumbnailDragActive || !thumbnailStrip.value) return
+  const distance = event.clientX - thumbnailDragStartX
+  if (Math.abs(distance) > 4) thumbnailDragMoved = true
+  thumbnailStrip.value.scrollLeft = thumbnailDragStartScrollLeft - distance
+}
+
+function endThumbnailDrag(event: PointerEvent) {
+  if (!thumbnailDragActive || !thumbnailStrip.value) return
+  thumbnailDragActive = false
+  if (thumbnailStrip.value.hasPointerCapture(event.pointerId)) {
+    thumbnailStrip.value.releasePointerCapture(event.pointerId)
+  }
+  window.setTimeout(() => { thumbnailDragMoved = false }, 0)
+}
 async function setPrimaryImage(image: ModelImage) {
   if (!model.value || image.is_primary) return
   errorMessage.value = ""
@@ -642,16 +684,29 @@ onBeforeUnmount(() => {
             </button>
             <button class="danger-button" type="button" @click="resetPictures">Reset pictures</button>
           </div>
-          <div v-if="model.images.length > 1" class="image-strip">
-            <button
-              v-for="image in model.images"
-              :key="image.id"
-              type="button"
-              :class="{ selected: selectedImage?.id === image.id }"
-              @click="selectedImage = image"
+          <div v-if="model.images.length > 1" class="thumbnail-carousel">
+            <button class="thumbnail-carousel-nav thumbnail-carousel-nav-previous" type="button" aria-label="Show earlier pictures" @click="scrollThumbnailStrip(-1)">‹</button>
+            <div
+              ref="thumbnailStrip"
+              class="image-strip"
+              aria-label="Model pictures"
+              @pointerdown="startThumbnailDrag"
+              @pointermove="moveThumbnailDrag"
+              @pointerup="endThumbnailDrag"
+              @pointercancel="endThumbnailDrag"
             >
-              <img :src="image.url" :alt="image.filename" loading="lazy">
-            </button>
+              <button
+                v-for="image in model.images"
+                :key="image.id"
+                :data-image-id="image.id"
+                type="button"
+                :class="{ selected: selectedImage?.id === image.id }"
+                @click="selectThumbnail(image)"
+              >
+                <img :src="image.url" :alt="image.filename" loading="lazy">
+              </button>
+            </div>
+            <button class="thumbnail-carousel-nav thumbnail-carousel-nav-next" type="button" aria-label="Show later pictures" @click="scrollThumbnailStrip(1)">›</button>
           </div>
         </div>
 
