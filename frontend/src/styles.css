@@ -1736,6 +1736,7 @@ summary {
 }
 
 .catalogue-meta {
+  position: relative;
   justify-content: space-between;
   min-height: 3.5rem;
   color: #94a3b8;
@@ -1757,9 +1758,35 @@ summary {
 }
 
 .batch-selection-count {
+  position: absolute;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.9rem;
+  padding: 0 0.65rem;
+  border: 1px solid rgb(54 231 255 / 45%);
+  border-radius: 999px;
   color: #e2f7ff;
+  background: rgb(8 47 73 / 58%);
+  font-size: 0.82rem;
   font-weight: 700;
+  letter-spacing: 0.02em;
   white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 54rem) {
+  .catalogue-meta {
+    flex-wrap: wrap;
+    gap: 0.65rem;
+  }
+
+  .batch-selection-count {
+    position: static;
+    order: 3;
+    margin: 0 auto;
+    transform: none;
+  }
 }
 
 .model-card {
