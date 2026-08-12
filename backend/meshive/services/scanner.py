@@ -1,3 +1,5 @@
+import hashlib
+import json
 import logging
 import os
 import threading
@@ -21,6 +23,7 @@ from meshive.models.catalog import (
 from meshive.models.library_source import LibrarySource
 from meshive.services.archive_images import (
     ArchiveImageError,
+    archive_image_candidate_sort_key,
     iter_extracted_archive_image_batches,
     select_archive_image_candidates,
     validate_extracted_archive_image,
@@ -56,11 +59,18 @@ def release_source(source_id: int) -> None:
         _active_sources.discard(source_id)
 
 
-def create_scan_run(session: Session, source_id: int, *, trigger: str = "manual") -> ScanRun:
+def create_scan_run(
+    session: Session,
+    source_id: int,
+    *,
+    trigger: str = "manual",
+    mode: str = "full",
+) -> ScanRun:
     scan = ScanRun(
         library_source_id=source_id,
         status="pending",
         trigger=trigger,
+        mode=mode,
         models_found=0,
         models_added=0,
         models_updated=0,
@@ -134,6 +144,11 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
         if source is None:
             raise RuntimeError("Library source no longer exists")
         root = _validated_source_root(source)
+        if scan.mode == "reconcile_images":
+            _reconcile_source_archive_images(session, scan, source, root)
+            scan.status = "completed_with_errors" if scan.issues_count else "completed"
+            return
+
         depths = {
             len(PurePosixPath(pattern).parts)
             for pattern in source.directory_pattern.splitlines()
@@ -181,6 +196,20 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
                 session.commit()
                 continue
 
+            if scan.mode == "incremental":
+                known_model = session.scalar(
+                    select(LibraryModel).where(
+                        LibraryModel.library_source_id == source.id,
+                        LibraryModel.relative_path == normalized_path,
+                    )
+                )
+                if known_model is not None:
+                    known_model.last_seen_at = utc_now()
+                    known_model.last_seen_scan_id = scan.id
+                    known_model.status = "available"
+                    scan.models_found += 1
+                    session.commit()
+                    continue
             try:
                 _scan_model(
                     session,
@@ -233,6 +262,133 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
             scan.finished_at = utc_now()
         session.commit()
 
+
+def _reconcile_source_archive_images(
+    session: Session,
+    scan: ScanRun,
+    source: LibrarySource,
+    root: Path,
+) -> None:
+    """Repair archive-derived image caches without re-parsing library metadata."""
+    models = list(
+        session.scalars(
+            select(LibraryModel)
+            .where(
+                LibraryModel.library_source_id == source.id,
+                LibraryModel.status == "available",
+            )
+            .order_by(LibraryModel.id)
+        )
+    )
+    for model in models:
+        archives = list(
+            session.scalars(
+                select(Archive)
+                .where(Archive.model_id == model.id, Archive.status == "ready")
+                .order_by(Archive.filename.collate("NOCASE"), Archive.id)
+            )
+        )
+        archive_paths = [
+            root / PurePosixPath(archive.relative_path)
+            for archive in archives
+            if _path_stays_inside(root / PurePosixPath(archive.relative_path), root)
+            and (root / PurePosixPath(archive.relative_path)).is_file()
+        ]
+        if not archive_paths:
+            continue
+        scan.models_found += 1
+        try:
+            _sync_archive_images(session, scan, model, root, archive_paths)
+            _apply_primary_override(session, model)
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            scan = session.get(ScanRun, scan.id)
+            if scan is None:
+                raise
+            _add_issue(
+                session,
+                scan,
+                model.relative_path,
+                "error",
+                "archive_image_reconciliation_failed",
+                str(error),
+                model.id,
+            )
+            session.commit()
+
+def rescan_model(
+    session: Session,
+    model_id: int,
+    *,
+    force_image_rebuild: bool = False,
+) -> ScanRun:
+    """Re-scan one model without enumerating its entire library source."""
+    model = session.get(LibraryModel, model_id)
+    if model is None:
+        raise LookupError("Model not found")
+    source = session.get(LibrarySource, model.library_source_id)
+    if source is None:
+        raise LookupError("Library source not found")
+
+    scan = create_scan_run(
+        session,
+        source.id,
+        trigger="model_image_rebuild" if force_image_rebuild else "model_rescan",
+        mode="full",
+    )
+    scan.status = "running"
+    scan.started_at = utc_now()
+    session.commit()
+
+    try:
+        root = _validated_source_root(source)
+        model_directory = root / PurePosixPath(model.relative_path)
+        if not _path_stays_inside(model_directory, root) or not model_directory.is_dir():
+            model.status = "missing"
+            scan.models_missing = 1
+        else:
+            normalized_path, values = parse_library_path(
+                directory_pattern=source.directory_pattern,
+                model_pattern=source.model_pattern,
+                relative_path=model.relative_path,
+            )
+            if force_image_rebuild:
+                archive_images = list(
+                    session.scalars(
+                        select(ModelImage).where(
+                            ModelImage.model_id == model.id,
+                            ModelImage.storage_kind == "archive",
+                        )
+                    )
+                )
+                for image in archive_images:
+                    _discard_archive_image(session, image)
+                session.execute(delete(Archive).where(Archive.model_id == model.id))
+                session.flush()
+            _scan_model(
+                session,
+                scan,
+                source,
+                root,
+                model_directory,
+                normalized_path,
+                values,
+            )
+        scan.status = "completed_with_errors" if scan.issues_count else "completed"
+    except Exception as error:
+        session.rollback()
+        scan = session.get(ScanRun, scan.id)
+        if scan is None:
+            raise
+        scan.status = "failed"
+        scan.error_message = str(error)[:4000]
+    finally:
+        scan = session.get(ScanRun, scan.id)
+        if scan is not None:
+            scan.finished_at = utc_now()
+        session.commit()
+    return scan
 
 def _validated_source_root(source: LibrarySource) -> Path:
     settings = get_settings()
@@ -345,13 +501,29 @@ def _scan_model(
         return
 
     archives_ok = _sync_archives(session, scan, model, root, archives)
-    archive_primary = _sync_archive_images(
-        session,
-        scan,
-        model,
-        root,
-        archives,
-    )
+    has_available_images = session.scalar(
+        select(ModelImage.id)
+        .where(ModelImage.model_id == model.id, ModelImage.is_available.is_(True))
+        .limit(1)
+    ) is not None
+    archive_primary = None
+    if scan.mode != "missing_images" or not has_available_images:
+        archive_primary = _sync_archive_images(
+            session,
+            scan,
+            model,
+            root,
+            archives,
+        )
+    elif fallback_primary is not None:
+        archive_primary = fallback_primary
+    else:
+        archive_primary = session.scalar(
+            select(ModelImage)
+            .where(ModelImage.model_id == model.id, ModelImage.is_available.is_(True))
+            .order_by(ModelImage.is_primary.desc(), ModelImage.id)
+            .limit(1)
+            )
     if archive_primary is None:
         _sync_fallback_or_report_missing(
             session, scan, model, relative_path, fallback_primary
@@ -629,6 +801,36 @@ def _sync_fallback_or_report_missing(
     _sync_primary_thumbnail(session, scan, model, image_record, image_path)
 
 
+ARCHIVE_IMAGE_SELECTION_VERSION = 1
+
+
+def _archive_image_selection_policy_key(settings) -> str:
+    """Return a stable key for settings that change desired archive images."""
+    policy = {
+        "version": ARCHIVE_IMAGE_SELECTION_VERSION,
+        "max_candidates": settings.archive_image_max_candidates,
+        "max_entry_bytes": settings.archive_image_max_entry_bytes,
+        "max_compressed_bytes": settings.archive_image_max_compressed_bytes,
+        "max_total_bytes": settings.archive_image_max_total_bytes,
+        "max_pixels": settings.archive_image_max_pixels,
+    }
+    encoded = json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _archive_entry_fingerprint(entry: ArchiveEntry) -> str:
+    """Identify an archive entry without extracting its image payload."""
+    identity = {
+        "path": entry.path,
+        "size_bytes": entry.size_bytes,
+        "compressed_size_bytes": entry.compressed_size_bytes,
+        "crc": entry.crc,
+        "modified_at": entry.modified_at,
+    }
+    encoded = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _sync_archive_images(
     session: Session,
     scan: ScanRun,
@@ -637,6 +839,7 @@ def _sync_archive_images(
     archive_paths: list[Path],
 ) -> ModelImage | None:
     settings = get_settings()
+    policy_key = _archive_image_selection_policy_key(settings)
     records = list(
         session.scalars(
             select(Archive)
@@ -649,10 +852,14 @@ def _sync_archive_images(
     }
     selected: list[tuple[Archive, ArchiveEntry]] = []
     selected_bytes = 0
+    # Allow later candidates to replace files that fail validation or conversion,
+    # while retaining a strict, bounded amount of archive work per model.
+    max_attempts = max(
+        settings.archive_image_max_candidates * 4,
+        settings.archive_image_max_candidates,
+    )
+    candidate_pool: list[tuple[Archive, ArchiveEntry, ListedArchiveEntry]] = []
     for archive in records:
-        remaining_count = settings.archive_image_max_candidates - len(selected)
-        if remaining_count <= 0:
-            break
         entries = list(
             session.scalars(
                 select(ArchiveEntry)
@@ -675,15 +882,32 @@ def _sync_archive_images(
         entry_by_path = {entry.path: entry for entry in entries}
         candidates = select_archive_image_candidates(
             listed_entries,
-            max_candidates=remaining_count,
+            max_candidates=max_attempts,
             max_entry_bytes=settings.archive_image_max_entry_bytes,
             max_compressed_bytes=settings.archive_image_max_compressed_bytes,
-            max_total_bytes=settings.archive_image_max_total_bytes - selected_bytes,
+            max_total_bytes=settings.archive_image_max_total_bytes,
         )
-        for candidate in candidates:
-            selected.append((archive, entry_by_path[candidate.path]))
-            selected_bytes += candidate.size_bytes or 0
+        candidate_pool.extend(
+            (archive, entry_by_path[candidate.path], candidate)
+            for candidate in candidates
+        )
 
+    candidate_pool.sort(
+        key=lambda item: (
+            archive_image_candidate_sort_key(item[2]),
+            item[0].filename.casefold(),
+            item[0].relative_path.casefold(),
+        )
+    )
+    for archive, entry, _candidate in candidate_pool:
+        if len(selected) >= max_attempts:
+            break
+        if entry.size_bytes is None:
+            continue
+        if selected_bytes + entry.size_bytes > settings.archive_image_max_total_bytes:
+            continue
+        selected.append((archive, entry))
+        selected_bytes += entry.size_bytes
     existing = {
         image.relative_path: image
         for image in session.scalars(
@@ -702,10 +926,11 @@ def _sync_archive_images(
             remove_cached_file(settings.cache_dir, image.cache_key)
             session.delete(image)
 
+    policy_changed = model.archive_image_policy_key != policy_key
+
     selected_by_archive: dict[int, list[ArchiveEntry]] = {}
     for archive, entry in selected:
         selected_by_archive.setdefault(archive.id, []).append(entry)
-
     primary: ModelImage | None = None
     for archive in records:
         archive_entries = selected_by_archive.get(archive.id)
@@ -719,7 +944,8 @@ def _sync_archive_images(
             entry
             for entry in archive_entries
             if (
-                existing.get(f"archive/{archive.id}/{entry.path}") is None
+                policy_changed
+                or existing.get(f"archive/{archive.id}/{entry.path}") is None
                 or not _archive_image_cache_is_current(
                     existing[f"archive/{archive.id}/{entry.path}"],
                     archive,
@@ -781,6 +1007,7 @@ def _sync_archive_images(
                             storage_kind="archive",
                             archive_id=archive.id,
                             archive_entry_path=entry.path,
+                            archive_entry_fingerprint=_archive_entry_fingerprint(entry),
                         )
                         session.add(image)
                         existing[relative_path] = image
@@ -821,6 +1048,7 @@ def _sync_archive_images(
                         image.modified_ns = archive.modified_ns
                         image.archive_id = archive.id
                         image.archive_entry_path = entry.path
+                        image.archive_entry_fingerprint = _archive_entry_fingerprint(entry)
                         image.thumbnail_status = "ready"
                         image.thumbnail_error = None
                     except (ArchiveImageError, ThumbnailError) as error:
@@ -856,6 +1084,22 @@ def _sync_archive_images(
             if primary is None:
                 primary = image
 
+    successful_images = [
+        existing[f"archive/{archive.id}/{entry.path}"]
+        for archive, entry in selected
+        if (
+            existing.get(f"archive/{archive.id}/{entry.path}") is not None
+            and existing[f"archive/{archive.id}/{entry.path}"].is_available
+        )
+    ]
+    kept_images = successful_images[: settings.archive_image_max_candidates]
+    for image in successful_images[settings.archive_image_max_candidates :]:
+        existing.pop(image.relative_path, None)
+        _discard_archive_image(session, image)
+    for image in kept_images:
+        image.is_primary = image is kept_images[0]
+    primary = kept_images[0] if kept_images else None
+    model.archive_image_policy_key = policy_key
     return primary
 
 def _discard_archive_image(session: Session, image: ModelImage) -> None:
@@ -874,6 +1118,7 @@ def _archive_image_cache_is_current(
     if (
         image.size_bytes != entry.size_bytes
         or image.modified_ns != archive.modified_ns
+        or image.archive_entry_fingerprint != _archive_entry_fingerprint(entry)
         or not image.cache_key
         or not image.thumbnail_key
     ):

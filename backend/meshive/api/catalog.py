@@ -36,10 +36,12 @@ from meshive.schemas.catalog import (
     ModelSummary,
     SourceFilterOption,
 )
+from meshive.schemas.scan import ScanRunRead
 from meshive.schemas.creator import CreatorMetadataLinkRead
 from meshive.schemas.tag import TagRead
 from meshive.services.archive_bundle import BundleArchive, stream_archive_bundle
 from meshive.services.download_limiter import claim_download, release_download
+from meshive.services.scanner import rescan_model
 from meshive.services.thumbnails import (
     ThumbnailError,
     remove_cached_file,
@@ -675,6 +677,27 @@ def set_primary_model_image(
     session.commit()
     return {"image_id": image.id}
 
+
+@admin_router.post("/{model_id}/rescan", response_model=ScanRunRead)
+def rescan_single_model(
+    model_id: int,
+    session: Session = Depends(get_session),
+) -> ScanRunRead:
+    try:
+        return rescan_model(session, model_id)
+    except LookupError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+@admin_router.post("/{model_id}/rebuild-images", response_model=ScanRunRead)
+def rebuild_single_model_images(
+    model_id: int,
+    session: Session = Depends(get_session),
+) -> ScanRunRead:
+    try:
+        return rescan_model(session, model_id, force_image_rebuild=True)
+    except LookupError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
 @admin_router.delete("/{model_id}/images")
 def reset_model_images(
