@@ -61,6 +61,8 @@ interface ScanQueueItem {
   source_name: string
   status: "pending" | "running"
   trigger: string
+  target_model_id: number | null
+  target_model_name: string | null
   position: number | null
   created_at: string
   started_at: string | null
@@ -452,7 +454,10 @@ onBeforeUnmount(() => {
         <article v-for="item in scanQueue" :key="item.id" class="scan-queue-row">
           <div>
             <strong>{{ item.source_name }}</strong>
-            <span class="muted">{{ item.trigger }}</span>
+            <span class="muted">
+              {{ item.trigger === "model_image_rebuild" ? "Rebuilding archive images" : item.trigger === "model_rescan" ? "Rescanning model" : item.trigger }}
+              <template v-if="item.target_model_name">· {{ item.target_model_name }}</template>
+            </span>
           </div>
           <span :class="['scan-state', item.status]">
             {{ item.status === "running" ? "Running" : `Queue #${item.position}` }}

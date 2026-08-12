@@ -35,7 +35,7 @@ limit archive file sizes or authenticated downloads.
 ## Images from archives
 
 Archive-image candidate discovery is bounded before extraction begins. The
-defaults allow at most 12 candidates, 32 MiB declared uncompressed and
+defaults allow at most 48 candidates, 32 MiB declared uncompressed and
 compressed size per entry, and 128 MiB declared uncompressed size in total per
 model. Decoded images are limited to 40 megapixels, and an archive-image
 7-Zip extraction has a 90-second deadline. Image decoding remains bounded by
@@ -75,7 +75,7 @@ environment:
   MESHIVE_ARCHIVE_TIMEOUT_SECONDS: 120
   MESHIVE_ARCHIVE_MAX_ENTRIES: 100000
   MESHIVE_ARCHIVE_MAX_OUTPUT_BYTES: 67108864
-  MESHIVE_ARCHIVE_IMAGE_MAX_CANDIDATES: 12
+  MESHIVE_ARCHIVE_IMAGE_MAX_CANDIDATES: 48
   MESHIVE_ARCHIVE_IMAGE_MAX_ENTRY_BYTES: 33554432
   MESHIVE_ARCHIVE_IMAGE_MAX_COMPRESSED_BYTES: 33554432
   MESHIVE_ARCHIVE_IMAGE_MAX_TOTAL_BYTES: 134217728

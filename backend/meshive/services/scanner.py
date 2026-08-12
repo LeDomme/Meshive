@@ -337,6 +337,8 @@ def rescan_model(
         trigger="model_image_rebuild" if force_image_rebuild else "model_rescan",
         mode="full",
     )
+    scan.target_model_id = model.id
+    scan.target_model_name = model.name
     scan.status = "running"
     scan.started_at = utc_now()
     session.commit()

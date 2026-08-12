@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     archive_max_output_bytes: int = Field(
         default=64 * 1024 * 1024, ge=1024 * 1024, le=1024 * 1024 * 1024
     )
-    archive_image_max_candidates: int = Field(default=12, ge=1, le=100)
+    archive_image_max_candidates: int = Field(default=48, ge=1, le=100)
     archive_image_max_entry_bytes: int = Field(
         default=64 * 1024 * 1024,
         ge=1024 * 1024,
