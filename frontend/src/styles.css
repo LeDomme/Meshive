@@ -2560,6 +2560,24 @@ summary {
   content: "";
 }
 
+.detail-image-frame::before,
+.detail-image-frame::after {
+  transition: transform 180ms ease-out;
+}
+
+.detail-image-frame::before {
+  transform: translateX(calc(var(--image-swipe-offset, 0px) * 0.18));
+}
+
+.detail-image-frame::after {
+  transform: translateX(var(--image-swipe-offset, 0px));
+}
+
+.detail-image-frame.is-swiping::before,
+.detail-image-frame.is-swiping::after,
+.lightbox-image-area.is-swiping img {
+  transition: none;
+}
 .detail-image-frame::after {
   position: absolute;
   z-index: 1;
@@ -3000,6 +3018,10 @@ summary {
   z-index: 2;
 }
 
+.lightbox-image-area img {
+  transform: translateX(var(--image-swipe-offset, 0px));
+  transition: transform 180ms ease-out;
+}
 .lightbox-image-area img {
   display: block;
   width: auto;
