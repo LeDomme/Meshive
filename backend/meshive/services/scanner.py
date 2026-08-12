@@ -341,7 +341,8 @@ def rescan_model(
     scan.started_at = utc_now()
     session.commit()
 
-    cache_keys: list[str] = []
+    cache_backups: list[tuple[Path, Path]] = []
+    rebuild_succeeded = False
     try:
         root = _validated_source_root(source)
         model_directory = root / PurePosixPath(model.relative_path)
@@ -363,16 +364,27 @@ def rescan_model(
                         )
                     )
                 )
-                cache_keys = [
+                cache_keys = {
                     key
                     for image in archive_images
                     for key in (image.thumbnail_key, image.cache_key)
                     if key
-                ]
-                for image in archive_images:
-                    _discard_archive_image(session, image)
-                session.execute(delete(Archive).where(Archive.model_id == model.id))
+                }
+                for archive in session.scalars(
+                    select(Archive).where(Archive.model_id == model.id)
+                ):
+                    # Force a fresh manifest while retaining image records as a
+                    # rollback-safe target for regenerated cache derivatives.
+                    archive.modified_ns = -1
+                model.archive_image_policy_key = None
                 session.flush()
+                for key in cache_keys:
+                    cache_path = safe_cache_path(get_settings().cache_dir, key)
+                    if not cache_path.is_file():
+                        continue
+                    backup_path = cache_path.with_name(f"{cache_path.name}.rebuild-{scan.id}")
+                    os.replace(cache_path, backup_path)
+                    cache_backups.append((cache_path, backup_path))
             _scan_model(
                 session,
                 scan,
@@ -383,6 +395,7 @@ def rescan_model(
                 values,
             )
         scan.status = "completed_with_errors" if scan.issues_count else "completed"
+        rebuild_succeeded = True
     except Exception as error:
         session.rollback()
         scan = session.get(ScanRun, scan.id)
@@ -391,12 +404,19 @@ def rescan_model(
         scan.status = "failed"
         scan.error_message = str(error)[:4000]
     finally:
+        if not rebuild_succeeded:
+            for cache_path, backup_path in cache_backups:
+                if cache_path.exists():
+                    cache_path.unlink()
+                if backup_path.exists():
+                    os.replace(backup_path, cache_path)
         scan = session.get(ScanRun, scan.id)
         if scan is not None:
             scan.finished_at = utc_now()
         session.commit()
-    for key in cache_keys:
-        remove_cached_file(get_settings().cache_dir, key)
+    if rebuild_succeeded:
+        for _cache_path, backup_path in cache_backups:
+            backup_path.unlink(missing_ok=True)
     return scan
 
 def _validated_source_root(source: LibrarySource) -> Path:

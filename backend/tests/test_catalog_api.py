@@ -395,6 +395,53 @@ def test_admin_can_choose_primary_picture_and_reset_picture_records() -> None:
             assert list(session.scalars(select(ModelImage))) == []
 
 
+def test_missing_archive_cache_image_returns_not_found(tmp_path, monkeypatch) -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(
+                name="Cached images",
+                root_path=tmp_path.as_posix(),
+                directory_pattern="{model}",
+                archive_formats=["7z"],
+                image_formats=["jpg"],
+                is_active=True,
+                scan_enabled=True,
+            )
+            session.add(source)
+            session.flush()
+            model = LibraryModel(
+                library_source_id=source.id,
+                relative_path="Cammy",
+                name="Cammy",
+                status="available",
+            )
+            session.add(model)
+            session.flush()
+            image = ModelImage(
+                model_id=model.id,
+                filename="cover.webp",
+                relative_path="archive/1/cover.jpg",
+                storage_kind="archive",
+                format="webp",
+                size_bytes=100,
+                modified_ns=1,
+                cache_key="archive-images/missing.webp",
+            )
+            session.add(image)
+            session.commit()
+            model_id = model.id
+            image_id = image.id
+
+        from meshive.api import catalog
+
+        monkeypatch.setattr(
+            catalog,
+            "get_settings",
+            lambda: SimpleNamespace(cache_dir=tmp_path),
+        )
+        response = client.get(f"/api/models/{model_id}/images/{image_id}")
+        assert response.status_code == 404
+
 def test_catalogue_pagination_boundaries() -> None:
     with catalog_client() as (client, sessions):
         with sessions() as session:
