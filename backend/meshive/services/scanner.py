@@ -341,6 +341,7 @@ def rescan_model(
     scan.started_at = utc_now()
     session.commit()
 
+    cache_keys: list[str] = []
     try:
         root = _validated_source_root(source)
         model_directory = root / PurePosixPath(model.relative_path)
@@ -362,6 +363,12 @@ def rescan_model(
                         )
                     )
                 )
+                cache_keys = [
+                    key
+                    for image in archive_images
+                    for key in (image.thumbnail_key, image.cache_key)
+                    if key
+                ]
                 for image in archive_images:
                     _discard_archive_image(session, image)
                 session.execute(delete(Archive).where(Archive.model_id == model.id))
@@ -388,6 +395,8 @@ def rescan_model(
         if scan is not None:
             scan.finished_at = utc_now()
         session.commit()
+    for key in cache_keys:
+        remove_cached_file(get_settings().cache_dir, key)
     return scan
 
 def _validated_source_root(source: LibrarySource) -> Path:
