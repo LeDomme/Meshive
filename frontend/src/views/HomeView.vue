@@ -127,7 +127,7 @@ const favoriteDialogTargets = computed(() =>
 const favoriteMemberships = ref<Record<number, FavoriteMembershipList[]>>({})
 const selectedModelIds = ref<Set<number>>(new Set())
 const batchActionInProgress = ref(false)
-const batchActionsExpanded = ref(true)
+const batchSelectionMode = ref(false)
 const filters = ref<CatalogueFilters>({
   models: [],
   creators: [],
@@ -480,6 +480,11 @@ function toggleModelSelection(modelId: number) {
 
 function clearModelSelection() {
   selectedModelIds.value = new Set()
+}
+
+function toggleBatchSelectionMode() {
+  if (batchSelectionMode.value) clearModelSelection()
+  batchSelectionMode.value = !batchSelectionMode.value
 }
 
 async function runSelectedModelAction(forceImageRebuild = false) {
@@ -882,14 +887,25 @@ onMounted(async () => {
 
     <div class="catalogue-meta">
       <p>{{ page.total }} {{ page.total === 1 ? "model" : "models" }}</p>
-      <button
-        v-if="auth.user?.role === 'admin' && missingCount > 0"
-        class="danger-button"
-        type="button"
-        @click="deleteAllMissingModels"
-      >
-        Delete all missing ({{ missingCount }})
-      </button>
+      <div class="catalogue-meta-actions">
+        <button
+          v-if="auth.user?.role === 'admin' && page.items.length"
+          class="secondary-button compact-button"
+          type="button"
+          :class="{ active: batchSelectionMode }"
+          @click="toggleBatchSelectionMode"
+        >
+          {{ batchSelectionMode ? "Done selecting" : "Select models" }}
+        </button>
+        <button
+          v-if="auth.user?.role === 'admin' && missingCount > 0"
+          class="danger-button"
+          type="button"
+          @click="deleteAllMissingModels"
+        >
+          Delete all missing ({{ missingCount }})
+        </button>
+      </div>
       <p v-if="loading">Loading…</p>
     </div>
 
@@ -898,29 +914,23 @@ onMounted(async () => {
     </p>
 
     <section
-      v-if="auth.user?.role === 'admin' && page.items.length"
+      v-if="batchSelectionMode && selectedModelCount"
       class="batch-model-actions"
-      :class="{ active: selectedModelCount }"
     >
-      <div class="batch-model-actions-header">
-        <span>{{ selectedModelCount ? `${selectedModelCount} selected` : "Select models for targeted maintenance" }}</span>
-        <button class="text-button" type="button" @click="batchActionsExpanded = !batchActionsExpanded">
-          {{ batchActionsExpanded ? "Hide actions" : "Show actions" }}
-        </button>
-      </div>
-      <div v-if="batchActionsExpanded" class="batch-model-actions-controls">
-        <button class="secondary-button compact-button" type="button" :disabled="!selectedModelCount || batchActionInProgress" @click="runSelectedModelAction()">
+      <span>{{ selectedModelCount }} selected</span>
+      <div class="batch-model-actions-controls">
+        <button class="secondary-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction()">
           Rescan selected
         </button>
-        <button class="danger-button compact-button" type="button" :disabled="!selectedModelCount || batchActionInProgress" @click="runSelectedModelAction(true)">
+        <button class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction(true)">
           Rebuild selected images
         </button>
-        <button v-if="selectedModelCount" class="text-button" type="button" :disabled="batchActionInProgress" @click="clearModelSelection">Clear</button>
+        <button class="text-button" type="button" :disabled="batchActionInProgress" @click="clearModelSelection">Clear</button>
       </div>
     </section>
     <section v-if="page.items.length" class="model-grid">
       <article v-for="model in page.items" :key="model.id" class="model-card" :class="{ 'is-selected': selectedModelIds.has(model.id) }">
-        <label v-if="auth.user?.role === 'admin'" class="model-selection">
+        <label v-if="batchSelectionMode" class="model-selection">
           <input type="checkbox" :checked="selectedModelIds.has(model.id)" @change="toggleModelSelection(model.id)">
           <span class="sr-only">Select {{ model.name }}</span>
         </label>

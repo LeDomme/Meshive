@@ -1745,27 +1745,32 @@ summary {
   margin: 0;
 }
 
-.batch-model-actions {
-  display: grid;
-  gap: 0.75rem;
-  margin: 0 0 1rem;
-  padding: 0.8rem 1rem;
-  border: 1px solid var(--meshive-border);
-  border-radius: 0.75rem;
-  color: #a5b4c8;
-  background: rgb(5 14 31 / 55%);
+.catalogue-meta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
 }
 
-.batch-model-actions.active {
-  border-color: rgb(54 231 255 / 52%);
+.catalogue-meta-actions .active {
+  border-color: var(--meshive-cyan);
   color: #e2f7ff;
 }
 
-.batch-model-actions-header {
+.batch-model-actions {
+  position: sticky;
+  z-index: 4;
+  top: 0.75rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid rgb(54 231 255 / 52%);
+  border-radius: 0.75rem;
+  color: #e2f7ff;
+  background: rgb(5 14 31 / 94%);
+  box-shadow: 0 0.6rem 1.5rem rgb(0 0 0 / 16%);
 }
 
 .batch-model-actions-controls {
