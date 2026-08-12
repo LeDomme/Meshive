@@ -45,6 +45,119 @@ def make_scan(session: Session, source_id: int) -> ScanRun:
     return scan
 
 
+def test_force_rebuild_replaces_cache_without_deleting_regenerated_file(tmp_path, monkeypatch) -> None:
+    model_directory = tmp_path / "Cammy"
+    model_directory.mkdir()
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+    settings = Settings(allowed_library_root=tmp_path, cache_dir=tmp_path / "cache")
+    monkeypatch.setattr(scanner, "get_settings", lambda: settings)
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Pictures",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        model = LibraryModel(
+            library_source_id=source.id,
+            relative_path="Cammy",
+            name="Cammy",
+            status="available",
+        )
+        session.add(model)
+        session.flush()
+        image = ModelImage(
+            model_id=model.id,
+            filename="cover.webp",
+            relative_path="archive/1/cover.jpg",
+            storage_kind="archive",
+            format="webp",
+            size_bytes=100,
+            modified_ns=1,
+            cache_key="archive-images/cover.webp",
+            thumbnail_key="thumbnails/cover.webp",
+        )
+        session.add(image)
+        session.commit()
+
+        cache_path = settings.cache_dir / "archive-images" / "cover.webp"
+        cache_path.parent.mkdir(parents=True)
+        cache_path.write_bytes(b"old")
+
+        def regenerate(*_args, **_kwargs) -> None:
+            assert not cache_path.exists()
+            cache_path.write_bytes(b"new")
+
+        monkeypatch.setattr(scanner, "_scan_model", regenerate)
+        scan = scanner.rescan_model(session, model.id, force_image_rebuild=True)
+
+        assert scan.status == "completed"
+        assert cache_path.read_bytes() == b"new"
+        assert not list(cache_path.parent.glob("*.rebuild-*"))
+
+def test_force_rebuild_restores_cache_when_regeneration_fails(tmp_path, monkeypatch) -> None:
+    model_directory = tmp_path / "Cammy"
+    model_directory.mkdir()
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+    settings = Settings(allowed_library_root=tmp_path, cache_dir=tmp_path / "cache")
+    monkeypatch.setattr(scanner, "get_settings", lambda: settings)
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Pictures",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        model = LibraryModel(
+            library_source_id=source.id,
+            relative_path="Cammy",
+            name="Cammy",
+            status="available",
+        )
+        session.add(model)
+        session.flush()
+        image = ModelImage(
+            model_id=model.id,
+            filename="cover.webp",
+            relative_path="archive/1/cover.jpg",
+            storage_kind="archive",
+            format="webp",
+            size_bytes=100,
+            modified_ns=1,
+            cache_key="archive-images/cover.webp",
+        )
+        session.add(image)
+        session.commit()
+
+        cache_path = settings.cache_dir / "archive-images" / "cover.webp"
+        cache_path.parent.mkdir(parents=True)
+        cache_path.write_bytes(b"old")
+        monkeypatch.setattr(
+            scanner,
+            "_scan_model",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("failed rebuild")),
+        )
+
+        scan = scanner.rescan_model(session, model.id, force_image_rebuild=True)
+
+        assert scan.status == "failed"
+        assert cache_path.read_bytes() == b"old"
+        assert not list(cache_path.parent.glob("*.rebuild-*"))
+
 def test_scans_model_archive_image_and_marks_missing(tmp_path, monkeypatch) -> None:
     model_directory = make_source_tree(tmp_path)
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")

@@ -598,7 +598,7 @@ def model_image(
             ) from error
     else:
         path = _safe_source_file(root_path, image.relative_path)
-    if path is None:
+    if path is None or not path.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
         )
