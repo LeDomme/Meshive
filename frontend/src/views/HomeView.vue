@@ -125,6 +125,8 @@ const favoriteDialogTargets = computed(() =>
   favoriteModel.value ? favoriteTargetsForModel(favoriteModel.value) : [],
 )
 const favoriteMemberships = ref<Record<number, FavoriteMembershipList[]>>({})
+const selectedModelIds = ref<Set<number>>(new Set())
+const batchActionInProgress = ref(false)
 const filters = ref<CatalogueFilters>({
   models: [],
   creators: [],
@@ -466,6 +468,43 @@ async function clearCatalogueSearch() {
   catalogueSearchInput.value?.focus()
 }
 
+const selectedModelCount = computed(() => selectedModelIds.value.size)
+
+function toggleModelSelection(modelId: number) {
+  const next = new Set(selectedModelIds.value)
+  if (next.has(modelId)) next.delete(modelId)
+  else next.add(modelId)
+  selectedModelIds.value = next
+}
+
+function clearModelSelection() {
+  selectedModelIds.value = new Set()
+}
+
+async function runSelectedModelAction(forceImageRebuild = false) {
+  const modelIds = [...selectedModelIds.value]
+  if (!modelIds.length || batchActionInProgress.value) return
+  const actionLabel = forceImageRebuild ? "rebuild archive images" : "rescan"
+  if (!window.confirm(`${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} for ${modelIds.length} selected model${modelIds.length === 1 ? "" : "s"}? The source library remains read-only.`)) return
+
+  batchActionInProgress.value = true
+  errorMessage.value = ""
+  try {
+    // Process one model at a time to keep SQLite and archive extraction bounded.
+    for (const modelId of modelIds) {
+      const action = forceImageRebuild ? "rebuild-images" : "rescan"
+      await apiRequest(`/api/admin/models/${modelId}/${action}`, { method: "POST" })
+    }
+    clearModelSelection()
+    await loadCatalogue(page.value.page)
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError
+      ? error.message
+      : "Unable to process the selected models"
+  } finally {
+    batchActionInProgress.value = false
+  }
+}
 async function deleteMissingModel(model: ModelSummary) {
   if (
     !window.confirm(
@@ -857,8 +896,28 @@ onMounted(async () => {
       {{ errorMessage }}
     </p>
 
+    <section
+      v-if="auth.user?.role === 'admin' && page.items.length"
+      class="batch-model-actions"
+      :class="{ active: selectedModelCount }"
+    >
+      <span>{{ selectedModelCount ? `${selectedModelCount} selected` : "Select models for targeted maintenance" }}</span>
+      <div>
+        <button class="secondary-button compact-button" type="button" :disabled="!selectedModelCount || batchActionInProgress" @click="runSelectedModelAction()">
+          Rescan selected
+        </button>
+        <button class="danger-button compact-button" type="button" :disabled="!selectedModelCount || batchActionInProgress" @click="runSelectedModelAction(true)">
+          Rebuild selected images
+        </button>
+        <button v-if="selectedModelCount" class="text-button" type="button" :disabled="batchActionInProgress" @click="clearModelSelection">Clear</button>
+      </div>
+    </section>
     <section v-if="page.items.length" class="model-grid">
-      <article v-for="model in page.items" :key="model.id" class="model-card">
+      <article v-for="model in page.items" :key="model.id" class="model-card" :class="{ 'is-selected': selectedModelIds.has(model.id) }">
+        <label v-if="auth.user?.role === 'admin'" class="model-selection">
+          <input type="checkbox" :checked="selectedModelIds.has(model.id)" @change="toggleModelSelection(model.id)">
+          <span class="sr-only">Select {{ model.name }}</span>
+        </label>
         <RouterLink
           class="thumbnail-frame"
           :to="detailRoute(model.id)"
