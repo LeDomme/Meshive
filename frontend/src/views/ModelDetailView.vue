@@ -124,7 +124,7 @@ const navigation = ref<ModelNavigation | null>(null)
 const thumbnailStrip = ref<HTMLDivElement | null>(null)
 let thumbnailDragStartX = 0
 let thumbnailDragStartScrollLeft = 0
-let thumbnailDragActive = false
+const thumbnailDragActive = ref(false)
 let thumbnailDragMoved = false
 let imageSwipeStartX = 0
 let imageSwipeStartY = 0
@@ -266,23 +266,27 @@ function selectThumbnail(image: ModelImage) {
 
 function startThumbnailDrag(event: PointerEvent) {
   if (!thumbnailStrip.value || event.button !== 0) return
+  event.preventDefault()
   thumbnailDragStartX = event.clientX
   thumbnailDragStartScrollLeft = thumbnailStrip.value.scrollLeft
-  thumbnailDragActive = true
+  thumbnailDragActive.value = true
   thumbnailDragMoved = false
   thumbnailStrip.value.setPointerCapture(event.pointerId)
 }
 
 function moveThumbnailDrag(event: PointerEvent) {
-  if (!thumbnailDragActive || !thumbnailStrip.value) return
+  if (!thumbnailDragActive.value || !thumbnailStrip.value) return
   const distance = event.clientX - thumbnailDragStartX
-  if (Math.abs(distance) > 4) thumbnailDragMoved = true
+  if (Math.abs(distance) > 4) {
+    thumbnailDragMoved = true
+    event.preventDefault()
+  }
   thumbnailStrip.value.scrollLeft = thumbnailDragStartScrollLeft - distance
 }
 
 function endThumbnailDrag(event: PointerEvent) {
-  if (!thumbnailDragActive || !thumbnailStrip.value) return
-  thumbnailDragActive = false
+  if (!thumbnailDragActive.value || !thumbnailStrip.value) return
+  thumbnailDragActive.value = false
   if (thumbnailStrip.value.hasPointerCapture(event.pointerId)) {
     thumbnailStrip.value.releasePointerCapture(event.pointerId)
   }
@@ -705,10 +709,11 @@ onBeforeUnmount(() => {
             <button class="thumbnail-carousel-nav thumbnail-carousel-nav-previous" type="button" aria-label="Show earlier pictures" @click="scrollThumbnailStrip(-1)">‹</button>
             <div
               ref="thumbnailStrip"
+              :class="{ 'is-dragging': thumbnailDragActive }"
               class="image-strip"
               aria-label="Model pictures"
-              @pointerdown="startThumbnailDrag"
-              @pointermove="moveThumbnailDrag"
+              @pointerdown.capture="startThumbnailDrag"
+              @pointermove.capture="moveThumbnailDrag"
               @pointerup="endThumbnailDrag"
               @pointercancel="endThumbnailDrag"
             >
@@ -718,9 +723,10 @@ onBeforeUnmount(() => {
                 :data-image-id="image.id"
                 type="button"
                 :class="{ selected: selectedImage?.id === image.id }"
+                @dragstart.prevent
                 @click="selectThumbnail(image)"
               >
-                <img :src="image.url" :alt="image.filename" loading="lazy">
+                <img :src="image.url" :alt="image.filename" loading="lazy" draggable="false">
               </button>
             </div>
             <button class="thumbnail-carousel-nav thumbnail-carousel-nav-next" type="button" aria-label="Show later pictures" @click="scrollThumbnailStrip(1)">›</button>

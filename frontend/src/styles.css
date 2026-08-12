@@ -2685,8 +2685,27 @@ summary {
   cursor: grab;
   user-select: none;
   scroll-behavior: smooth;
+  touch-action: pan-y;
 }
 
+.image-strip.is-dragging {
+  cursor: grabbing;
+  scroll-behavior: auto;
+}
+
+.image-strip button {
+  transition: transform 160ms ease, opacity 160ms ease, border-color 160ms ease;
+}
+
+.image-strip.is-dragging button {
+  opacity: 0.78;
+  transform: scale(0.94) translateY(-0.12rem);
+}
+
+.image-strip.is-dragging button.selected {
+  opacity: 1;
+  transform: scale(0.98) translateY(-0.16rem);
+}
 .image-strip:active {
   cursor: grabbing;
 }
