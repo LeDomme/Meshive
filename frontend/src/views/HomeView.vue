@@ -888,6 +888,16 @@ onMounted(async () => {
     <div class="catalogue-meta">
       <p>{{ page.total }} {{ page.total === 1 ? "model" : "models" }}</p>
       <div class="catalogue-meta-actions">
+        <template v-if="batchSelectionMode">
+          <span v-if="selectedModelCount" class="batch-selection-count">{{ selectedModelCount }} selected</span>
+          <button v-if="selectedModelCount" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction()">
+            Rescan selected
+          </button>
+          <button v-if="selectedModelCount" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction(true)">
+            Rebuild selected images
+          </button>
+          <button v-if="selectedModelCount" class="text-button" type="button" :disabled="batchActionInProgress" @click="clearModelSelection">Clear</button>
+        </template>
         <button
           v-if="auth.user?.role === 'admin' && page.items.length"
           class="secondary-button compact-button"
@@ -912,22 +922,6 @@ onMounted(async () => {
     <p v-if="errorMessage" class="form-error error-panel" role="alert">
       {{ errorMessage }}
     </p>
-
-    <section
-      v-if="batchSelectionMode && selectedModelCount"
-      class="batch-model-actions"
-    >
-      <span>{{ selectedModelCount }} selected</span>
-      <div class="batch-model-actions-controls">
-        <button class="secondary-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction()">
-          Rescan selected
-        </button>
-        <button class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction(true)">
-          Rebuild selected images
-        </button>
-        <button class="text-button" type="button" :disabled="batchActionInProgress" @click="clearModelSelection">Clear</button>
-      </div>
-    </section>
     <section v-if="page.items.length" class="model-grid">
       <article v-for="model in page.items" :key="model.id" class="model-card" :class="{ 'is-selected': selectedModelIds.has(model.id) }">
         <label v-if="batchSelectionMode" class="model-selection">

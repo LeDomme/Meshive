@@ -1756,27 +1756,10 @@ summary {
   color: #e2f7ff;
 }
 
-.batch-model-actions {
-  position: sticky;
-  z-index: 4;
-  top: 0.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin: 0 0 1rem;
-  padding: 0.65rem 0.8rem;
-  border: 1px solid rgb(54 231 255 / 52%);
-  border-radius: 0.75rem;
+.batch-selection-count {
   color: #e2f7ff;
-  background: rgb(5 14 31 / 94%);
-  box-shadow: 0 0.6rem 1.5rem rgb(0 0 0 / 16%);
-}
-
-.batch-model-actions-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .model-card {
