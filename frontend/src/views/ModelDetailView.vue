@@ -1023,10 +1023,6 @@ onBeforeUnmount(() => {
           :class="[`mode-${lightboxMode}`, { 'is-swiping': imageSwipeActive }]"
           :style="imageSwipeStyle"
           @click.self="closeLightbox"
-          @pointerdown="startImageSwipe"
-          @pointermove="moveImageSwipe"
-          @pointerup="endImageSwipe"
-          @pointercancel="endImageSwipe"
         >
           <button
             v-if="model.images.length > 1"
@@ -1040,6 +1036,10 @@ onBeforeUnmount(() => {
           <img
             :src="selectedImage.url"
             :alt="`${model.name} — ${selectedImage.filename}`"
+            @pointerdown="startImageSwipe"
+            @pointermove="moveImageSwipe"
+            @pointerup="endImageSwipe"
+            @pointercancel="endImageSwipe"
           >
           <button
             v-if="model.images.length > 1"
