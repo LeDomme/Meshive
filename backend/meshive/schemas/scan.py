@@ -17,6 +17,8 @@ class ScanRunRead(BaseModel):
     mode: str
     target_model_id: int | None
     target_model_name: str | None
+    current_model_name: str | None
+    models_total: int
     status: str
     cancel_requested: bool
     pause_requested: bool
@@ -63,6 +65,10 @@ class ScanQueueItem(BaseModel):
     trigger: str
     target_model_id: int | None
     target_model_name: str | None
+    current_model_name: str | None
+    models_total: int
+    models_found: int
+    models_skipped: int
     position: int | None
     created_at: datetime
     started_at: datetime | None

@@ -175,12 +175,17 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
         model_directories = {
             directory for depth in depths for directory in _directories_at_depth(root, depth)
         }
-
-        for model_directory in sorted(
+        ordered_directories = sorted(
             model_directories, key=lambda path: path.as_posix().casefold()
-        ):
+        )
+        scan.models_total = len(ordered_directories)
+        session.commit()
+
+        for model_directory in ordered_directories:
             _raise_if_scan_cancelled(session, scan_run_id)
             _wait_if_scan_paused(session, scan_run_id)
+            scan.current_model_name = model_directory.name
+            session.commit()
             relative_path = model_directory.relative_to(root).as_posix()
             try:
                 is_candidate = _is_model_candidate(model_directory, source)
@@ -215,6 +220,9 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
                 )
                 session.commit()
                 continue
+
+            scan.current_model_name = values["model"]
+            session.commit()
 
             if scan.mode == "incremental":
                 known_model = session.scalar(
@@ -285,6 +293,7 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
     finally:
         scan = session.get(ScanRun, scan_run_id)
         if scan is not None:
+            scan.current_model_name = None
             scan.finished_at = utc_now()
         session.commit()
 
@@ -306,7 +315,11 @@ def _reconcile_source_archive_images(
             .order_by(LibraryModel.id)
         )
     )
+    scan.models_total = len(models)
+    session.commit()
     for model in models:
+        scan.current_model_name = model.name
+        session.commit()
         _raise_if_scan_cancelled(session, scan.id)
         _wait_if_scan_paused(session, scan.id)
         archives = list(

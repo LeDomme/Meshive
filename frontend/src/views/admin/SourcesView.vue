@@ -73,6 +73,10 @@ interface ScanQueueItem {
   started_at: string | null
   cancel_requested: boolean
   pause_requested: boolean
+  current_model_name: string | null
+  models_total: number
+  models_found: number
+  models_skipped: number
 }
 
 const sources = ref<LibrarySource[]>([])
@@ -202,6 +206,12 @@ function scanActivityLabel(item: ScanQueueItem) {
   return scanModeLabel(item.mode)
 }
 
+function scanProgressLabel(item: ScanQueueItem) {
+  if (item.status !== "running" || !item.models_total) return ""
+  const processed = Math.min(item.models_total, item.models_found + item.models_skipped)
+  const current = item.current_model_name ? ` · ${item.current_model_name}` : ""
+  return ` · ${processed} / ${item.models_total}${current}`
+}
 function elapsedScanTime(startedAt: string | null) {
   if (!startedAt) return "Waiting"
   // SQLite currently stores UTC timestamps without an offset. Treat a naive
@@ -517,6 +527,7 @@ onBeforeUnmount(() => {
             <span class="muted">
               {{ scanActivityLabel(item) }}
               <template v-if="item.target_model_name">· {{ item.target_model_name }}</template>
+              {{ scanProgressLabel(item) }}
               · {{ elapsedScanTime(item.started_at) }}
             </span>
           </div>
