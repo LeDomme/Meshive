@@ -321,7 +321,9 @@ def _reconcile_source_archive_images(
             continue
         scan.models_found += 1
         try:
-            _sync_archive_images(session, scan, model, root, archive_paths)
+            archive_primary = _sync_archive_images(session, scan, model, root, archive_paths)
+            if archive_primary is None:
+                _restore_source_primary(session, model)
             _apply_primary_override(session, model)
             session.commit()
         except Exception as error:
@@ -1193,6 +1195,27 @@ def _archive_image_cache_is_current(
     except ThumbnailError:
         return False
 
+
+def _restore_source_primary(session: Session, model: LibraryModel) -> None:
+    """Keep a folder image visible when an archive has no usable images."""
+    source_image = session.scalar(
+        select(ModelImage)
+        .where(
+            ModelImage.model_id == model.id,
+            ModelImage.storage_kind == "source",
+            ModelImage.is_available.is_(True),
+        )
+        .order_by(ModelImage.is_primary.desc(), ModelImage.filename.collate("NOCASE"))
+        .limit(1)
+    )
+    if source_image is None:
+        return
+    session.execute(
+        update(ModelImage)
+        .where(ModelImage.model_id == model.id)
+        .values(is_primary=False)
+    )
+    source_image.is_primary = True
 
 def _apply_primary_override(session: Session, model: LibraryModel) -> None:
     override = session.scalar(
