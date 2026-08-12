@@ -127,6 +127,7 @@ const favoriteDialogTargets = computed(() =>
 const favoriteMemberships = ref<Record<number, FavoriteMembershipList[]>>({})
 const selectedModelIds = ref<Set<number>>(new Set())
 const batchActionInProgress = ref(false)
+const batchActionsExpanded = ref(true)
 const filters = ref<CatalogueFilters>({
   models: [],
   creators: [],
@@ -901,8 +902,13 @@ onMounted(async () => {
       class="batch-model-actions"
       :class="{ active: selectedModelCount }"
     >
-      <span>{{ selectedModelCount ? `${selectedModelCount} selected` : "Select models for targeted maintenance" }}</span>
-      <div>
+      <div class="batch-model-actions-header">
+        <span>{{ selectedModelCount ? `${selectedModelCount} selected` : "Select models for targeted maintenance" }}</span>
+        <button class="text-button" type="button" @click="batchActionsExpanded = !batchActionsExpanded">
+          {{ batchActionsExpanded ? "Hide actions" : "Show actions" }}
+        </button>
+      </div>
+      <div v-if="batchActionsExpanded" class="batch-model-actions-controls">
         <button class="secondary-button compact-button" type="button" :disabled="!selectedModelCount || batchActionInProgress" @click="runSelectedModelAction()">
           Rescan selected
         </button>

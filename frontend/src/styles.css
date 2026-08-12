@@ -1746,10 +1746,8 @@ summary {
 }
 
 .batch-model-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  display: grid;
+  gap: 0.75rem;
   margin: 0 0 1rem;
   padding: 0.8rem 1rem;
   border: 1px solid var(--meshive-border);
@@ -1763,7 +1761,14 @@ summary {
   color: #e2f7ff;
 }
 
-.batch-model-actions > div {
+.batch-model-actions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.batch-model-actions-controls {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;

@@ -94,6 +94,33 @@ def create_scan_run(
     return scan
 
 
+def queue_model_rescan(
+    session: Session,
+    model_id: int,
+    *,
+    force_image_rebuild: bool = False,
+) -> ScanRun:
+    """Queue a targeted model scan behind any active source scan."""
+    model = session.get(LibraryModel, model_id)
+    if model is None:
+        raise LookupError("Model not found")
+    source = session.get(LibrarySource, model.library_source_id)
+    if source is None:
+        raise LookupError("Library source not found")
+
+    scan = create_scan_run(
+        session,
+        source.id,
+        trigger="model_image_rebuild" if force_image_rebuild else "model_rescan",
+        mode="full",
+    )
+    scan.target_model_id = model.id
+    scan.target_model_name = model.name
+    session.commit()
+    dispatch_pending_scans()
+    return scan
+
+
 def has_queued_or_running_scan(session: Session, source_id: int) -> bool:
     return (
         session.scalar(
@@ -161,6 +188,14 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
     try:
         if source is None:
             raise RuntimeError("Library source no longer exists")
+        if scan.target_model_id is not None:
+            rescan_model(
+                session,
+                scan.target_model_id,
+                force_image_rebuild=scan.trigger == "model_image_rebuild",
+                scan=scan,
+            )
+            return
         root = _validated_source_root(source)
         if scan.mode == "reconcile_images":
             _reconcile_source_archive_images(session, scan, source, root)
@@ -365,6 +400,7 @@ def rescan_model(
     model_id: int,
     *,
     force_image_rebuild: bool = False,
+    scan: ScanRun | None = None,
 ) -> ScanRun:
     """Re-scan one model without enumerating its entire library source."""
     model = session.get(LibraryModel, model_id)
@@ -374,12 +410,13 @@ def rescan_model(
     if source is None:
         raise LookupError("Library source not found")
 
-    scan = create_scan_run(
-        session,
-        source.id,
-        trigger="model_image_rebuild" if force_image_rebuild else "model_rescan",
-        mode="full",
-    )
+    if scan is None:
+        scan = create_scan_run(
+            session,
+            source.id,
+            trigger="model_image_rebuild" if force_image_rebuild else "model_rescan",
+            mode="full",
+        )
     scan.target_model_id = model.id
     scan.target_model_name = model.name
     scan.status = "running"
