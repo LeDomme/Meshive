@@ -200,9 +200,14 @@ function scanActivityLabel(item: ScanQueueItem) {
 
 function elapsedScanTime(startedAt: string | null) {
   if (!startedAt) return "Waiting"
+  // SQLite currently stores UTC timestamps without an offset. Treat a naive
+  // timestamp as UTC rather than letting the browser interpret it as local time.
+  const timestamp = /(?:Z|[+-]\d{2}:\d{2})$/i.test(startedAt)
+    ? startedAt
+    : `${startedAt}Z`
   const seconds = Math.max(
     0,
-    Math.floor((activityClock.value - new Date(startedAt).getTime()) / 1000),
+    Math.floor((activityClock.value - new Date(timestamp).getTime()) / 1000),
   )
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = seconds % 60
