@@ -985,6 +985,28 @@ summary {
   font-weight: 700;
 }
 
+.scan-mode-control {
+  min-width: 15rem;
+  padding: 0.65rem 2.15rem 0.65rem 0.8rem;
+  border: 1px solid #334155;
+  border-radius: 0.6rem;
+  color: #dbeafe;
+  background-color: #172033;
+  font: inherit;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.scan-mode-control:focus {
+  outline: none;
+  border-color: var(--meshive-cyan);
+  box-shadow: 0 0 0 3px rgb(34 211 238 / 14%);
+}
+
+.scan-mode-control:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
 .scan-state.running {
   color: #cffafe;
   background: rgb(8 145 178 / 28%);

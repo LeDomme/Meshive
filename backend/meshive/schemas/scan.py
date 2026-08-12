@@ -15,6 +15,8 @@ class ScanRunRead(BaseModel):
     id: int
     library_source_id: int
     mode: str
+    target_model_id: int | None
+    target_model_name: str | None
     status: str
     trigger: str
     started_at: datetime | None
@@ -50,6 +52,8 @@ class ScanQueueItem(BaseModel):
     source_name: str
     status: str
     trigger: str
+    target_model_id: int | None
+    target_model_name: str | None
     position: int | None
     created_at: datetime
     started_at: datetime | None

@@ -27,7 +27,7 @@ Selection and processing use conservative defaults:
 
 | Environment variable | Default | Purpose |
 | --- | ---: | --- |
-| `MESHIVE_ARCHIVE_IMAGE_MAX_CANDIDATES` | `12` | Maximum selected images per model |
+| `MESHIVE_ARCHIVE_IMAGE_MAX_CANDIDATES` | `48` | Maximum selected images per model |
 | `MESHIVE_ARCHIVE_IMAGE_MAX_ENTRY_BYTES` | `33554432` | Maximum declared uncompressed size per image |
 | `MESHIVE_ARCHIVE_IMAGE_MAX_COMPRESSED_BYTES` | `33554432` | Maximum declared compressed size per image |
 | `MESHIVE_ARCHIVE_IMAGE_MAX_TOTAL_BYTES` | `134217728` | Maximum declared total size selected per model |

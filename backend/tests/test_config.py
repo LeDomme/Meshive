@@ -38,7 +38,7 @@ def test_invalid_runtime_limits_are_rejected(override: dict[str, object]) -> Non
 def test_archive_image_limits_have_conservative_defaults() -> None:
     settings = Settings(_env_file=None)
 
-    assert settings.archive_image_max_candidates == 12
+    assert settings.archive_image_max_candidates == 48
     assert settings.archive_image_max_entry_bytes == 64 * 1024 * 1024
     assert settings.archive_image_max_compressed_bytes == 64 * 1024 * 1024
     assert settings.archive_image_max_total_bytes == 256 * 1024 * 1024

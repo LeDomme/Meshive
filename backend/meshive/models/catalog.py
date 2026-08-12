@@ -127,6 +127,9 @@ class ScanRun(Base):
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
     trigger: Mapped[str] = mapped_column(String(20), default="manual")
     mode: Mapped[str] = mapped_column(String(32), default="full", index=True)
+    target_model_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+
+    target_model_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     models_found: Mapped[int] = mapped_column(Integer, default=0)

@@ -99,6 +99,8 @@ def test_force_rebuild_replaces_cache_without_deleting_regenerated_file(tmp_path
         scan = scanner.rescan_model(session, model.id, force_image_rebuild=True)
 
         assert scan.status == "completed"
+        assert scan.target_model_id == model.id
+        assert scan.target_model_name == "Cammy"
         assert cache_path.read_bytes() == b"new"
         assert not list(cache_path.parent.glob("*.rebuild-*"))
 
