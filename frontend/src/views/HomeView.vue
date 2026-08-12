@@ -487,19 +487,31 @@ function toggleBatchSelectionMode() {
   batchSelectionMode.value = !batchSelectionMode.value
 }
 
-async function runSelectedModelAction(forceImageRebuild = false) {
+type SelectedModelAction = "rescan" | "rebuild-images" | "reset-images"
+
+async function runSelectedModelAction(action: SelectedModelAction) {
   const modelIds = [...selectedModelIds.value]
   if (!modelIds.length || batchActionInProgress.value) return
-  const actionLabel = forceImageRebuild ? "rebuild archive images" : "rescan"
-  if (!window.confirm(`${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} for ${modelIds.length} selected model${modelIds.length === 1 ? "" : "s"}? The source library remains read-only.`)) return
+  const isPictureReset = action === "reset-images"
+  const actionLabel = action === "rescan"
+    ? "rescan"
+    : action === "rebuild-images"
+      ? "rebuild archive images"
+      : "reset picture records"
+  const confirmation = isPictureReset
+    ? `Reset all Meshive picture records for ${modelIds.length} selected model${modelIds.length === 1 ? "" : "s"}? Their cached images will be removed; the source library remains read-only.`
+    : `${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} for ${modelIds.length} selected model${modelIds.length === 1 ? "" : "s"}? The source library remains read-only.`
+  if (!window.confirm(confirmation)) return
 
   batchActionInProgress.value = true
   errorMessage.value = ""
   try {
     // Process one model at a time to keep SQLite and archive extraction bounded.
     for (const modelId of modelIds) {
-      const action = forceImageRebuild ? "rebuild-images" : "rescan"
-      await apiRequest(`/api/admin/models/${modelId}/${action}`, { method: "POST" })
+      const path = action === "reset-images"
+        ? `/api/admin/models/${modelId}/images`
+        : `/api/admin/models/${modelId}/${action}`
+      await apiRequest(path, { method: action === "reset-images" ? "DELETE" : "POST" })
     }
     clearModelSelection()
     await loadCatalogue(page.value.page)
@@ -887,16 +899,17 @@ onMounted(async () => {
 
     <div class="catalogue-meta">
       <p>{{ page.total }} {{ page.total === 1 ? "model" : "models" }}</p>
-      <span v-if="batchSelectionMode && selectedModelCount" class="batch-selection-count">
-        {{ selectedModelCount }} selected
-      </span>
+      <span v-if="batchSelectionMode && selectedModelCount" class="batch-selection-count">{{ selectedModelCount }} selected</span>
       <div class="catalogue-meta-actions">
         <template v-if="batchSelectionMode">
-          <button v-if="selectedModelCount" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction()">
+          <button v-if="selectedModelCount" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('rescan')">
             Rescan selected
           </button>
-          <button v-if="selectedModelCount" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction(true)">
+          <button v-if="selectedModelCount" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('rebuild-images')">
             Rebuild selected images
+          </button>
+          <button v-if="selectedModelCount" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('reset-images')">
+            Reset selected pictures
           </button>
           <button v-if="selectedModelCount" class="text-button" type="button" :disabled="batchActionInProgress" @click="clearModelSelection">Clear</button>
         </template>
