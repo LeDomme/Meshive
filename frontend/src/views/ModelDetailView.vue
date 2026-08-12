@@ -255,6 +255,13 @@ function moveImageSwipe(event: PointerEvent) {
   const horizontalDistance = event.clientX - imageSwipeStartX
   const verticalDistance = event.clientY - imageSwipeStartY
   if (Math.abs(verticalDistance) > Math.abs(horizontalDistance)) return
+  if (Math.abs(horizontalDistance) > 4) {
+    const target = event.currentTarget as HTMLElement
+    if (!target.hasPointerCapture(event.pointerId)) {
+      target.setPointerCapture(event.pointerId)
+    }
+    event.preventDefault()
+  }
   imageSwipeOffset.value = Math.max(-96, Math.min(96, horizontalDistance))
 }
 
