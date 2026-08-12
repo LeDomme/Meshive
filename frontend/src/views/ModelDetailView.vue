@@ -126,6 +126,9 @@ let thumbnailDragStartX = 0
 let thumbnailDragStartScrollLeft = 0
 let thumbnailDragActive = false
 let thumbnailDragMoved = false
+let imageSwipeStartX = 0
+let imageSwipeStartY = 0
+let suppressDetailImageClick = false
 
 const modelFallbackUrl = computed(() => {
   if (!model.value) return ""
@@ -234,6 +237,20 @@ function selectAdjacentImage(direction: -1 | 1) {
   selectedImage.value = images[(currentIndex + direction + images.length) % images.length]
 }
 
+function startImageSwipe(event: PointerEvent) {
+  if (event.pointerType === "mouse" && event.button !== 0) return
+  imageSwipeStartX = event.clientX
+  imageSwipeStartY = event.clientY
+}
+
+function endImageSwipe(event: PointerEvent) {
+  const horizontalDistance = event.clientX - imageSwipeStartX
+  const verticalDistance = event.clientY - imageSwipeStartY
+  if (Math.abs(horizontalDistance) < 48 || Math.abs(horizontalDistance) <= Math.abs(verticalDistance)) return
+  suppressDetailImageClick = true
+  selectAdjacentImage(horizontalDistance < 0 ? 1 : -1)
+  window.setTimeout(() => { suppressDetailImageClick = false }, 0)
+}
 function scrollThumbnailStrip(direction: -1 | 1) {
   thumbnailStrip.value?.scrollBy({ left: direction * 320, behavior: "smooth" })
 }
@@ -343,7 +360,7 @@ function selectArchive(index: number) {
 }
 
 async function openLightbox() {
-  if (!selectedImage.value) return
+  if (!selectedImage.value || suppressDetailImageClick) return
   lightboxMode.value = "height"
   lightboxOpen.value = true
   document.documentElement.style.overflow = "hidden"
@@ -621,7 +638,7 @@ onBeforeUnmount(() => {
       </header>
       <section class="detail-grid">
         <div class="panel image-gallery">
-          <div class="detail-image-frame" :style="imageFrameStyle">
+          <div class="detail-image-frame" :style="imageFrameStyle" @pointerdown="startImageSwipe" @pointerup="endImageSwipe">
             <button
               v-if="model.images.length > 1"
               class="gallery-nav gallery-nav-previous"
@@ -978,6 +995,8 @@ onBeforeUnmount(() => {
           class="lightbox-image-area"
           :class="`mode-${lightboxMode}`"
           @click.self="closeLightbox"
+          @pointerdown="startImageSwipe"
+          @pointerup="endImageSwipe"
         >
           <button
             v-if="model.images.length > 1"
