@@ -128,6 +128,8 @@ const thumbnailDragActive = ref(false)
 let thumbnailDragMoved = false
 let imageSwipeStartX = 0
 let imageSwipeStartY = 0
+const imageSwipeOffset = ref(0)
+const imageSwipeActive = ref(false)
 let suppressDetailImageClick = false
 
 const modelFallbackUrl = computed(() => {
@@ -138,6 +140,9 @@ const modelFallbackUrl = computed(() => {
 
 const imageFrameStyle = computed(() => ({
   "--detail-image": `url("${(selectedImage.value?.url || modelFallbackUrl.value).replaceAll('"', '\\"')}")`,
+}))
+const imageSwipeStyle = computed(() => ({
+  "--image-swipe-offset": `${imageSwipeOffset.value}px`,
 }))
 const currentArchive = computed(
   () => model.value?.archives[selectedArchiveIndex.value] ?? null,
@@ -241,11 +246,27 @@ function startImageSwipe(event: PointerEvent) {
   if (event.pointerType === "mouse" && event.button !== 0) return
   imageSwipeStartX = event.clientX
   imageSwipeStartY = event.clientY
+  imageSwipeOffset.value = 0
+  imageSwipeActive.value = true
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+function moveImageSwipe(event: PointerEvent) {
+  if (!imageSwipeActive.value) return
+  const horizontalDistance = event.clientX - imageSwipeStartX
+  const verticalDistance = event.clientY - imageSwipeStartY
+  if (Math.abs(verticalDistance) > Math.abs(horizontalDistance)) return
+  imageSwipeOffset.value = Math.max(-96, Math.min(96, horizontalDistance))
 }
 
 function endImageSwipe(event: PointerEvent) {
+  if (!imageSwipeActive.value) return
+  const target = event.currentTarget as HTMLElement
+  if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId)
   const horizontalDistance = event.clientX - imageSwipeStartX
   const verticalDistance = event.clientY - imageSwipeStartY
+  imageSwipeActive.value = false
+  imageSwipeOffset.value = 0
   if (Math.abs(horizontalDistance) < 48 || Math.abs(horizontalDistance) <= Math.abs(verticalDistance)) return
   suppressDetailImageClick = true
   selectAdjacentImage(horizontalDistance < 0 ? 1 : -1)
@@ -642,7 +663,7 @@ onBeforeUnmount(() => {
       </header>
       <section class="detail-grid">
         <div class="panel image-gallery">
-          <div class="detail-image-frame" :style="imageFrameStyle" @pointerdown="startImageSwipe" @pointerup="endImageSwipe">
+          <div class="detail-image-frame" :class="{ 'is-swiping': imageSwipeActive }" :style="[imageFrameStyle, imageSwipeStyle]" @pointerdown="startImageSwipe" @pointermove="moveImageSwipe" @pointerup="endImageSwipe" @pointercancel="endImageSwipe">
             <button
               v-if="model.images.length > 1"
               class="gallery-nav gallery-nav-previous"
@@ -999,10 +1020,13 @@ onBeforeUnmount(() => {
         </div>
         <div
           class="lightbox-image-area"
-          :class="`mode-${lightboxMode}`"
+          :class="[`mode-${lightboxMode}`, { 'is-swiping': imageSwipeActive }]"
+          :style="imageSwipeStyle"
           @click.self="closeLightbox"
           @pointerdown="startImageSwipe"
+          @pointermove="moveImageSwipe"
           @pointerup="endImageSwipe"
+          @pointercancel="endImageSwipe"
         >
           <button
             v-if="model.images.length > 1"
