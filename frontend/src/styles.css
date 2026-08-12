@@ -976,6 +976,11 @@ summary {
   background: rgb(5 14 31 / 55%);
 }
 
+.scan-queue-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
 .scan-state {
   padding: 0.3rem 0.55rem;
   border-radius: 999px;

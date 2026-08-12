@@ -125,6 +125,8 @@ class ScanRun(Base):
         ForeignKey("library_sources.id", ondelete="CASCADE"), index=True
     )
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    pause_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     trigger: Mapped[str] = mapped_column(String(20), default="manual")
     mode: Mapped[str] = mapped_column(String(32), default="full", index=True)
     target_model_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)

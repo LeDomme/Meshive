@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import threading
+import time
 from pathlib import Path, PurePosixPath
 
 from sqlalchemy import delete, inspect, or_, select, update
@@ -38,6 +39,9 @@ from meshive.services.thumbnails import (
     remove_cached_thumbnail,
     safe_cache_path,
 )
+
+class ScanCancelled(RuntimeError):
+    pass
 
 _active_sources: set[int] = set()
 _active_sources_lock = threading.Lock()
@@ -131,6 +135,16 @@ def execute_scan(source_id: int, scan_run_id: int) -> None:
         dispatch_pending_scans()
 
 
+def _raise_if_scan_cancelled(session: Session, scan_run_id: int) -> None:
+    if session.scalar(select(ScanRun.cancel_requested).where(ScanRun.id == scan_run_id)):
+        raise ScanCancelled()
+
+def _wait_if_scan_paused(session: Session, scan_run_id: int) -> None:
+    while session.scalar(select(ScanRun.pause_requested).where(ScanRun.id == scan_run_id)):
+        _raise_if_scan_cancelled(session, scan_run_id)
+        time.sleep(0.5)
+        session.rollback()
+
 def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
     scan = session.get(ScanRun, scan_run_id)
     source = session.get(LibrarySource, source_id)
@@ -161,6 +175,8 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
         for model_directory in sorted(
             model_directories, key=lambda path: path.as_posix().casefold()
         ):
+            _raise_if_scan_cancelled(session, scan_run_id)
+            _wait_if_scan_paused(session, scan_run_id)
             relative_path = model_directory.relative_to(root).as_posix()
             try:
                 is_candidate = _is_model_candidate(model_directory, source)
@@ -250,6 +266,11 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
         scan.models_missing = missing_result.rowcount or 0
         recompute_inherited_tags(session, source.id)
         scan.status = "completed_with_errors" if scan.issues_count else "completed"
+    except ScanCancelled:
+        session.rollback()
+        scan = session.get(ScanRun, scan_run_id)
+        if scan is not None:
+            scan.status = "cancelled"
     except Exception as error:
         session.rollback()
         scan = session.get(ScanRun, scan_run_id)
@@ -281,6 +302,8 @@ def _reconcile_source_archive_images(
         )
     )
     for model in models:
+        _raise_if_scan_cancelled(session, scan.id)
+        _wait_if_scan_paused(session, scan.id)
         archives = list(
             session.scalars(
                 select(Archive)
@@ -298,7 +321,9 @@ def _reconcile_source_archive_images(
             continue
         scan.models_found += 1
         try:
-            _sync_archive_images(session, scan, model, root, archive_paths)
+            archive_primary = _sync_archive_images(session, scan, model, root, archive_paths)
+            if archive_primary is None:
+                _restore_source_primary(session, model)
             _apply_primary_override(session, model)
             session.commit()
         except Exception as error:
@@ -534,7 +559,11 @@ def _scan_model(
     archives_ok = _sync_archives(session, scan, model, root, archives)
     has_available_images = session.scalar(
         select(ModelImage.id)
-        .where(ModelImage.model_id == model.id, ModelImage.is_available.is_(True))
+        .where(
+            ModelImage.model_id == model.id,
+            ModelImage.storage_kind == "archive",
+            ModelImage.is_available.is_(True),
+        )
         .limit(1)
     ) is not None
     archive_primary = None
@@ -551,7 +580,11 @@ def _scan_model(
     else:
         archive_primary = session.scalar(
             select(ModelImage)
-            .where(ModelImage.model_id == model.id, ModelImage.is_available.is_(True))
+            .where(
+            ModelImage.model_id == model.id,
+            ModelImage.storage_kind == "archive",
+            ModelImage.is_available.is_(True),
+        )
             .order_by(ModelImage.is_primary.desc(), ModelImage.id)
             .limit(1)
             )
@@ -1162,6 +1195,27 @@ def _archive_image_cache_is_current(
     except ThumbnailError:
         return False
 
+
+def _restore_source_primary(session: Session, model: LibraryModel) -> None:
+    """Keep a folder image visible when an archive has no usable images."""
+    source_image = session.scalar(
+        select(ModelImage)
+        .where(
+            ModelImage.model_id == model.id,
+            ModelImage.storage_kind == "source",
+            ModelImage.is_available.is_(True),
+        )
+        .order_by(ModelImage.is_primary.desc(), ModelImage.filename.collate("NOCASE"))
+        .limit(1)
+    )
+    if source_image is None:
+        return
+    session.execute(
+        update(ModelImage)
+        .where(ModelImage.model_id == model.id)
+        .values(is_primary=False)
+    )
+    source_image.is_primary = True
 
 def _apply_primary_override(session: Session, model: LibraryModel) -> None:
     override = session.scalar(

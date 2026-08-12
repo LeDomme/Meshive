@@ -590,3 +590,61 @@ def test_rescan_splits_variant_without_creating_duplicate(tmp_path, monkeypatch)
         assert models[0].series == "X-Men"
 
     engine.dispose()
+
+
+def test_restore_source_primary_when_archive_has_no_images(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Pictures",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        model = LibraryModel(
+            library_source_id=source.id,
+            relative_path="Cammy",
+            name="Cammy",
+            status="available",
+        )
+        session.add(model)
+        session.flush()
+        archive_image = ModelImage(
+            model_id=model.id,
+            filename="archive-cover.jpg",
+            relative_path="archive/1/cover.jpg",
+            storage_kind="archive",
+            format="jpg",
+            size_bytes=100,
+            modified_ns=1,
+            is_available=False,
+            is_primary=False,
+        )
+        source_image = ModelImage(
+            model_id=model.id,
+            filename="folder-cover.jpg",
+            relative_path="Cammy/folder-cover.jpg",
+            storage_kind="source",
+            format="jpg",
+            size_bytes=100,
+            modified_ns=1,
+            is_available=True,
+            is_primary=False,
+            thumbnail_key="thumbnails/folder-cover.webp",
+            thumbnail_status="ready",
+        )
+        session.add_all([archive_image, source_image])
+        session.commit()
+
+        scanner._restore_source_primary(session, model)
+        session.commit()
+
+        assert source_image.is_primary is True
+        assert archive_image.is_primary is False
