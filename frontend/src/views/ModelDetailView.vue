@@ -290,7 +290,6 @@ function startThumbnailDrag(event: PointerEvent) {
   thumbnailDragStartScrollLeft = thumbnailStrip.value.scrollLeft
   thumbnailDragActive.value = true
   thumbnailDragMoved = false
-  thumbnailStrip.value.setPointerCapture(event.pointerId)
 }
 
 function moveThumbnailDrag(event: PointerEvent) {
