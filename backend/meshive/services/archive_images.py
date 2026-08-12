@@ -73,12 +73,9 @@ def select_archive_image_candidates(
     extraction stage always starts with a known resource budget.
     """
 
-    if min(
-        max_candidates,
-        max_entry_bytes,
-        max_compressed_bytes,
-        max_total_bytes,
-    ) <= 0:
+    if min(max_entry_bytes, max_compressed_bytes) <= 0:
+        raise ValueError("Archive image selection limits must be positive")
+    if max_candidates <= 0 or max_total_bytes <= 0:
         raise ValueError("Archive image selection limits must be positive")
 
     candidates = [
@@ -90,7 +87,7 @@ def select_archive_image_candidates(
             max_compressed_bytes=max_compressed_bytes,
         )
     ]
-    candidates.sort(key=_candidate_sort_key)
+    candidates.sort(key=archive_image_candidate_sort_key)
 
     selected: list[ListedArchiveEntry] = []
     selected_bytes = 0
@@ -377,7 +374,7 @@ def _is_eligible_image(
     )
 
 
-def _candidate_sort_key(entry: ListedArchiveEntry) -> tuple[int, int, str]:
+def archive_image_candidate_sort_key(entry: ListedArchiveEntry) -> tuple[int, int, str]:
     path = PurePosixPath(entry.path.replace("\\", "/"))
     stem = path.stem.casefold()
     name_priority = len(_PREFERRED_NAME_MARKERS)

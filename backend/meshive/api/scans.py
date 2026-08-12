@@ -11,6 +11,7 @@ from meshive.schemas.scan import (
     ScanIssueRead,
     ScanQueueItem,
     ScanRunRead,
+    ScanStartRequest,
 )
 from meshive.services.scanner import (
     create_scan_run,
@@ -33,6 +34,7 @@ router = APIRouter(
 def start_source_scan(
     source_id: int,
     session: Session = Depends(get_session),
+    payload: ScanStartRequest | None = None,
 ) -> ScanRun:
     source = session.get(LibrarySource, source_id)
     if source is None:
@@ -47,7 +49,12 @@ def start_source_scan(
             status_code=status.HTTP_409_CONFLICT,
             detail="A scan is already queued or running for this source",
         )
-    scan = create_scan_run(session, source_id, trigger="manual")
+    scan = create_scan_run(
+        session,
+        source_id,
+        trigger="manual",
+        mode=payload.mode if payload is not None else "full",
+    )
     dispatch_pending_scans()
     return scan
 

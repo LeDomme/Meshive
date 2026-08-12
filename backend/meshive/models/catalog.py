@@ -44,6 +44,9 @@ class LibraryModel(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    archive_image_policy_key: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
 
 
 class Archive(Base):
@@ -102,6 +105,9 @@ class ModelImage(Base):
         ForeignKey("archives.id", ondelete="CASCADE"), nullable=True, index=True
     )
     archive_entry_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    archive_entry_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     cache_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     is_primary_override: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -120,6 +126,7 @@ class ScanRun(Base):
     )
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
     trigger: Mapped[str] = mapped_column(String(20), default="manual")
+    mode: Mapped[str] = mapped_column(String(32), default="full", index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     models_found: Mapped[int] = mapped_column(Integer, default=0)

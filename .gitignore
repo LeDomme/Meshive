@@ -59,3 +59,6 @@ cache/*
 *.tmp
 *.bak
 *.orig
+
+# Local release planning (never commit)
+LOCAL_ROADMAP_FOR_1.4.0.md

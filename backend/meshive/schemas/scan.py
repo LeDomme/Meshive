@@ -1,13 +1,20 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+
+class ScanStartRequest(BaseModel):
+    """Choose how deeply a library source is inspected."""
+
+    mode: Literal["full", "missing_images", "incremental", "reconcile_images"] = "full"
 
 class ScanRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     library_source_id: int
+    mode: str
     status: str
     trigger: str
     started_at: datetime | None
