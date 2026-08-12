@@ -27,6 +27,10 @@ class ScanRunRead(BaseModel):
     models_added: int
     models_updated: int
     models_missing: int
+    models_skipped: int
+    archive_images_reused: int
+    archive_images_generated: int
+    archive_images_removed: int
     automatic_tag_matches: int
     automatic_tags_added: int
     automatic_tags_removed: int

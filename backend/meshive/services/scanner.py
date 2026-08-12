@@ -79,6 +79,10 @@ def create_scan_run(
         models_added=0,
         models_updated=0,
         models_missing=0,
+        models_skipped=0,
+        archive_images_reused=0,
+        archive_images_generated=0,
+        archive_images_removed=0,
         automatic_tag_matches=0,
         automatic_tags_added=0,
         automatic_tags_removed=0,
@@ -224,6 +228,7 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
                     known_model.last_seen_scan_id = scan.id
                     known_model.status = "available"
                     scan.models_found += 1
+                    scan.models_skipped += 1
                     session.commit()
                     continue
             try:
@@ -989,6 +994,7 @@ def _sync_archive_images(
             remove_cached_file(settings.cache_dir, image.thumbnail_key)
             remove_cached_file(settings.cache_dir, image.cache_key)
             session.delete(image)
+            scan.archive_images_removed += 1
 
     policy_changed = model.archive_image_policy_key != policy_key
 
@@ -1018,6 +1024,8 @@ def _sync_archive_images(
                 )
             )
         ]
+        scan.archive_images_reused += len(archive_entries) - len(pending_entries)
+
         if pending_entries:
             candidates = [
                 ListedArchiveEntry(
@@ -1115,6 +1123,7 @@ def _sync_archive_images(
                         image.archive_entry_fingerprint = _archive_entry_fingerprint(entry)
                         image.thumbnail_status = "ready"
                         image.thumbnail_error = None
+                        scan.archive_images_generated += 1
                     except (ArchiveImageError, ThumbnailError) as error:
                         _discard_archive_image(session, image)
                         existing.pop(relative_path, None)
@@ -1160,6 +1169,7 @@ def _sync_archive_images(
     for image in successful_images[settings.archive_image_max_candidates :]:
         existing.pop(image.relative_path, None)
         _discard_archive_image(session, image)
+        scan.archive_images_removed += 1
     for image in kept_images:
         image.is_primary = image is kept_images[0]
     primary = kept_images[0] if kept_images else None

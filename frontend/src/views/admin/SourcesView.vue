@@ -39,6 +39,10 @@ interface ScanRun {
   models_added: number
   models_updated: number
   models_missing: number
+  models_skipped: number
+  archive_images_reused: number
+  archive_images_generated: number
+  archive_images_removed: number
   automatic_tag_matches: number
   automatic_tags_added: number
   automatic_tags_removed: number
@@ -567,7 +571,17 @@ onBeforeUnmount(() => {
             Scan: <strong>{{ latestScans[source.id].status }}</strong>
             · {{ scanModeLabel(latestScans[source.id].mode) }}
             · {{ latestScans[source.id].models_found }} models
+            <template v-if="latestScans[source.id].models_skipped">
+              · {{ latestScans[source.id].models_skipped }} skipped
+            </template>
             · {{ latestScans[source.id].automatic_tag_matches }} automatic tag matches
+            <template v-if="latestScans[source.id].archive_images_reused || latestScans[source.id].archive_images_generated || latestScans[source.id].archive_images_removed">
+              · images: {{ latestScans[source.id].archive_images_reused }} reused
+              · {{ latestScans[source.id].archive_images_generated }} generated
+              <template v-if="latestScans[source.id].archive_images_removed">
+                · {{ latestScans[source.id].archive_images_removed }} removed
+              </template>
+            </template>
             <template
               v-if="latestScans[source.id].automatic_tags_added
                 || latestScans[source.id].automatic_tags_removed"
