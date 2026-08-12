@@ -26,10 +26,13 @@ interface PreviewResponse {
   warnings: string[]
 }
 
+type ScanMode = "full" | "incremental" | "missing_images" | "reconcile_images"
+
 interface ScanRun {
   id: number
   library_source_id: number
   status: string
+  mode: ScanMode
   trigger: string
   created_at: string
   models_found: number
@@ -66,6 +69,7 @@ interface ScanQueueItem {
 const sources = ref<LibrarySource[]>([])
 const latestScans = ref<Record<number, ScanRun>>({})
 const scanQueue = ref<ScanQueueItem[]>([])
+const scanModesBySource = ref<Record<number, ScanMode>>({})
 const loading = ref(true)
 const saving = ref(false)
 const errorMessage = ref("")
@@ -88,6 +92,12 @@ const form = reactive({
   auto_scan_timezone: "Europe/Berlin",
 })
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+const scanModes: Array<{ value: ScanMode; label: string; description: string }> = [
+  { value: "incremental", label: "Incremental scan", description: "Process new models only." },
+  { value: "full", label: "Full scan", description: "Check all models and archive images." },
+  { value: "missing_images", label: "Full scan — missing images only", description: "Only generate missing images." },
+  { value: "reconcile_images", label: "Reconcile images", description: "Repair archive-image cache entries." },
+]
 
 async function loadSources() {
   loading.value = true
@@ -117,12 +127,12 @@ async function loadLatestScan(source: LibrarySource) {
   }
 }
 
-async function startScan(source: LibrarySource) {
+async function startScan(source: LibrarySource, mode = scanModesBySource.value[source.id] ?? 'incremental') {
   errorMessage.value = ""
   try {
     const scan = await apiRequest<ScanRun>(
       `/api/admin/library-sources/${source.id}/scan`,
-      { method: "POST" },
+      { method: "POST", body: JSON.stringify({ mode }) },
     )
     latestScans.value[source.id] = scan
     window.setTimeout(() => pollScan(source.id, scan.id), 1000)
@@ -147,6 +157,10 @@ async function pollScan(sourceId: number, scanId: number) {
 function scanIsActive(sourceId: number) {
   const status = latestScans.value[sourceId]?.status
   return status === "pending" || status === "running"
+}
+
+function scanModeLabel(mode: ScanMode) {
+  return scanModes.find((item) => item.value === mode)?.label ?? mode
 }
 
 function scanButtonLabel(sourceId: number) {
@@ -471,7 +485,7 @@ onBeforeUnmount(() => {
           </p>
           <p v-if="latestScans[source.id]" class="scan-summary">
             Scan: <strong>{{ latestScans[source.id].status }}</strong>
-            · {{ latestScans[source.id].trigger }}
+            · {{ scanModeLabel(latestScans[source.id].mode) }}
             · {{ latestScans[source.id].models_found }} models
             · {{ latestScans[source.id].automatic_tag_matches }} automatic tag matches
             <template
@@ -503,6 +517,17 @@ onBeforeUnmount(() => {
           </details>
         </div>
         <div class="row-actions">
+          <select
+            class="scan-mode-control"
+            aria-label="Scan mode"
+            :disabled="scanIsActive(source.id) || !source.scan_enabled"
+            v-model="scanModesBySource[source.id]"
+          >
+            <option value="incremental">Incremental scan</option>
+            <option v-for="mode in scanModes.filter((item) => item.value !== 'incremental')" :key="mode.value" :value="mode.value">
+              {{ mode.label }}
+            </option>
+          </select>
           <button
             class="primary-button compact-button"
             type="button"

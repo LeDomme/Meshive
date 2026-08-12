@@ -110,6 +110,7 @@ const loading = ref(true)
 const errorMessage = ref("")
 const selectedImage = ref<ModelImage | null>(null)
 const pictureNotice = ref("")
+const rescanInProgress = ref(false)
 const archiveFilter = ref("")
 const selectedArchiveIndex = ref(0)
 const collapsedFolders = ref<Set<string>>(new Set())
@@ -266,6 +267,33 @@ async function resetPictures() {
   }
 }
 
+async function rescanCurrentModel(forceImageRebuild = false) {
+  if (!model.value || rescanInProgress.value) return
+  if (
+    forceImageRebuild
+    && !window.confirm(
+      "Rebuild all Meshive archive images for this model? The source library remains read-only.",
+    )
+  ) {
+    return
+  }
+
+  errorMessage.value = ""
+  pictureNotice.value = ""
+  rescanInProgress.value = true
+  try {
+    const action = forceImageRebuild ? "rebuild-images" : "rescan"
+    await apiRequest(`/api/admin/models/${model.value.id}/${action}`, { method: "POST" })
+    await loadModel()
+    pictureNotice.value = forceImageRebuild
+      ? "Archive images rebuilt for this model."
+      : "Model rescan completed."
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError ? error.message : "Unable to rescan model"
+  } finally {
+    rescanInProgress.value = false
+  }
+}
 function selectArchive(index: number) {
   selectedArchiveIndex.value = index
   archiveFilter.value = ""
@@ -595,6 +623,22 @@ onBeforeUnmount(() => {
               @click="selectedImage && setPrimaryImage(selectedImage)"
             >
               {{ selectedImage?.is_primary ? "Primary picture" : "Use as primary" }}
+            </button>
+            <button
+              class="secondary-button"
+              type="button"
+              :disabled="rescanInProgress"
+              @click="rescanCurrentModel()"
+            >
+              {{ rescanInProgress ? "Rescanning…" : "Rescan model" }}
+            </button>
+            <button
+              class="danger-button"
+              type="button"
+              :disabled="rescanInProgress"
+              @click="rescanCurrentModel(true)"
+            >
+              Rebuild archive images
             </button>
             <button class="danger-button" type="button" @click="resetPictures">Reset pictures</button>
           </div>
