@@ -2664,15 +2664,60 @@ summary {
   margin: 0;
 }
 
-.image-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr));
-  gap: 0.65rem;
+.thumbnail-carousel {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   margin-top: 0.75rem;
 }
 
-.image-strip button {
+.image-strip {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 0.65rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.15rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(54 231 255 / 42%) transparent;
+  cursor: grab;
+  user-select: none;
+  scroll-behavior: smooth;
+}
+
+.image-strip:active {
+  cursor: grabbing;
+}
+
+.thumbnail-carousel-nav {
+  z-index: 1;
+  display: grid;
+  width: 1.85rem;
   height: 5rem;
+  flex: 0 0 1.85rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.45rem;
+  place-items: center;
+  color: #a5b4c8;
+  background: rgb(8 13 24 / 78%);
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.thumbnail-carousel-nav:hover,
+.thumbnail-carousel-nav:focus-visible {
+  color: #f8fdff;
+  background: rgb(8 145 178 / 28%);
+  outline: none;
+}
+.image-strip button {
+  width: 5rem;
+  height: 5rem;
+  flex: 0 0 5rem;
   overflow: hidden;
   padding: 0;
   border: 2px solid transparent;
@@ -2684,7 +2729,6 @@ summary {
 .image-strip button.selected {
   border-color: var(--meshive-cyan);
 }
-
 .image-strip img {
   width: 100%;
   height: 100%;
