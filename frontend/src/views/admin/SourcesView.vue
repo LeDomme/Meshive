@@ -60,12 +60,15 @@ interface ScanQueueItem {
   library_source_id: number
   source_name: string
   status: "pending" | "running"
+  mode: ScanMode
   trigger: string
   target_model_id: number | null
   target_model_name: string | null
   position: number | null
   created_at: string
   started_at: string | null
+  cancel_requested: boolean
+  pause_requested: boolean
 }
 
 const sources = ref<LibrarySource[]>([])
@@ -77,7 +80,9 @@ const saving = ref(false)
 const errorMessage = ref("")
 const preview = ref<PreviewResponse | null>(null)
 const editingId = ref<number | null>(null)
+const activityClock = ref(Date.now())
 let queueTimer: number | undefined
+let activityClockTimer: number | undefined
 
 const form = reactive({
   name: "",
@@ -106,6 +111,9 @@ async function loadSources() {
   errorMessage.value = ""
   try {
     sources.value = await apiRequest<LibrarySource[]>("/api/admin/library-sources")
+    for (const source of sources.value) {
+      scanModesBySource.value[source.id] ??= "incremental"
+    }
     await Promise.all([loadQueue(), ...sources.value.map(loadLatestScan)])
   } catch (error) {
     showError(error)
@@ -143,6 +151,26 @@ async function startScan(source: LibrarySource, mode = scanModesBySource.value[s
   }
 }
 
+async function toggleScanPause(item: ScanQueueItem) {
+  errorMessage.value = ""
+  try {
+    await apiRequest<ScanRun>(`/api/admin/scans/${item.id}/${item.pause_requested ? "resume" : "pause"}`, {
+      method: "POST",
+    })
+    await loadQueue()
+  } catch (error) {
+    showError(error)
+  }
+}
+async function cancelScan(item: ScanQueueItem) {
+  errorMessage.value = ""
+  try {
+    await apiRequest<ScanRun>(`/api/admin/scans/${item.id}/cancel`, { method: "POST" })
+    await loadQueue()
+  } catch (error) {
+    showError(error)
+  }
+}
 async function pollScan(sourceId: number, scanId: number) {
   try {
     const scan = await apiRequest<ScanRun>(`/api/admin/scans/${scanId}`)
@@ -161,6 +189,27 @@ function scanIsActive(sourceId: number) {
   return status === "pending" || status === "running"
 }
 
+function scanActivityLabel(item: ScanQueueItem) {
+  if (item.target_model_name) {
+    return item.trigger === "model_image_rebuild"
+      ? "Rebuilding archive images"
+      : "Rescanning model"
+  }
+  return scanModeLabel(item.mode)
+}
+
+function elapsedScanTime(startedAt: string | null) {
+  if (!startedAt) return "Waiting"
+  const seconds = Math.max(
+    0,
+    Math.floor((activityClock.value - new Date(startedAt).getTime()) / 1000),
+  )
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  return minutes
+    ? `${minutes}m ${String(remainingSeconds).padStart(2, "0")}s`
+    : `${remainingSeconds}s`
+}
 function scanModeLabel(mode: ScanMode) {
   return scanModes.find((item) => item.value === mode)?.label ?? mode
 }
@@ -288,12 +337,14 @@ function showError(error: unknown) {
 
 onMounted(async () => {
   await loadSources()
+  activityClockTimer = window.setInterval(() => { activityClock.value = Date.now() }, 1000)
   queueTimer = window.setInterval(() => {
     void loadQueue().catch(() => undefined)
   }, 3000)
 })
 onBeforeUnmount(() => {
   if (queueTimer !== undefined) window.clearInterval(queueTimer)
+  if (activityClockTimer !== undefined) window.clearInterval(activityClockTimer)
 })
 </script>
 
@@ -455,13 +506,32 @@ onBeforeUnmount(() => {
           <div>
             <strong>{{ item.source_name }}</strong>
             <span class="muted">
-              {{ item.trigger === "model_image_rebuild" ? "Rebuilding archive images" : item.trigger === "model_rescan" ? "Rescanning model" : item.trigger }}
+              {{ scanActivityLabel(item) }}
               <template v-if="item.target_model_name">· {{ item.target_model_name }}</template>
+              · {{ elapsedScanTime(item.started_at) }}
             </span>
           </div>
+          <div class="scan-queue-actions">
           <span :class="['scan-state', item.status]">
-            {{ item.status === "running" ? "Running" : `Queue #${item.position}` }}
+            {{ item.cancel_requested ? "Cancelling" : item.pause_requested ? "Paused" : item.status === "running" ? "Running" : `Queue #${item.position}` }}
           </span>
+          <button
+            class="secondary-button compact-button"
+            type="button"
+            :disabled="item.cancel_requested"
+            @click="toggleScanPause(item)"
+          >
+            {{ item.pause_requested ? "Resume" : "Pause" }}
+          </button>
+          <button
+            class="secondary-button compact-button"
+            type="button"
+            :disabled="item.cancel_requested"
+            @click="cancelScan(item)"
+          >
+            {{ item.cancel_requested ? "Cancelling…" : "Cancel" }}
+          </button>
+        </div>
         </article>
       </div>
     </section>

@@ -103,6 +103,9 @@ def scan_queue(session: Session = Depends(get_session)) -> list[ScanQueueItem]:
                 library_source_id=scan.library_source_id,
                 source_name=source_name,
                 status=scan.status,
+                cancel_requested=scan.cancel_requested,
+                pause_requested=scan.pause_requested,
+                mode=scan.mode,
                 trigger=scan.trigger,
                 target_model_id=scan.target_model_id,
                 target_model_name=scan.target_model_name,
@@ -113,6 +116,44 @@ def scan_queue(session: Session = Depends(get_session)) -> list[ScanQueueItem]:
         )
     return result
 
+
+@router.post("/scans/{scan_id}/cancel", response_model=ScanRunRead)
+def cancel_scan(scan_id: int, session: Session = Depends(get_session)) -> ScanRun:
+    scan = session.get(ScanRun, scan_id)
+    if scan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+    if scan.status not in ("pending", "running"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Scan is not active")
+    scan.cancel_requested = True
+    scan.pause_requested = False
+    if scan.status == "pending":
+        scan.status = "cancelled"
+        scan.finished_at = utc_now()
+    session.commit()
+    return scan
+
+@router.post("/scans/{scan_id}/pause", response_model=ScanRunRead)
+def pause_scan(scan_id: int, session: Session = Depends(get_session)) -> ScanRun:
+    scan = session.get(ScanRun, scan_id)
+    if scan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+    if scan.status not in ("pending", "running"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Scan is not active")
+    scan.pause_requested = True
+    session.commit()
+    return scan
+
+
+@router.post("/scans/{scan_id}/resume", response_model=ScanRunRead)
+def resume_scan(scan_id: int, session: Session = Depends(get_session)) -> ScanRun:
+    scan = session.get(ScanRun, scan_id)
+    if scan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+    if scan.status not in ("pending", "running"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Scan is not active")
+    scan.pause_requested = False
+    session.commit()
+    return scan
 
 @router.get("/scans/{scan_id}", response_model=ScanDetail)
 def get_scan(scan_id: int, session: Session = Depends(get_session)) -> ScanDetail:
