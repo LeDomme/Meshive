@@ -697,3 +697,34 @@ def test_filter_options_follow_other_selected_facets() -> None:
             "Abe Model",
             "Ado Model",
         ]
+
+
+def test_model_rescan_rejects_when_source_scan_is_active(tmp_path, monkeypatch) -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(
+                name="Exclusive source",
+                root_path=tmp_path.as_posix(),
+                directory_pattern="{model}",
+                archive_formats=["7z"],
+                image_formats=["jpg"],
+                is_active=True,
+                scan_enabled=True,
+            )
+            session.add(source)
+            session.flush()
+            model = LibraryModel(
+                library_source_id=source.id,
+                relative_path="Example",
+                name="Example",
+                status="available",
+            )
+            session.add(model)
+            session.commit()
+            model_id = model.id
+
+        monkeypatch.setattr("meshive.api.catalog.claim_source", lambda _source_id: False)
+        response = client.post(f"/api/admin/models/{model_id}/rescan")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "A scan is already queued or running for this source"

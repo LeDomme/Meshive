@@ -41,7 +41,7 @@ from meshive.schemas.creator import CreatorMetadataLinkRead
 from meshive.schemas.tag import TagRead
 from meshive.services.archive_bundle import BundleArchive, stream_archive_bundle
 from meshive.services.download_limiter import claim_download, release_download
-from meshive.services.scanner import rescan_model
+from meshive.services.scanner import claim_source, release_source, rescan_model
 from meshive.services.thumbnails import (
     ThumbnailError,
     remove_cached_file,
@@ -678,15 +678,38 @@ def set_primary_model_image(
     return {"image_id": image.id}
 
 
+def _run_single_model_scan(
+    session: Session,
+    model_id: int,
+    *,
+    force_image_rebuild: bool = False,
+) -> ScanRunRead:
+    model = session.get(LibraryModel, model_id)
+    if model is None:
+        raise LookupError("Model not found")
+    if not claim_source(model.library_source_id):
+        raise RuntimeError("A scan is already queued or running for this source")
+    try:
+        return rescan_model(
+            session,
+            model_id,
+            force_image_rebuild=force_image_rebuild,
+        )
+    finally:
+        release_source(model.library_source_id)
+
+
 @admin_router.post("/{model_id}/rescan", response_model=ScanRunRead)
 def rescan_single_model(
     model_id: int,
     session: Session = Depends(get_session),
 ) -> ScanRunRead:
     try:
-        return rescan_model(session, model_id)
+        return _run_single_model_scan(session, model_id)
     except LookupError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
 @admin_router.post("/{model_id}/rebuild-images", response_model=ScanRunRead)
@@ -695,9 +718,11 @@ def rebuild_single_model_images(
     session: Session = Depends(get_session),
 ) -> ScanRunRead:
     try:
-        return rescan_model(session, model_id, force_image_rebuild=True)
+        return _run_single_model_scan(session, model_id, force_image_rebuild=True)
     except LookupError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 @admin_router.delete("/{model_id}/images")
 def reset_model_images(
