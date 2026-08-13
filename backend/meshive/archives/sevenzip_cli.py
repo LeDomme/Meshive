@@ -372,6 +372,12 @@ def parse_technical_listing(output: str) -> list[ListedArchiveEntry]:
     if current:
         records.append(current)
 
+    # In a solid 7z archive, 7-Zip reports the whole compressed block on the
+    # first entry only. That number is not the compressed size of that entry.
+    # Keep the uncompressed entry limit, but do not treat this ambiguous field
+    # as a per-file resource limit.
+    has_solid_blocks = any(record.get("Solid") == "+" for record in records)
+
     entries: list[ListedArchiveEntry] = []
     seen: set[str] = set()
     for record in records:
@@ -389,7 +395,11 @@ def parse_technical_listing(output: str) -> list[ListedArchiveEntry]:
                 is_directory=record.get("Folder") == "+"
                 or record.get("Attributes", "").startswith("D"),
                 size_bytes=_optional_int(record.get("Size")),
-                compressed_size_bytes=_optional_int(record.get("Packed Size")),
+                compressed_size_bytes=(
+                    None
+                    if has_solid_blocks
+                    else _optional_int(record.get("Packed Size"))
+                ),
                 crc=record.get("CRC") or None,
                 modified_at=record.get("Modified") or None,
             )

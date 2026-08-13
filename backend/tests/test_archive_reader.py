@@ -11,6 +11,8 @@ from meshive.archives.sevenzip_cli import (
     extract_archive_entries,
     parse_technical_listing,
 )
+from meshive.services.archive_images import select_archive_image_candidates
+
 
 
 def test_parses_7zip_technical_listing() -> None:
@@ -209,3 +211,40 @@ def test_archive_image_batch_extraction_runs_7zip_once(tmp_path, monkeypatch) ->
     assert "previews/render.png" in received
     assert "-mmt=1" in received
     assert any(argument.startswith(f"-o{destination}") for argument in received)
+
+
+def test_solid_7z_listing_does_not_apply_block_size_to_first_image() -> None:
+    output = """Path = model.7z
+Type = 7z
+Physical Size = 1262960010
+Solid = +
+
+Path = image_01.jpg
+Size = 1379087
+Packed Size = 1262958357
+Attributes = A
+CRC = 88CB7E29
+Folder = -
+
+Path = image_02.jpg
+Size = 1331315
+Packed Size =
+Attributes = A
+CRC = 5D27849E
+Folder = -
+"""
+
+    entries = parse_technical_listing(output)
+
+    assert [(entry.path, entry.compressed_size_bytes) for entry in entries] == [
+        ("image_01.jpg", None),
+        ("image_02.jpg", None),
+    ]
+    selected = select_archive_image_candidates(
+        entries,
+        max_candidates=48,
+        max_entry_bytes=64 * 1024 * 1024,
+        max_compressed_bytes=64 * 1024 * 1024,
+        max_total_bytes=256 * 1024 * 1024,
+    )
+    assert [entry.path for entry in selected] == ["image_01.jpg", "image_02.jpg"]
