@@ -712,6 +712,9 @@ def _delete_empty_placeholder(session: Session, source_id: int, relative_path: s
         session.commit()
 
 
+ARCHIVE_LISTING_POLICY_KEY = "solid-7z-packed-size-v1"
+
+
 def _sync_archive(
     session: Session,
     scan: ScanRun,
@@ -734,7 +737,12 @@ def _sync_archive(
         and archive.modified_ns == stat.st_mtime_ns
         and archive.status == "ready"
     )
-    if unchanged:
+    requires_listing_refresh = (
+        archive is not None
+        and archive.format == "7z"
+        and archive.listing_policy_key != ARCHIVE_LISTING_POLICY_KEY
+    )
+    if unchanged and not requires_listing_refresh:
         return True
 
     if archive is not None:
@@ -751,6 +759,7 @@ def _sync_archive(
             error_message=None,
             entry_count=0,
             uncompressed_size_bytes=0,
+            listing_policy_key=None,
         )
         session.add(archive)
 
@@ -763,6 +772,7 @@ def _sync_archive(
     archive.error_message = None
     archive.entry_count = 0
     archive.uncompressed_size_bytes = 0
+    archive.listing_policy_key = None
     session.flush()
 
     # 7-Zip can take a long time on very large archives. Persist the pending
@@ -811,6 +821,7 @@ def _sync_archive(
         entry.size_bytes or 0 for entry in entries if not entry.is_directory
     )
     archive.content_scanned_at = utc_now()
+    archive.listing_policy_key = ARCHIVE_LISTING_POLICY_KEY
     archive.status = "ready"
     return True
 

@@ -706,3 +706,108 @@ def test_queued_model_rescans_run_one_after_another_for_a_source(tmp_path, monke
         assert session.get(ScanRun, first.id).status == "completed"
         assert session.get(ScanRun, second.id).status == "completed"
         assert session.scalar(select(ScanRun).where(ScanRun.id > second.id)) is None
+
+
+def test_existing_7z_archive_refreshes_stale_listing_metadata(tmp_path, monkeypatch) -> None:
+    archive_path = tmp_path / "Cammy.7z"
+    archive_path.write_bytes(b"archive")
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+    settings = Settings(allowed_library_root=tmp_path)
+    monkeypatch.setattr(scanner, "get_settings", lambda: settings)
+
+    calls = 0
+
+    def list_entries(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return [
+            ListedArchiveEntry(
+                path="cover-01.jpg",
+                name="cover-01.jpg",
+                is_directory=False,
+                size_bytes=1_500_000,
+                compressed_size_bytes=None,
+                crc="FIRST",
+                modified_at=None,
+            ),
+            ListedArchiveEntry(
+                path="cover-02.jpg",
+                name="cover-02.jpg",
+                is_directory=False,
+                size_bytes=1_400_000,
+                compressed_size_bytes=None,
+                crc="SECOND",
+                modified_at=None,
+            ),
+        ]
+
+    monkeypatch.setattr(scanner, "list_archive", list_entries)
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Pictures",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        model = LibraryModel(
+            library_source_id=source.id,
+            relative_path="Cammy",
+            name="Cammy",
+            status="available",
+        )
+        session.add(model)
+        session.flush()
+        stat = archive_path.stat()
+        archive = Archive(
+            model_id=model.id,
+            filename=archive_path.name,
+            relative_path=archive_path.name,
+            format="7z",
+            size_bytes=stat.st_size,
+            modified_ns=stat.st_mtime_ns,
+            status="ready",
+            entry_count=2,
+            uncompressed_size_bytes=2_900_000,
+            listing_policy_key=None,
+        )
+        session.add(archive)
+        session.flush()
+        session.add(
+            ArchiveEntry(
+                archive_id=archive.id,
+                path="cover-01.jpg",
+                name="cover-01.jpg",
+                is_directory=False,
+                size_bytes=1_500_000,
+                compressed_size_bytes=1_262_958_357,
+                crc="FIRST",
+                modified_at=None,
+            )
+        )
+        session.commit()
+
+        scan = make_scan(session, source.id)
+        assert scanner._sync_archive(session, scan, model, tmp_path, archive_path)
+        session.commit()
+
+        refreshed = session.get(Archive, archive.id)
+        assert refreshed.listing_policy_key == scanner.ARCHIVE_LISTING_POLICY_KEY
+        assert [
+            entry.compressed_size_bytes
+            for entry in session.scalars(
+                select(ArchiveEntry)
+                .where(ArchiveEntry.archive_id == archive.id)
+                .order_by(ArchiveEntry.path)
+            )
+        ] == [None, None]
+        assert calls == 1
+
+        assert scanner._sync_archive(session, scan, model, tmp_path, archive_path)
+        assert calls == 1
