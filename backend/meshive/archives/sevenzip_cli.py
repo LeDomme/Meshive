@@ -33,7 +33,7 @@ def list_archive(
 ) -> list[ListedArchiveEntry]:
     environment = {**os.environ, "LC_ALL": "C", "LANG": "C"}
     returncode, output = _run_bounded_command(
-        [command, "l", "-slt", "-ba", "--", archive_path],
+        [command, "l", "-slt", "--", archive_path],
         environment=environment,
         timeout_seconds=timeout_seconds,
         max_output_bytes=max_output_bytes,

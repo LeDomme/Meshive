@@ -712,7 +712,7 @@ def _delete_empty_placeholder(session: Session, source_id: int, relative_path: s
         session.commit()
 
 
-ARCHIVE_LISTING_POLICY_KEY = "solid-7z-packed-size-v1"
+ARCHIVE_LISTING_POLICY_KEY = "solid-7z-packed-size-v2"
 
 
 def _sync_archive(

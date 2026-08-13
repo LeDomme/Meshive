@@ -248,3 +248,26 @@ Folder = -
         max_total_bytes=256 * 1024 * 1024,
     )
     assert [entry.path for entry in selected] == ["image_01.jpg", "image_02.jpg"]
+
+
+def test_list_archive_keeps_7z_header_for_solid_archive_detection(monkeypatch) -> None:
+    received: list[str] = []
+
+    def fake_run(arguments, **_kwargs):
+        received.extend(arguments)
+        return 0, "Path = archive.7z\nType = 7z\nSolid = +\n"
+
+    monkeypatch.setattr("meshive.archives.sevenzip_cli._run_bounded_command", fake_run)
+
+    assert (
+        __import__("meshive.archives.sevenzip_cli", fromlist=["list_archive"]).list_archive(
+            "archive.7z",
+            command="7z",
+            timeout_seconds=30,
+            max_entries=10,
+            max_output_bytes=1024,
+        )
+        == []
+    )
+    assert "-slt" in received
+    assert "-ba" not in received
