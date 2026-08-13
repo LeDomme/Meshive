@@ -345,7 +345,7 @@ def _reconcile_source_archive_images(
             select(LibraryModel)
             .where(
                 LibraryModel.library_source_id == source.id,
-                LibraryModel.status == "available",
+                LibraryModel.status != "missing",
             )
             .order_by(LibraryModel.id)
         )
@@ -374,6 +374,10 @@ def _reconcile_source_archive_images(
             continue
         scan.models_found += 1
         try:
+            # Reconcile derived images against a current manifest as well. This
+            # only invokes 7-Zip when the archive changed or the listing parser
+            # policy changed, but lets a reconcile repair stored listing errors.
+            _sync_archives(session, scan, model, root, archive_paths)
             archive_primary = _sync_archive_images(session, scan, model, root, archive_paths)
             if archive_primary is None:
                 _restore_source_primary(session, model)

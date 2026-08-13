@@ -811,3 +811,71 @@ def test_existing_7z_archive_refreshes_stale_listing_metadata(tmp_path, monkeypa
 
         assert scanner._sync_archive(session, scan, model, tmp_path, archive_path)
         assert calls == 1
+
+
+def test_reconcile_repairs_incomplete_model_and_refreshes_archive_manifest(
+    tmp_path, monkeypatch
+) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'reconcile.db'}")
+    Base.metadata.create_all(engine)
+    archive_path = tmp_path / "Cammy.7z"
+    archive_path.write_bytes(b"archive")
+    monkeypatch.setattr(
+        scanner,
+        "get_settings",
+        lambda: Settings(allowed_library_root=tmp_path),
+    )
+
+    calls: list[str] = []
+
+    def sync_archives(*_args, **_kwargs):
+        calls.append("archives")
+        return True
+
+    def sync_images(*_args, **_kwargs):
+        calls.append("images")
+        return None
+
+    monkeypatch.setattr(scanner, "_sync_archives", sync_archives)
+    monkeypatch.setattr(scanner, "_sync_archive_images", sync_images)
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Pictures",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        model = LibraryModel(
+            library_source_id=source.id,
+            relative_path="Cammy",
+            name="Cammy",
+            status="incomplete",
+        )
+        session.add(model)
+        session.flush()
+        stat = archive_path.stat()
+        session.add(
+            Archive(
+                model_id=model.id,
+                filename=archive_path.name,
+                relative_path=archive_path.name,
+                format="7z",
+                size_bytes=stat.st_size,
+                modified_ns=stat.st_mtime_ns,
+                status="ready",
+            )
+        )
+        session.flush()
+        scan = make_scan(session, source.id)
+
+        scanner._reconcile_source_archive_images(session, scan, source, tmp_path)
+
+        assert calls == ["archives", "images"]
+        assert scan.models_total == 1
+        assert scan.models_found == 1
