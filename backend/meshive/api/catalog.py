@@ -466,7 +466,11 @@ def model_detail(
             else None
         ),
         recent_scan_issues=[
-            ModelScanIssueRead(code=issue.code, message=issue.message)
+            ModelScanIssueRead(
+                code=issue.code,
+                message=issue.message,
+                created_at=issue.created_at,
+            )
             for issue in recent_scan_issues
         ],
         tags=_model_tags(session, model.id),
@@ -725,6 +729,21 @@ def rebuild_single_model_images(
         return queue_model_rescan(session, model_id, force_image_rebuild=True)
     except LookupError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+@admin_router.delete("/{model_id}/scan-issues")
+def clear_model_scan_issues(
+    model_id: int,
+    session: Session = Depends(get_session),
+) -> dict[str, int]:
+    model = session.get(LibraryModel, model_id)
+    if model is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
+    deleted = session.execute(
+        delete(ScanIssue).where(ScanIssue.model_id == model_id)
+    ).rowcount
+    session.commit()
+    return {"deleted": deleted or 0}
+
 
 @admin_router.delete("/{model_id}/images")
 def reset_model_images(

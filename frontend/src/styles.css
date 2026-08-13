@@ -3449,6 +3449,25 @@ code {
   margin: 0;
 }
 
+.model-scan-issues-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.model-scan-issues-actions p {
+  margin: 0;
+  color: #94a3b8;
+}
+
+.model-scan-issues time {
+  margin-left: 0.5rem;
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
 .model-scan-issues ul {
   margin: 1rem 0 0;
   padding-left: 1.25rem;

@@ -781,19 +781,26 @@ def test_model_detail_includes_recent_scan_issues(tmp_path) -> None:
         response = client.get(f"/api/models/{model_id}")
 
         assert response.status_code == 200
-        assert response.json()["recent_scan_issues"] == [
-            {
-                "code": "archive_image_failed",
-                "message": "Image data is not valid",
-            },
-            {
-                "code": "archive_image_batch_failed",
-                "message": "Image extraction exceeded the configured limit",
-            },
+        issues = response.json()["recent_scan_issues"]
+        assert [issue["code"] for issue in issues] == [
+            "archive_image_failed",
+            "archive_image_batch_failed",
         ]
+        assert [issue["message"] for issue in issues] == [
+            "Image data is not valid",
+            "Image extraction exceeded the configured limit",
+        ]
+        assert all(issue["created_at"] for issue in issues)
 
         app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="user")
         standard_user_response = client.get(f"/api/models/{model_id}")
 
         assert standard_user_response.status_code == 200
         assert standard_user_response.json()["recent_scan_issues"] == []
+
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="admin")
+        cleared = client.delete(f"/api/admin/models/{model_id}/scan-issues")
+
+        assert cleared.status_code == 200
+        assert cleared.json() == {"deleted": 2}
+        assert client.get(f"/api/models/{model_id}").json()["recent_scan_issues"] == []

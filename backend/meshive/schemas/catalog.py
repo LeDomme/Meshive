@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from meshive.schemas.creator import CreatorMetadataLinkRead
@@ -74,6 +76,7 @@ class ArchiveRead(BaseModel):
 class ModelScanIssueRead(BaseModel):
     code: str
     message: str
+    created_at: datetime
 
 
 class ModelDetail(BaseModel):
