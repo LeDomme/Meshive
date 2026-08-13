@@ -125,6 +125,9 @@ const favoriteDialogTargets = computed(() =>
   favoriteModel.value ? favoriteTargetsForModel(favoriteModel.value) : [],
 )
 const favoriteMemberships = ref<Record<number, FavoriteMembershipList[]>>({})
+const selectedModelIds = ref<Set<number>>(new Set())
+const batchActionInProgress = ref(false)
+const batchSelectionMode = ref(false)
 const filters = ref<CatalogueFilters>({
   models: [],
   creators: [],
@@ -466,6 +469,60 @@ async function clearCatalogueSearch() {
   catalogueSearchInput.value?.focus()
 }
 
+const selectedModelCount = computed(() => selectedModelIds.value.size)
+
+function toggleModelSelection(modelId: number) {
+  const next = new Set(selectedModelIds.value)
+  if (next.has(modelId)) next.delete(modelId)
+  else next.add(modelId)
+  selectedModelIds.value = next
+}
+
+function clearModelSelection() {
+  selectedModelIds.value = new Set()
+}
+
+function toggleBatchSelectionMode() {
+  if (batchSelectionMode.value) clearModelSelection()
+  batchSelectionMode.value = !batchSelectionMode.value
+}
+
+type SelectedModelAction = "rescan" | "rebuild-images" | "reset-images"
+
+async function runSelectedModelAction(action: SelectedModelAction) {
+  const modelIds = [...selectedModelIds.value]
+  if (!modelIds.length || batchActionInProgress.value) return
+  const isPictureReset = action === "reset-images"
+  const actionLabel = action === "rescan"
+    ? "rescan"
+    : action === "rebuild-images"
+      ? "rebuild archive images"
+      : "reset picture records"
+  const confirmation = isPictureReset
+    ? `Reset all Meshive picture records for ${modelIds.length} selected model${modelIds.length === 1 ? "" : "s"}? Their cached images will be removed; the source library remains read-only.`
+    : `${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} for ${modelIds.length} selected model${modelIds.length === 1 ? "" : "s"}? The source library remains read-only.`
+  if (!window.confirm(confirmation)) return
+
+  batchActionInProgress.value = true
+  errorMessage.value = ""
+  try {
+    // Process one model at a time to keep SQLite and archive extraction bounded.
+    for (const modelId of modelIds) {
+      const path = action === "reset-images"
+        ? `/api/admin/models/${modelId}/images`
+        : `/api/admin/models/${modelId}/${action}`
+      await apiRequest(path, { method: action === "reset-images" ? "DELETE" : "POST" })
+    }
+    clearModelSelection()
+    await loadCatalogue(page.value.page)
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError
+      ? error.message
+      : "Unable to process the selected models"
+  } finally {
+    batchActionInProgress.value = false
+  }
+}
 async function deleteMissingModel(model: ModelSummary) {
   if (
     !window.confirm(
@@ -841,24 +898,53 @@ onMounted(async () => {
     </div>
 
     <div class="catalogue-meta">
-      <p>{{ page.total }} {{ page.total === 1 ? "model" : "models" }}</p>
-      <button
-        v-if="auth.user?.role === 'admin' && missingCount > 0"
-        class="danger-button"
-        type="button"
-        @click="deleteAllMissingModels"
-      >
-        Delete all missing ({{ missingCount }})
-      </button>
+      <div class="catalogue-meta-summary">
+        <p>{{ page.total }} {{ page.total === 1 ? "model" : "models" }}</p>
+        <span v-if="batchSelectionMode && selectedModelCount" class="batch-selection-count">{{ selectedModelCount }} selected</span>
+      </div>
+      <div class="catalogue-meta-actions">
+        <template v-if="batchSelectionMode">
+          <button v-if="selectedModelCount" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('rescan')">
+            Rescan selected
+          </button>
+          <button v-if="selectedModelCount" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('rebuild-images')">
+            Rebuild selected images
+          </button>
+          <button v-if="selectedModelCount" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('reset-images')">
+            Reset selected pictures
+          </button>
+          <button v-if="selectedModelCount" class="text-button" type="button" :disabled="batchActionInProgress" @click="clearModelSelection">Clear</button>
+        </template>
+        <button
+          v-if="auth.user?.role === 'admin' && page.items.length"
+          class="secondary-button compact-button"
+          type="button"
+          :class="{ active: batchSelectionMode }"
+          @click="toggleBatchSelectionMode"
+        >
+          {{ batchSelectionMode ? "Done selecting" : "Select models" }}
+        </button>
+        <button
+          v-if="auth.user?.role === 'admin' && missingCount > 0"
+          class="danger-button"
+          type="button"
+          @click="deleteAllMissingModels"
+        >
+          Delete all missing ({{ missingCount }})
+        </button>
+      </div>
       <p v-if="loading">Loading…</p>
     </div>
 
     <p v-if="errorMessage" class="form-error error-panel" role="alert">
       {{ errorMessage }}
     </p>
-
     <section v-if="page.items.length" class="model-grid">
-      <article v-for="model in page.items" :key="model.id" class="model-card">
+      <article v-for="model in page.items" :key="model.id" class="model-card" :class="{ 'is-selected': selectedModelIds.has(model.id) }">
+        <label v-if="batchSelectionMode" class="model-selection">
+          <input type="checkbox" :checked="selectedModelIds.has(model.id)" @change="toggleModelSelection(model.id)">
+          <span class="sr-only">Select {{ model.name }}</span>
+        </label>
         <RouterLink
           class="thumbnail-frame"
           :to="detailRoute(model.id)"

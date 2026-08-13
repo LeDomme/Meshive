@@ -1745,6 +1745,78 @@ summary {
   margin: 0;
 }
 
+.catalogue-meta-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.catalogue-meta-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.catalogue-meta-actions .active {
+  border-color: var(--meshive-cyan);
+  color: #e2f7ff;
+}
+
+.batch-selection-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.9rem;
+  padding: 0 0.65rem;
+  border: 1px solid rgb(54 231 255 / 45%);
+  border-radius: 999px;
+  color: #e2f7ff;
+  background: rgb(8 47 73 / 58%);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+@media (max-width: 54rem) {
+  .catalogue-meta {
+    flex-wrap: wrap;
+    gap: 0.65rem;
+  }
+}
+
+.model-card {
+  position: relative;
+}
+
+.model-card.is-selected {
+  border-color: var(--meshive-cyan);
+  box-shadow: 0 0 0 1px rgb(54 231 255 / 26%);
+}
+
+.model-selection {
+  position: absolute;
+  z-index: 3;
+  top: 0.65rem;
+  left: 0.65rem;
+  display: grid;
+  width: 1.65rem;
+  height: 1.65rem;
+  place-items: center;
+  border: 1px solid rgb(148 163 184 / 65%);
+  border-radius: 0.4rem;
+  background: rgb(5 14 31 / 82%);
+  cursor: pointer;
+}
+
+.model-selection input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--meshive-cyan);
+  cursor: pointer;
+}
 .model-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));

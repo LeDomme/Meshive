@@ -697,3 +697,36 @@ def test_filter_options_follow_other_selected_facets() -> None:
             "Abe Model",
             "Ado Model",
         ]
+
+
+def test_model_rescan_queues_a_targeted_scan(tmp_path, monkeypatch) -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(
+                name="Exclusive source",
+                root_path=tmp_path.as_posix(),
+                directory_pattern="{model}",
+                archive_formats=["7z"],
+                image_formats=["jpg"],
+                is_active=True,
+                scan_enabled=True,
+            )
+            session.add(source)
+            session.flush()
+            model = LibraryModel(
+                library_source_id=source.id,
+                relative_path="Example",
+                name="Example",
+                status="available",
+            )
+            session.add(model)
+            session.commit()
+            model_id = model.id
+
+        monkeypatch.setattr("meshive.services.scanner.dispatch_pending_scans", lambda: None)
+        response = client.post(f"/api/admin/models/{model_id}/rescan")
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "pending"
+    assert response.json()["target_model_id"] == model_id
+    assert response.json()["trigger"] == "model_rescan"

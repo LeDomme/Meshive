@@ -648,3 +648,61 @@ def test_restore_source_primary_when_archive_has_no_images(tmp_path) -> None:
 
         assert source_image.is_primary is True
         assert archive_image.is_primary is False
+
+def test_queued_model_rescans_run_one_after_another_for_a_source(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "models"
+    root.mkdir()
+    for name in ("Alpha", "Beta"):
+        (root / name).mkdir()
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+    settings = Settings(allowed_library_root=root, cache_dir=tmp_path / "cache")
+    monkeypatch.setattr(scanner, "get_settings", lambda: settings)
+    monkeypatch.setattr(scanner, "dispatch_pending_scans", lambda: None)
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Queued source",
+            root_path=root.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        models = [
+            LibraryModel(
+                library_source_id=source.id,
+                relative_path=name,
+                name=name,
+                status="available",
+            )
+            for name in ("Alpha", "Beta")
+        ]
+        session.add_all(models)
+        session.commit()
+
+        first = scanner.queue_model_rescan(session, models[0].id)
+        second = scanner.queue_model_rescan(session, models[1].id, force_image_rebuild=True)
+
+        assert first.status == "pending"
+        assert second.status == "pending"
+        assert first.target_model_id == models[0].id
+        assert second.target_model_id == models[1].id
+
+        processed: list[int] = []
+        monkeypatch.setattr(
+            scanner,
+            "_scan_model",
+            lambda _session, scan, *_args: processed.append(scan.target_model_id),
+        )
+        scanner._execute_scan(session, source.id, first.id)
+        scanner._execute_scan(session, source.id, second.id)
+
+        assert processed == [models[0].id, models[1].id]
+        assert session.get(ScanRun, first.id).status == "completed"
+        assert session.get(ScanRun, second.id).status == "completed"
+        assert session.scalar(select(ScanRun).where(ScanRun.id > second.id)) is None
