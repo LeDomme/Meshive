@@ -47,6 +47,11 @@ interface ModelArchive {
   entries: ArchiveEntry[]
 }
 
+interface ModelScanIssue {
+  code: string
+  message: string
+}
+
 interface ModelDetail {
   id: number
   name: string
@@ -68,6 +73,7 @@ interface ModelDetail {
   images: ModelImage[]
   archives: ModelArchive[]
   archive_bundle_download_url: string | null
+  recent_scan_issues: ModelScanIssue[]
   tags: Tag[]
 }
 
@@ -887,6 +893,17 @@ onBeforeUnmount(() => {
             <button class="secondary-button" type="submit">Add</button>
           </form>
         </aside>
+      </section>
+
+      <section v-if="model.recent_scan_issues.length" class="panel model-scan-issues">
+        <p class="eyebrow">Image scan issues</p>
+        <h2>Recent scan issues</h2>
+        <ul>
+          <li v-for="issue in model.recent_scan_issues" :key="issue.code + issue.message">
+            <strong>{{ issue.code }}</strong><br>
+            {{ issue.message }}
+          </li>
+        </ul>
       </section>
 
       <section class="panel archive-panel">

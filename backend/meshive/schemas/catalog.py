@@ -71,6 +71,11 @@ class ArchiveRead(BaseModel):
     entries: list[ArchiveEntryRead]
 
 
+class ModelScanIssueRead(BaseModel):
+    code: str
+    message: str
+
+
 class ModelDetail(BaseModel):
     id: int
     name: str
@@ -88,6 +93,7 @@ class ModelDetail(BaseModel):
     images: list[ModelImageRead]
     archives: list[ArchiveRead]
     archive_bundle_download_url: str | None
+    recent_scan_issues: list[ModelScanIssueRead]
     tags: list[TagRead]
 
 

@@ -3433,3 +3433,21 @@ code {
 .catalogue-filters > .searchable-filter[draggable="true"]:active {
   cursor: grabbing;
 }
+
+.model-scan-issues {
+  max-width: 72rem;
+}
+
+.model-scan-issues h2 {
+  margin: 0.2rem 0 0.75rem;
+}
+
+.model-scan-issues ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: #fca5a5;
+}
+
+.model-scan-issues li + li {
+  margin-top: 0.7rem;
+}

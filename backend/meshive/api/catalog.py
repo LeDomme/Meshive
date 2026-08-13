@@ -30,6 +30,7 @@ from meshive.schemas.catalog import (
     FilterOption,
     ModelDetail,
     ModelImageRead,
+    ModelScanIssueRead,
     ModelNavigation,
     ModelNavigationItem,
     ModelPage,
@@ -411,6 +412,14 @@ def model_detail(
                 ],
             )
         )
+    recent_scan_issues = list(
+        session.scalars(
+            select(ScanIssue)
+            .where(ScanIssue.model_id == model.id)
+            .order_by(ScanIssue.id.desc())
+            .limit(5)
+        )
+    )
     return ModelDetail(
         id=model.id,
         name=model.name,
@@ -450,6 +459,10 @@ def model_detail(
             if len(archive_reads) > 1
             else None
         ),
+        recent_scan_issues=[
+            ModelScanIssueRead(code=issue.code, message=issue.message)
+            for issue in recent_scan_issues
+        ],
         tags=_model_tags(session, model.id),
     )
 
