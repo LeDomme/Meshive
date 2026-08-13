@@ -791,3 +791,9 @@ def test_model_detail_includes_recent_scan_issues(tmp_path) -> None:
                 "message": "Image extraction exceeded the configured limit",
             },
         ]
+
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="user")
+        standard_user_response = client.get(f"/api/models/{model_id}")
+
+        assert standard_user_response.status_code == 200
+        assert standard_user_response.json()["recent_scan_issues"] == []

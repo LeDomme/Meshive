@@ -336,7 +336,9 @@ def catalogue_filters(
 
 @router.get("/{model_id}", response_model=ModelDetail)
 def model_detail(
-    model_id: int, session: Session = Depends(get_session)
+    model_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> ModelDetail:
     row = session.execute(
         select(LibraryModel, LibrarySource.name)
@@ -412,13 +414,17 @@ def model_detail(
                 ],
             )
         )
-    recent_scan_issues = list(
-        session.scalars(
-            select(ScanIssue)
-            .where(ScanIssue.model_id == model.id)
-            .order_by(ScanIssue.id.desc())
-            .limit(5)
+    recent_scan_issues = (
+        list(
+            session.scalars(
+                select(ScanIssue)
+                .where(ScanIssue.model_id == model.id)
+                .order_by(ScanIssue.id.desc())
+                .limit(5)
+            )
         )
+        if getattr(current_user, "role", None) == "admin"
+        else []
     )
     return ModelDetail(
         id=model.id,

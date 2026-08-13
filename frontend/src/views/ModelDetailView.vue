@@ -895,16 +895,18 @@ onBeforeUnmount(() => {
         </aside>
       </section>
 
-      <section v-if="model.recent_scan_issues.length" class="panel model-scan-issues">
-        <p class="eyebrow">Image scan issues</p>
-        <h2>Recent scan issues</h2>
+      <details v-if="auth.user?.role === 'admin' && model.recent_scan_issues.length" class="panel model-scan-issues">
+        <summary>
+          <span class="eyebrow">Image scan issues</span>
+          <span>Recent scan issues ({{ model.recent_scan_issues.length }})</span>
+        </summary>
         <ul>
           <li v-for="issue in model.recent_scan_issues" :key="issue.code + issue.message">
             <strong>{{ issue.code }}</strong><br>
             {{ issue.message }}
           </li>
         </ul>
-      </section>
+      </details>
 
       <section class="panel archive-panel">
         <div v-if="model.archives.length > 1" class="archive-tabs">

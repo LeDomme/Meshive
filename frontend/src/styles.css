@@ -3435,15 +3435,22 @@ code {
 }
 
 .model-scan-issues {
-  max-width: 72rem;
+  width: 100%;
+  margin-top: 1.5rem;
 }
 
-.model-scan-issues h2 {
-  margin: 0.2rem 0 0.75rem;
+.model-scan-issues summary {
+  display: grid;
+  gap: 0.2rem;
+  font-weight: 700;
+}
+
+.model-scan-issues summary .eyebrow {
+  margin: 0;
 }
 
 .model-scan-issues ul {
-  margin: 0;
+  margin: 1rem 0 0;
   padding-left: 1.25rem;
   color: #fca5a5;
 }
