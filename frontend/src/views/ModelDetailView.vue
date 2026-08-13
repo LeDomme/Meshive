@@ -47,6 +47,12 @@ interface ModelArchive {
   entries: ArchiveEntry[]
 }
 
+interface ModelScanIssue {
+  code: string
+  message: string
+  created_at: string
+}
+
 interface ModelDetail {
   id: number
   name: string
@@ -68,6 +74,7 @@ interface ModelDetail {
   images: ModelImage[]
   archives: ModelArchive[]
   archive_bundle_download_url: string | null
+  recent_scan_issues: ModelScanIssue[]
   tags: Tag[]
 }
 
@@ -338,6 +345,22 @@ async function setPrimaryImage(image: ModelImage) {
   }
 }
 
+async function clearScanIssueHistory() {
+  if (!model.value || !model.value.recent_scan_issues.length) return
+  if (!window.confirm("Clear the saved scan issue history for this model?")) return
+  errorMessage.value = ""
+  try {
+    await apiRequest<{ deleted: number }>(
+      "/api/admin/models/" + model.value.id + "/scan-issues",
+      { method: "DELETE" },
+    )
+    model.value.recent_scan_issues = []
+    pictureNotice.value = "Scan issue history cleared."
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError ? error.message : "Unable to clear scan issue history"
+  }
+}
+
 async function resetPictures() {
   if (!model.value) return
   if (!window.confirm("Reset all Meshive picture records for this model? Re-scan the source to rebuild them.")) {
@@ -414,6 +437,13 @@ function handleKeydown(event: KeyboardEvent) {
   if ((model.value?.images.length ?? 0) < 2) return
   event.preventDefault()
   selectAdjacentImage(event.key === "ArrowLeft" ? -1 : 1)
+}
+
+function formatTimestamp(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value))
 }
 
 function formatBytes(value: number | null) {
@@ -641,7 +671,10 @@ onBeforeUnmount(() => {
               @click="navigateModel(navigation.next)"
             >&#8250;</button>
           </nav>
-          <span v-if="model.status !== 'available'" class="detail-status">
+          <span
+            v-if="auth.user?.role === 'admin' && model.status !== 'available'"
+            class="detail-status"
+          >
             {{ model.status }}
           </span>
           <button
@@ -888,6 +921,26 @@ onBeforeUnmount(() => {
           </form>
         </aside>
       </section>
+
+      <details v-if="auth.user?.role === 'admin' && model.recent_scan_issues.length" class="panel model-scan-issues">
+        <summary>
+          <span class="eyebrow">Image scan issues</span>
+          <span>Recent scan issues ({{ model.recent_scan_issues.length }})</span>
+        </summary>
+        <div class="model-scan-issues-actions">
+          <p>Saved history across previous scans.</p>
+          <button class="danger-button" type="button" @click="clearScanIssueHistory">
+            Clear history
+          </button>
+        </div>
+        <ul>
+          <li v-for="issue in model.recent_scan_issues" :key="issue.code + issue.message + issue.created_at">
+            <strong>{{ issue.code }}</strong>
+            <time :datetime="issue.created_at">{{ formatTimestamp(issue.created_at) }}</time><br>
+            {{ issue.message }}
+          </li>
+        </ul>
+      </details>
 
       <section class="panel archive-panel">
         <div v-if="model.archives.length > 1" class="archive-tabs">
