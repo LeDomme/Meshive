@@ -616,37 +616,17 @@ def _scan_model(
         return
 
     archives_ok = _sync_archives(session, scan, model, root, archives)
-    has_available_images = session.scalar(
-        select(ModelImage.id)
-        .where(
-            ModelImage.model_id == model.id,
-            ModelImage.storage_kind == "archive",
-            ModelImage.is_available.is_(True),
-        )
-        .limit(1)
-    ) is not None
-    archive_primary = None
-    if scan.mode != "missing_images" or not has_available_images:
-        archive_primary = _sync_archive_images(
-            session,
-            scan,
-            model,
-            root,
-            archives,
-        )
-    elif fallback_primary is not None:
-        archive_primary = fallback_primary
-    else:
-        archive_primary = session.scalar(
-            select(ModelImage)
-            .where(
-            ModelImage.model_id == model.id,
-            ModelImage.storage_kind == "archive",
-            ModelImage.is_available.is_(True),
-        )
-            .order_by(ModelImage.is_primary.desc(), ModelImage.id)
-            .limit(1)
-            )
+    # Every non-incremental scan reconciles the selected archive-image
+    # candidates. The image cache check below is per candidate, so a
+    # missing-images scan only extracts files whose derived images are missing
+    # or stale; it must not skip a model merely because another image exists.
+    archive_primary = _sync_archive_images(
+        session,
+        scan,
+        model,
+        root,
+        archives,
+    )
     if archive_primary is None:
         _sync_fallback_or_report_missing(
             session, scan, model, relative_path, fallback_primary
