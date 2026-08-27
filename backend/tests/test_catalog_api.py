@@ -13,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, get_session
 from meshive.main import app
-from meshive.models.catalog import Archive, ArchiveEntry, LibraryModel, ModelImage
+from meshive.models.catalog import Archive, ArchiveEntry, LibraryModel, ModelImage, ScanIssue, ScanRun
 from meshive.models.library_source import LibrarySource
 
 
@@ -730,3 +730,77 @@ def test_model_rescan_queues_a_targeted_scan(tmp_path, monkeypatch) -> None:
     assert response.json()["status"] == "pending"
     assert response.json()["target_model_id"] == model_id
     assert response.json()["trigger"] == "model_rescan"
+
+
+def test_model_detail_includes_recent_scan_issues(tmp_path) -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(
+                name="Test",
+                root_path=tmp_path.as_posix(),
+                directory_pattern="{model}",
+                archive_formats=["7z"],
+                image_formats=["jpg"],
+            )
+            session.add(source)
+            session.flush()
+            model = LibraryModel(
+                library_source_id=source.id,
+                relative_path="Cammy",
+                name="Cammy",
+                status="available",
+            )
+            session.add(model)
+            session.flush()
+            scan = ScanRun(library_source_id=source.id, status="completed", mode="full")
+            session.add(scan)
+            session.flush()
+            session.add_all(
+                [
+                    ScanIssue(
+                        scan_run_id=scan.id,
+                        model_id=model.id,
+                        relative_path=model.relative_path,
+                        severity="warning",
+                        code="archive_image_batch_failed",
+                        message="Image extraction exceeded the configured limit",
+                    ),
+                    ScanIssue(
+                        scan_run_id=scan.id,
+                        model_id=model.id,
+                        relative_path=model.relative_path,
+                        severity="warning",
+                        code="archive_image_failed",
+                        message="Image data is not valid",
+                    ),
+                ]
+            )
+            session.commit()
+            model_id = model.id
+
+        response = client.get(f"/api/models/{model_id}")
+
+        assert response.status_code == 200
+        issues = response.json()["recent_scan_issues"]
+        assert [issue["code"] for issue in issues] == [
+            "archive_image_failed",
+            "archive_image_batch_failed",
+        ]
+        assert [issue["message"] for issue in issues] == [
+            "Image data is not valid",
+            "Image extraction exceeded the configured limit",
+        ]
+        assert all(issue["created_at"] for issue in issues)
+
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="user")
+        standard_user_response = client.get(f"/api/models/{model_id}")
+
+        assert standard_user_response.status_code == 200
+        assert standard_user_response.json()["recent_scan_issues"] == []
+
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="admin")
+        cleared = client.delete(f"/api/admin/models/{model_id}/scan-issues")
+
+        assert cleared.status_code == 200
+        assert cleared.json() == {"deleted": 2}
+        assert client.get(f"/api/models/{model_id}").json()["recent_scan_issues"] == []
