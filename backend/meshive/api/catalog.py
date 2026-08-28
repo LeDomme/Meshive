@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import and_, column, delete, func, select, table, text, update
+from sqlalchemy import and_, column, delete, func, or_, select, table, text, update
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
@@ -278,6 +278,23 @@ def catalogue_filters(
             **{key: None if key == exclude else value for key, value in values.items()}
         )
 
+    status_filters = facet_filters("model_status")
+    statuses = _text_filter_options(session, LibraryModel.status, status_filters)
+    if user.role == "admin":
+        statuses.append(
+            FilterOption(
+                value=ARCHIVE_IMAGES_MISMATCH_STATUS,
+                count=int(
+                    session.scalar(
+                        select(func.count())
+                        .select_from(LibraryModel)
+                        .where(*status_filters, _archive_images_mismatch_clause())
+                    )
+                    or 0
+                ),
+            )
+        )
+
     return CatalogueFilters(
         models=_text_filter_options(
             session, LibraryModel.name, facet_filters("model_name")
@@ -294,13 +311,7 @@ def catalogue_filters(
         collections=_text_filter_options(
             session, LibraryModel.collection, facet_filters("collection")
         ),
-        statuses=(
-            _text_filter_options(
-                session, LibraryModel.status, facet_filters("model_status")
-            )
-            if user.role == "admin"
-            else []
-        ),
+        statuses=statuses if user.role == "admin" else [],
         tags=[
             TagRead(id=tag.id, name=tag.name, color=tag.color, description=tag.description)
             for tag in session.scalars(
@@ -934,8 +945,45 @@ def _model_filters(
     if source_id is not None:
         filters.append(LibraryModel.library_source_id == source_id)
     if model_status:
-        filters.append(LibraryModel.status == model_status)
+        if model_status == ARCHIVE_IMAGES_MISMATCH_STATUS:
+            filters.append(_archive_images_mismatch_clause())
+        else:
+            filters.append(LibraryModel.status == model_status)
     return filters
+
+
+ARCHIVE_IMAGES_MISMATCH_STATUS = "archive_images_mismatch"
+_ARCHIVE_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def _archive_images_mismatch_clause():
+    archive_image_count = (
+        select(func.count(ArchiveEntry.id))
+        .join(Archive, Archive.id == ArchiveEntry.archive_id)
+        .where(
+            Archive.model_id == LibraryModel.id,
+            ArchiveEntry.is_directory.is_(False),
+            or_(
+                *(
+                    func.lower(ArchiveEntry.name).like(f"%{extension}")
+                    for extension in _ARCHIVE_IMAGE_EXTENSIONS
+                )
+            ),
+        )
+        .correlate_except(ArchiveEntry, Archive)
+        .scalar_subquery()
+    )
+    exported_image_count = (
+        select(func.count(ModelImage.id))
+        .where(
+            ModelImage.model_id == LibraryModel.id,
+            ModelImage.storage_kind == "archive",
+            ModelImage.is_available.is_(True),
+        )
+        .correlate_except(ModelImage)
+        .scalar_subquery()
+    )
+    return archive_image_count != exported_image_count
 
 
 def _model_order(sort: str) -> tuple:

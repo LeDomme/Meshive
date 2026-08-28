@@ -767,7 +767,7 @@ def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:
                 size_bytes=1024,
                 modified_ns=1,
                 status="ready",
-                entry_count=8,
+                entry_count=9,
                 uncompressed_size_bytes=2048,
             )
             session.add(archive)
@@ -776,6 +776,7 @@ def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:
                 [
                     ArchiveEntry(archive_id=archive.id, path="preview.jpg", name="preview.jpg", is_directory=False),
                     ArchiveEntry(archive_id=archive.id, path="preview.webp", name="preview.webp", is_directory=False),
+                    ArchiveEntry(archive_id=archive.id, path="preview.png", name="preview.png", is_directory=False),
                     ArchiveEntry(archive_id=archive.id, path="parts/body.stl", name="body.stl", is_directory=False),
                     ArchiveEntry(archive_id=archive.id, path="slicer/Cammy.ctb", name="Cammy.ctb", is_directory=False),
                     ArchiveEntry(archive_id=archive.id, path="slicer/Cammy.chitubox", name="Cammy.chitubox", is_directory=False),
@@ -824,18 +825,35 @@ def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:
 
         assert response.status_code == 200
         assert response.json()["archive_statistics"] == {
-            "image_files": 2,
+            "image_files": 3,
             "stl_files": 1,
             "chitubox_files": 2,
             "lychee_files": 2,
             "exported_images": 2,
         }
 
+        mismatch_filter = client.get("/api/models/filters")
+        assert mismatch_filter.status_code == 200
+        assert {
+            "value": "archive_images_mismatch",
+            "count": 1,
+        } in mismatch_filter.json()["statuses"]
+
+        mismatch_models = client.get(
+            "/api/models", params={"status": "archive_images_mismatch"}
+        )
+        assert mismatch_models.status_code == 200
+        assert mismatch_models.json()["total"] == 1
+        assert mismatch_models.json()["items"][0]["id"] == model_id
+
         app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="user")
         standard_user_response = client.get(f"/api/models/{model_id}")
 
         assert standard_user_response.status_code == 200
         assert standard_user_response.json()["archive_statistics"] is None
+        assert client.get(
+            "/api/models", params={"status": "archive_images_mismatch"}
+        ).status_code == 403
 
 
 def test_model_detail_includes_recent_scan_issues(tmp_path) -> None:
