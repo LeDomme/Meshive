@@ -497,7 +497,7 @@ def model_detail(
                 format=image.format,
                 size_bytes=image.size_bytes,
                 is_primary=image.is_primary,
-                url=f"/api/models/{model.id}/images/{image.id}",
+                url=_model_image_url(model.id, image),
             )
             for image in images
         ],
@@ -954,6 +954,56 @@ def _model_filters(
 
 ARCHIVE_IMAGES_MISMATCH_STATUS = "archive_images_mismatch"
 _ARCHIVE_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+_IGNORED_ARCHIVE_IMAGE_DIRECTORIES = (
+    "material",
+    "materials",
+    "map",
+    "maps",
+    "texture",
+    "textures",
+)
+
+
+def _model_image_url(model_id: int, image: ModelImage) -> str:
+    version = image.cache_key or image.archive_entry_fingerprint
+    if not version:
+        version = f"{image.modified_ns}-{image.size_bytes}"
+    return f"/api/models/{model_id}/images/{image.id}?v={quote(version, safe='')}"
+
+
+def _exportable_archive_image_clause():
+    settings = get_settings()
+    normalized_path = func.lower(ArchiveEntry.path)
+    ignored_paths = [
+        normalized_path.like(".%"),
+        normalized_path.like("%/.%"),
+        *(
+            expression
+            for directory in _IGNORED_ARCHIVE_IMAGE_DIRECTORIES
+            for expression in (
+                normalized_path.like(f"{directory}/%"),
+                normalized_path.like(f"%/{directory}/%"),
+            )
+        ),
+    ]
+    return and_(
+        ArchiveEntry.is_directory.is_(False),
+        ArchiveEntry.size_bytes.is_not(None),
+        ArchiveEntry.size_bytes > 0,
+        ArchiveEntry.size_bytes <= settings.archive_image_max_entry_bytes,
+        or_(
+            ArchiveEntry.compressed_size_bytes.is_(None),
+            ArchiveEntry.compressed_size_bytes
+            <= settings.archive_image_max_compressed_bytes,
+        ),
+        or_(
+            *(
+                func.lower(ArchiveEntry.name).like(f"%{extension}")
+                for extension in _ARCHIVE_IMAGE_EXTENSIONS
+            )
+        ),
+        ~or_(*ignored_paths),
+    )
 
 
 def _archive_images_mismatch_clause():
@@ -962,13 +1012,7 @@ def _archive_images_mismatch_clause():
         .join(Archive, Archive.id == ArchiveEntry.archive_id)
         .where(
             Archive.model_id == LibraryModel.id,
-            ArchiveEntry.is_directory.is_(False),
-            or_(
-                *(
-                    func.lower(ArchiveEntry.name).like(f"%{extension}")
-                    for extension in _ARCHIVE_IMAGE_EXTENSIONS
-                )
-            ),
+            _exportable_archive_image_clause(),
         )
         .correlate_except(ArchiveEntry, Archive)
         .scalar_subquery()

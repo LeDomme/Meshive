@@ -195,7 +195,7 @@ const statusOptions = computed(() =>
     ...item,
     label:
       item.value === "archive_images_mismatch"
-        ? "Archive images mismatch"
+        ? "Exportable images mismatch"
         : item.label,
   })),
 )

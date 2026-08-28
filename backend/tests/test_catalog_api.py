@@ -796,6 +796,7 @@ def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:
                         size_bytes=100,
                         modified_ns=1,
                         archive_id=archive.id,
+                        cache_key="archive-images/preview.jpg.webp",
                     ),
                     ModelImage(
                         model_id=model.id,
@@ -806,6 +807,7 @@ def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:
                         size_bytes=100,
                         modified_ns=1,
                         archive_id=archive.id,
+                        cache_key="archive-images/preview.webp.webp",
                     ),
                     ModelImage(
                         model_id=model.id,
@@ -817,6 +819,37 @@ def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:
                         modified_ns=1,
                     ),
                 ]
+            )
+            metadata_only_model = LibraryModel(
+                library_source_id=source.id,
+                relative_path="Metadata only",
+                name="Metadata only",
+                status="available",
+            )
+            session.add(metadata_only_model)
+            session.flush()
+            metadata_archive = Archive(
+                model_id=metadata_only_model.id,
+                filename="Metadata only.7z",
+                relative_path="Metadata only/Metadata only.7z",
+                format="7z",
+                size_bytes=1024,
+                modified_ns=1,
+                status="ready",
+                entry_count=1,
+                uncompressed_size_bytes=4096,
+            )
+            session.add(metadata_archive)
+            session.flush()
+            session.add(
+                ArchiveEntry(
+                    archive_id=metadata_archive.id,
+                    path="Akuma_STL/._preview.jpg",
+                    name="._preview.jpg",
+                    is_directory=False,
+                    size_bytes=4096,
+                    compressed_size_bytes=256,
+                )
             )
             session.commit()
             model_id = model.id
@@ -831,6 +864,9 @@ def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:
             "lychee_files": 2,
             "exported_images": 2,
         }
+        assert response.json()["images"][0]["url"].endswith(
+            "?v=archive-images%2Fpreview.jpg.webp"
+        )
 
         mismatch_filter = client.get("/api/models/filters")
         assert mismatch_filter.status_code == 200
