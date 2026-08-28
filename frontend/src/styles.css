@@ -2855,6 +2855,15 @@ summary {
   color: #94a3b8;
 }
 
+.model-facts .model-facts-section-label {
+  margin-top: 0.35rem;
+  color: var(--meshive-cyan);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .model-facts dd {
   margin: 0;
   overflow-wrap: anywhere;

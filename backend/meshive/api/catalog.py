@@ -21,24 +21,25 @@ from meshive.models.catalog import (
 )
 from meshive.models.creator import CreatorLink
 from meshive.models.library_source import LibrarySource
-from meshive.models.user import User
 from meshive.models.tag import ModelTag, Tag
+from meshive.models.user import User
 from meshive.schemas.catalog import (
     ArchiveEntryRead,
     ArchiveRead,
     CatalogueFilters,
     FilterOption,
+    ModelArchiveStatisticsRead,
     ModelDetail,
     ModelImageRead,
-    ModelScanIssueRead,
     ModelNavigation,
     ModelNavigationItem,
     ModelPage,
+    ModelScanIssueRead,
     ModelSummary,
     SourceFilterOption,
 )
-from meshive.schemas.scan import ScanRunRead
 from meshive.schemas.creator import CreatorMetadataLinkRead
+from meshive.schemas.scan import ScanRunRead
 from meshive.schemas.tag import TagRead
 from meshive.services.archive_bundle import BundleArchive, stream_archive_bundle
 from meshive.services.download_limiter import claim_download, release_download
@@ -382,12 +383,28 @@ def model_detail(
         .order_by(Archive.filename.collate("NOCASE"))
     ).all()
     archive_reads = []
+    archive_image_files = 0
+    stl_files = 0
+    chitubox_files = 0
+    lychee_files = 0
     for archive in archives:
         entries = session.scalars(
             select(ArchiveEntry)
             .where(ArchiveEntry.archive_id == archive.id)
             .order_by(ArchiveEntry.path.collate("NOCASE"))
         ).all()
+        for entry in entries:
+            if entry.is_directory:
+                continue
+            extension = Path(entry.name).suffix.casefold()
+            if extension in {".jpg", ".jpeg", ".png", ".webp"}:
+                archive_image_files += 1
+            elif extension == ".stl":
+                stl_files += 1
+            elif extension in {".ctb", ".chitubox"}:
+                chitubox_files += 1
+            elif extension in {".lys", ".lychee"}:
+                lychee_files += 1
         archive_reads.append(
             ArchiveRead(
                 id=archive.id,
@@ -414,6 +431,20 @@ def model_detail(
                 ],
             )
         )
+    is_admin = getattr(current_user, "role", None) == "admin"
+    archive_statistics = (
+        ModelArchiveStatisticsRead(
+            image_files=archive_image_files,
+            stl_files=stl_files,
+            chitubox_files=chitubox_files,
+            lychee_files=lychee_files,
+            exported_images=sum(
+                1 for image in images if image.storage_kind == "archive"
+            ),
+        )
+        if is_admin
+        else None
+    )
     recent_scan_issues = (
         list(
             session.scalars(
@@ -423,7 +454,7 @@ def model_detail(
                 .limit(5)
             )
         )
-        if getattr(current_user, "role", None) == "admin"
+        if is_admin
         else []
     )
     return ModelDetail(
@@ -465,6 +496,7 @@ def model_detail(
             if len(archive_reads) > 1
             else None
         ),
+        archive_statistics=archive_statistics,
         recent_scan_issues=[
             ModelScanIssueRead(
                 code=issue.code,

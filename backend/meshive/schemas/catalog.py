@@ -79,6 +79,14 @@ class ModelScanIssueRead(BaseModel):
     created_at: datetime
 
 
+class ModelArchiveStatisticsRead(BaseModel):
+    image_files: int
+    stl_files: int
+    chitubox_files: int
+    lychee_files: int
+    exported_images: int
+
+
 class ModelDetail(BaseModel):
     id: int
     name: str
@@ -97,6 +105,7 @@ class ModelDetail(BaseModel):
     archives: list[ArchiveRead]
     archive_bundle_download_url: str | None
     recent_scan_issues: list[ModelScanIssueRead]
+    archive_statistics: ModelArchiveStatisticsRead | None
     tags: list[TagRead]
 
 
