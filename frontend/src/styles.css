@@ -1818,27 +1818,28 @@ summary {
 .model-selection-indicator {
   position: absolute;
   z-index: 4;
-  top: 50%;
+  top: 26%;
   left: 50%;
   display: grid;
-  width: 3.2rem;
-  height: 3.2rem;
+  width: 2.8rem;
+  height: 2.8rem;
   place-items: center;
-  border: 2px solid rgb(207 250 254 / 92%);
+  border: 1px solid rgb(207 250 254 / 88%);
   border-radius: 999px;
-  background: rgb(8 145 178 / 88%);
-  box-shadow: 0 0 0 0.45rem rgb(8 20 43 / 48%);
+  background: rgb(8 145 178 / 78%);
+  box-shadow: 0 0 0 1px rgb(8 20 43 / 38%), 0 0.35rem 1rem rgb(2 6 23 / 35%);
+  backdrop-filter: blur(3px);
   pointer-events: none;
   transform: translate(-50%, -50%);
 }
 
 .model-selection-indicator::after {
-  width: 0.85rem;
-  height: 1.45rem;
+  width: 0.72rem;
+  height: 1.2rem;
   border: solid #ecfeff;
-  border-width: 0 0.26rem 0.26rem 0;
+  border-width: 0 0.22rem 0.22rem 0;
   content: "";
-  transform: rotate(45deg) translate(-0.08rem, -0.18rem);
+  transform: rotate(45deg) translate(-0.04rem, -0.15rem);
 }
 .model-grid {
   display: grid;
