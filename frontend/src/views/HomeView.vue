@@ -977,7 +977,9 @@ onMounted(async () => {
         @keydown.capture="handleModelCardKeydown($event, model.id)"
       >
         <span v-if="batchSelectionMode && selectedModelIds.has(model.id)" class="model-selection-indicator" aria-hidden="true">
-         '
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="m5 12 4.25 4.25L19 6.5" />
+          </svg>
         </span>
         <RouterLink
           class="thumbnail-frame"

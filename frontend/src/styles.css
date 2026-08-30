@@ -1833,13 +1833,14 @@ summary {
   transform: translate(-50%, -50%);
 }
 
-.model-selection-indicator::after {
-  width: 0.72rem;
-  height: 1.2rem;
-  border: solid #ecfeff;
-  border-width: 0 0.22rem 0.22rem 0;
-  content: "";
-  transform: rotate(45deg) translate(-0.04rem, -0.15rem);
+.model-selection-indicator svg {
+  width: 1.55rem;
+  height: 1.55rem;
+  fill: none;
+  stroke: #ecfeff;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
 }
 .model-grid {
   display: grid;
