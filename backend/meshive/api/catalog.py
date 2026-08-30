@@ -1,5 +1,5 @@
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 from urllib.parse import quote
 
@@ -42,6 +42,11 @@ from meshive.schemas.creator import CreatorMetadataLinkRead
 from meshive.schemas.scan import ScanRunRead
 from meshive.schemas.tag import TagRead
 from meshive.services.archive_bundle import BundleArchive, stream_archive_bundle
+from meshive.services.archive_images import (
+    IGNORED_ARCHIVE_IMAGE_PATH_MARKERS,
+    IGNORED_ARCHIVE_IMAGE_PATH_PARTS,
+    SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS,
+)
 from meshive.services.download_limiter import claim_download, release_download
 from meshive.services.scanner import queue_model_rescan
 from meshive.services.thumbnails import (
@@ -408,7 +413,7 @@ def model_detail(
             if entry.is_directory:
                 continue
             extension = Path(entry.name).suffix.casefold()
-            if extension in {".jpg", ".jpeg", ".png", ".webp"}:
+            if _is_exportable_archive_image_entry(entry):
                 archive_image_files += 1
             elif extension == ".stl":
                 stl_files += 1
@@ -953,23 +958,37 @@ def _model_filters(
 
 
 ARCHIVE_IMAGES_MISMATCH_STATUS = "archive_images_mismatch"
-_ARCHIVE_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
-_IGNORED_ARCHIVE_IMAGE_DIRECTORIES = (
-    "material",
-    "materials",
-    "map",
-    "maps",
-    "texture",
-    "textures",
-)
-
-
 def _model_image_url(model_id: int, image: ModelImage) -> str:
     version = image.cache_key or image.archive_entry_fingerprint
     if not version:
         version = f"{image.modified_ns}-{image.size_bytes}"
     return f"/api/models/{model_id}/images/{image.id}?v={quote(version, safe='')}"
 
+
+
+
+def _is_exportable_archive_image_entry(entry: ArchiveEntry) -> bool:
+    path = PurePosixPath(entry.path.replace("\\", "/"))
+    if (
+        not path.parts
+        or path.is_absolute()
+        or ".." in path.parts
+        or ":" in path.parts[0]
+        or entry.path.startswith("@")
+        or path.name.startswith(".")
+        or path.suffix.casefold() not in SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS
+    ):
+        return False
+    if any(
+        marker in part.casefold()
+        for marker in IGNORED_ARCHIVE_IMAGE_PATH_MARKERS
+        for part in path.parts
+    ):
+        return False
+    return not any(
+        part.startswith(".") or part.casefold() in IGNORED_ARCHIVE_IMAGE_PATH_PARTS
+        for part in path.parts[:-1]
+    )
 
 def _exportable_archive_image_clause():
     settings = get_settings()
@@ -979,11 +998,15 @@ def _exportable_archive_image_clause():
         normalized_path.like("%/.%"),
         *(
             expression
-            for directory in _IGNORED_ARCHIVE_IMAGE_DIRECTORIES
+            for directory in IGNORED_ARCHIVE_IMAGE_PATH_PARTS
             for expression in (
                 normalized_path.like(f"{directory}/%"),
                 normalized_path.like(f"%/{directory}/%"),
             )
+        ),
+        *(
+            normalized_path.like(f"%{marker}%")
+            for marker in IGNORED_ARCHIVE_IMAGE_PATH_MARKERS
         ),
     ]
     return and_(
@@ -999,7 +1022,7 @@ def _exportable_archive_image_clause():
         or_(
             *(
                 func.lower(ArchiveEntry.name).like(f"%{extension}")
-                for extension in _ARCHIVE_IMAGE_EXTENSIONS
+                for extension in SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS
             )
         ),
         ~or_(*ignored_paths),

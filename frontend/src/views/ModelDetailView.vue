@@ -890,7 +890,7 @@ onBeforeUnmount(() => {
             <template v-if="auth.user?.role === 'admin' && model.archive_statistics">
               <dt class="model-facts-section-label">Archive statistics</dt>
               <dd></dd>
-              <dt>Archive images</dt>
+              <dt>Exportable archive images</dt>
               <dd>{{ model.archive_statistics.image_files }}</dd>
               <dt>STL files</dt>
               <dd>{{ model.archive_statistics.stl_files }}</dd>

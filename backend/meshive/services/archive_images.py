@@ -17,7 +17,7 @@ from meshive.archives.sevenzip_cli import (
 
 SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS = frozenset({".jpeg", ".jpg", ".png", ".webp"})
 
-_IGNORED_PATH_PARTS = frozenset(
+IGNORED_ARCHIVE_IMAGE_PATH_PARTS = frozenset(
     {
         "__macosx",
         "material",
@@ -29,7 +29,7 @@ _IGNORED_PATH_PARTS = frozenset(
     }
 )
 
-_IGNORED_IMAGE_PATH_MARKERS = ("decal",)
+IGNORED_ARCHIVE_IMAGE_PATH_MARKERS = ("decal",)
 
 _PREFERRED_NAME_MARKERS = (
     "cover",
@@ -388,14 +388,14 @@ def _is_eligible_image(
         return False
     if any(
         marker in part.casefold()
-        for marker in _IGNORED_IMAGE_PATH_MARKERS
+        for marker in IGNORED_ARCHIVE_IMAGE_PATH_MARKERS
         for part in path.parts
     ):
         return False
 
     directory_parts = path.parts[:-1]
     return not any(
-        part.startswith(".") or part.casefold() in _IGNORED_PATH_PARTS
+        part.startswith(".") or part.casefold() in IGNORED_ARCHIVE_IMAGE_PATH_PARTS
         for part in directory_parts
     )
 
