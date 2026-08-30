@@ -973,8 +973,8 @@ onMounted(async () => {
         :role="batchSelectionMode ? 'checkbox' : undefined"
         :tabindex="batchSelectionMode ? 0 : undefined"
         :aria-checked="batchSelectionMode ? selectedModelIds.has(model.id) : undefined"
-        @click="handleModelCardClick($event, model.id)"
-        @keydown="handleModelCardKeydown($event, model.id)"
+        @click.capture="handleModelCardClick($event, model.id)"
+        @keydown.capture="handleModelCardKeydown($event, model.id)"
       >
         <span v-if="batchSelectionMode && selectedModelIds.has(model.id)" class="model-selection-indicator" aria-hidden="true">
          '
