@@ -1148,6 +1148,7 @@ def _sync_archive_images(
                             quality=settings.thumbnail_quality,
                             max_output_bytes=settings.archive_image_detail_max_bytes,
                             webp_method=settings.archive_image_webp_method,
+                        max_pixels=settings.archive_image_max_pixels,
                         )
                         image.thumbnail_key = generate_thumbnail(
                             validated.path,
@@ -1158,6 +1159,7 @@ def _sync_archive_images(
                             max_size=settings.thumbnail_size,
                             quality=settings.thumbnail_quality,
                             max_output_bytes=settings.thumbnail_max_bytes,
+                        max_pixels=settings.archive_image_max_pixels,
                         )
                         image.format = validated.format
                         image.filename = PurePosixPath(entry.path).name

@@ -1,13 +1,18 @@
 import hashlib
 import os
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path, PurePosixPath
+from threading import RLock
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 class ThumbnailError(RuntimeError):
     pass
+
+
+_PILLOW_PIXEL_LIMIT_LOCK = RLock()
 
 
 def generate_thumbnail(
@@ -21,6 +26,7 @@ def generate_thumbnail(
     quality: int,
     max_output_bytes: int,
     webp_method: int = 6,
+    max_pixels: int | None = None,
 ) -> str:
     return generate_cached_webp(
         source_path,
@@ -33,6 +39,7 @@ def generate_thumbnail(
         quality=quality,
         max_output_bytes=max_output_bytes,
         webp_method=webp_method,
+        max_pixels=max_pixels,
     )
 
 
@@ -48,7 +55,10 @@ def generate_cached_webp(
     quality: int,
     max_output_bytes: int,
     webp_method: int = 6,
+    max_pixels: int | None = None,
 ) -> str:
+    if max_pixels is not None and max_pixels <= 0:
+        raise ThumbnailError("Image pixel limit must be positive")
     namespace = PurePosixPath(cache_namespace)
     if (
         not namespace.parts
@@ -71,12 +81,21 @@ def generate_cached_webp(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = output_path.with_suffix(".tmp")
     try:
-        with Image.open(source_path) as original:
+        with _pillow_pixel_limit(max_pixels), Image.open(source_path) as original:
+            if (
+                max_pixels is not None
+                and original.width * original.height > max_pixels
+            ):
+                raise ThumbnailError(
+                    f"Image exceeds the {max_pixels} pixel limit"
+                )
             original.seek(0)
             image = ImageOps.exif_transpose(original)
             image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
             if image.mode not in {"RGB", "RGBA"}:
-                image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+                image = image.convert(
+                    "RGBA" if "transparency" in image.info else "RGB"
+                )
             _save_bounded_webp(
                 image,
                 temporary_path,
@@ -174,3 +193,18 @@ def remove_cached_file(cache_root: Path, key: str | None) -> None:
 
 def remove_cached_thumbnail(cache_root: Path, key: str | None) -> None:
     remove_cached_file(cache_root, key)
+
+
+
+@contextmanager
+def _pillow_pixel_limit(max_pixels: int | None):
+    if max_pixels is None:
+        yield
+        return
+    with _PILLOW_PIXEL_LIMIT_LOCK:
+        previous_max_pixels = Image.MAX_IMAGE_PIXELS
+        Image.MAX_IMAGE_PIXELS = None
+        try:
+            yield
+        finally:
+            Image.MAX_IMAGE_PIXELS = previous_max_pixels

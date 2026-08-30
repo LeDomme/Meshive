@@ -81,6 +81,8 @@ def test_ignores_texture_system_unsafe_and_nested_archive_entries() -> None:
             _entry("C:/outside.jpg"),
             _entry("@entries.jpg"),
             _entry("Gallery/image?.jpg"),
+            _entry("Gallery/model-decal.jpg"),
+            _entry("stickskaneda-decal/cover.jpg"),
             _entry("extras.zip"),
             _entry("Gallery", is_directory=True, size_bytes=0),
             _entry("Gallery/valid.jpg"),

@@ -29,6 +29,8 @@ _IGNORED_PATH_PARTS = frozenset(
     }
 )
 
+_IGNORED_IMAGE_PATH_MARKERS = ("decal",)
+
 _PREFERRED_NAME_MARKERS = (
     "cover",
     "preview",
@@ -383,6 +385,12 @@ def _is_eligible_image(
     ):
         return False
     if path.suffix.casefold() not in SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS:
+        return False
+    if any(
+        marker in part.casefold()
+        for marker in _IGNORED_IMAGE_PATH_MARKERS
+        for part in path.parts
+    ):
         return False
 
     directory_parts = path.parts[:-1]
