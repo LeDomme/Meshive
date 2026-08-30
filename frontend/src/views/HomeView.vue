@@ -492,6 +492,18 @@ function clearModelSelection() {
   selectedModelIds.value = new Set()
 }
 
+function handleModelCardClick(event: MouseEvent, modelId: number) {
+  if (!batchSelectionMode.value) return
+  event.preventDefault()
+  toggleModelSelection(modelId)
+}
+
+function handleModelCardKeydown(event: KeyboardEvent, modelId: number) {
+  if (!batchSelectionMode.value || (event.key !== "Enter" && event.key !== " ")) return
+  event.preventDefault()
+  toggleModelSelection(modelId)
+}
+
 function toggleBatchSelectionMode() {
   if (batchSelectionMode.value) clearModelSelection()
   batchSelectionMode.value = !batchSelectionMode.value
@@ -523,7 +535,6 @@ async function runSelectedModelAction(action: SelectedModelAction) {
         : `/api/admin/models/${modelId}/${action}`
       await apiRequest(path, { method: action === "reset-images" ? "DELETE" : "POST" })
     }
-    clearModelSelection()
     await loadCatalogue(page.value.page)
   } catch (error) {
     errorMessage.value = error instanceof ApiError
@@ -639,6 +650,7 @@ function favoriteRemoved(list: FavoriteMembershipList, target: FavoriteTarget) {
 }
 
 async function handleFavoriteClick(model: ModelSummary) {
+  if (batchSelectionMode.value) return
   const memberships = favoriteMemberships.value[model.id] ?? []
   if (memberships.length !== 1 || !memberships[0].item_id) {
     openFavoriteDialog(model)
@@ -923,7 +935,7 @@ onMounted(async () => {
           <button v-if="selectedModelCount" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('reset-images')">
             Reset selected pictures
           </button>
-          <button v-if="selectedModelCount" class="text-button" type="button" :disabled="batchActionInProgress" @click="clearModelSelection">Clear</button>
+          <button v-if="selectedModelCount" class="text-button" type="button" :disabled="batchActionInProgress" @click="clearModelSelection">Clear selection</button>
         </template>
         <button
           v-if="auth.user?.role === 'admin' && page.items.length"
@@ -950,11 +962,25 @@ onMounted(async () => {
       {{ errorMessage }}
     </p>
     <section v-if="page.items.length" class="model-grid">
-      <article v-for="model in page.items" :key="model.id" class="model-card" :class="{ 'is-selected': selectedModelIds.has(model.id) }">
-        <label v-if="batchSelectionMode" class="model-selection">
-          <input type="checkbox" :checked="selectedModelIds.has(model.id)" @change="toggleModelSelection(model.id)">
-          <span class="sr-only">Select {{ model.name }}</span>
-        </label>
+      <article
+        v-for="model in page.items"
+        :key="model.id"
+        class="model-card"
+        :class="{
+          'is-selected': selectedModelIds.has(model.id),
+          'is-selection-mode': batchSelectionMode,
+        }"
+        :role="batchSelectionMode ? 'checkbox' : undefined"
+        :tabindex="batchSelectionMode ? 0 : undefined"
+        :aria-checked="batchSelectionMode ? selectedModelIds.has(model.id) : undefined"
+        @click.capture="handleModelCardClick($event, model.id)"
+        @keydown.capture="handleModelCardKeydown($event, model.id)"
+      >
+        <span v-if="batchSelectionMode && selectedModelIds.has(model.id)" class="model-selection-indicator" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="m5 12 4.25 4.25L19 6.5" />
+          </svg>
+        </span>
         <RouterLink
           class="thumbnail-frame"
           :to="detailRoute(model.id)"

@@ -1791,31 +1791,56 @@ summary {
   position: relative;
 }
 
+.model-card.is-selection-mode {
+  cursor: pointer;
+}
+
+.model-card.is-selection-mode:focus-visible {
+  outline: 2px solid var(--meshive-cyan);
+  outline-offset: 3px;
+}
+
 .model-card.is-selected {
   border-color: var(--meshive-cyan);
   box-shadow: 0 0 0 1px rgb(54 231 255 / 26%);
 }
 
-.model-selection {
+.model-card.is-selected::after {
   position: absolute;
   z-index: 3;
-  top: 0.65rem;
-  left: 0.65rem;
-  display: grid;
-  width: 1.65rem;
-  height: 1.65rem;
-  place-items: center;
-  border: 1px solid rgb(148 163 184 / 65%);
-  border-radius: 0.4rem;
-  background: rgb(5 14 31 / 82%);
-  cursor: pointer;
+  inset: 0;
+  border-radius: inherit;
+  background: rgb(6 182 212 / 18%);
+  content: "";
+  pointer-events: none;
 }
 
-.model-selection input {
-  width: 1rem;
-  height: 1rem;
-  accent-color: var(--meshive-cyan);
-  cursor: pointer;
+.model-selection-indicator {
+  position: absolute;
+  z-index: 4;
+  top: 26%;
+  left: 50%;
+  display: grid;
+  width: 2.8rem;
+  height: 2.8rem;
+  place-items: center;
+  border: 1px solid rgb(207 250 254 / 88%);
+  border-radius: 999px;
+  background: rgb(8 145 178 / 78%);
+  box-shadow: 0 0 0 1px rgb(8 20 43 / 38%), 0 0.35rem 1rem rgb(2 6 23 / 35%);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.model-selection-indicator svg {
+  width: 1.55rem;
+  height: 1.55rem;
+  fill: none;
+  stroke: #ecfeff;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
 }
 .model-grid {
   display: grid;
