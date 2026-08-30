@@ -4,6 +4,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from threading import RLock
 
 from PIL import Image, UnidentifiedImageError
 
@@ -16,7 +17,7 @@ from meshive.archives.sevenzip_cli import (
 
 SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS = frozenset({".jpeg", ".jpg", ".png", ".webp"})
 
-_IGNORED_PATH_PARTS = frozenset(
+IGNORED_ARCHIVE_IMAGE_PATH_PARTS = frozenset(
     {
         "__macosx",
         "material",
@@ -27,6 +28,8 @@ _IGNORED_PATH_PARTS = frozenset(
         "textures",
     }
 )
+
+IGNORED_ARCHIVE_IMAGE_PATH_MARKERS = ("decal",)
 
 _PREFERRED_NAME_MARKERS = (
     "cover",
@@ -39,9 +42,14 @@ _PREFERRED_NAME_MARKERS = (
 
 _DETECTED_IMAGE_FORMATS = {
     "JPEG": "jpg",
+    "MPO": "jpg",
     "PNG": "png",
     "WEBP": "webp",
 }
+
+# Pillow's decompression-bomb threshold is process-wide. Serialise temporary
+# overrides so archive validation uses the configured Meshive pixel limit.
+_PILLOW_PIXEL_LIMIT_LOCK = RLock()
 
 
 class ArchiveImageError(RuntimeError):
@@ -303,20 +311,32 @@ def _validate_extracted_image(
     if max_pixels <= 0:
         raise ArchiveImageError("Archive image pixel limit must be positive")
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(path) as image:
-                detected_format = _DETECTED_IMAGE_FORMATS.get(image.format or "")
-                if detected_format is None:
-                    raise ArchiveImageError("Archive entry is not a supported image")
-                width, height = image.size
-                if width <= 0 or height <= 0 or width * height > max_pixels:
-                    raise ArchiveImageError(
-                        f"Archive image exceeds the {max_pixels} pixel limit"
-                    )
-                image.verify()
-            with Image.open(path) as image:
-                image.load()
+        with _PILLOW_PIXEL_LIMIT_LOCK:
+            previous_max_pixels = Image.MAX_IMAGE_PIXELS
+            # Perform the limit check below so the configured value, rather than
+            # Pillow's process-wide default, controls the reported outcome.
+            Image.MAX_IMAGE_PIXELS = None
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", Image.DecompressionBombWarning)
+                    with Image.open(path) as image:
+                        detected_format = _DETECTED_IMAGE_FORMATS.get(
+                            image.format or ""
+                        )
+                        if detected_format is None:
+                            raise ArchiveImageError(
+                                "Archive entry is not a supported image"
+                            )
+                        width, height = image.size
+                        if width <= 0 or height <= 0 or width * height > max_pixels:
+                            raise ArchiveImageError(
+                                f"Archive image exceeds the {max_pixels} pixel limit"
+                            )
+                        image.verify()
+                    with Image.open(path) as image:
+                        image.load()
+            finally:
+                Image.MAX_IMAGE_PIXELS = previous_max_pixels
     except ArchiveImageError:
         raise
     except (
@@ -366,10 +386,16 @@ def _is_eligible_image(
         return False
     if path.suffix.casefold() not in SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS:
         return False
+    if any(
+        marker in part.casefold()
+        for marker in IGNORED_ARCHIVE_IMAGE_PATH_MARKERS
+        for part in path.parts
+    ):
+        return False
 
     directory_parts = path.parts[:-1]
     return not any(
-        part.startswith(".") or part.casefold() in _IGNORED_PATH_PARTS
+        part.startswith(".") or part.casefold() in IGNORED_ARCHIVE_IMAGE_PATH_PARTS
         for part in directory_parts
     )
 

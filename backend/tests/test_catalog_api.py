@@ -13,7 +13,14 @@ from sqlalchemy.pool import StaticPool
 from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, get_session
 from meshive.main import app
-from meshive.models.catalog import Archive, ArchiveEntry, LibraryModel, ModelImage, ScanIssue, ScanRun
+from meshive.models.catalog import (
+    Archive,
+    ArchiveEntry,
+    LibraryModel,
+    ModelImage,
+    ScanIssue,
+    ScanRun,
+)
 from meshive.models.library_source import LibrarySource
 
 
@@ -730,6 +737,162 @@ def test_model_rescan_queues_a_targeted_scan(tmp_path, monkeypatch) -> None:
     assert response.json()["status"] == "pending"
     assert response.json()["target_model_id"] == model_id
     assert response.json()["trigger"] == "model_rescan"
+
+
+def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(
+                name="Test",
+                root_path=tmp_path.as_posix(),
+                directory_pattern="{model}",
+                archive_formats=["7z"],
+                image_formats=["jpg"],
+            )
+            session.add(source)
+            session.flush()
+            model = LibraryModel(
+                library_source_id=source.id,
+                relative_path="Cammy",
+                name="Cammy",
+                status="available",
+            )
+            session.add(model)
+            session.flush()
+            archive = Archive(
+                model_id=model.id,
+                filename="Cammy.7z",
+                relative_path="Cammy/Cammy.7z",
+                format="7z",
+                size_bytes=1024,
+                modified_ns=1,
+                status="ready",
+                entry_count=9,
+                uncompressed_size_bytes=2048,
+            )
+            session.add(archive)
+            session.flush()
+            session.add_all(
+                [
+                    ArchiveEntry(archive_id=archive.id, path="preview.jpg", name="preview.jpg", is_directory=False),
+                    ArchiveEntry(archive_id=archive.id, path="preview.webp", name="preview.webp", is_directory=False),
+                    ArchiveEntry(archive_id=archive.id, path="preview.png", name="preview.png", is_directory=False),
+                    ArchiveEntry(archive_id=archive.id, path="decals/preview.jpg", name="preview.jpg", is_directory=False),
+                    ArchiveEntry(archive_id=archive.id, path="model-decal.jpg", name="model-decal.jpg", is_directory=False),
+                    ArchiveEntry(archive_id=archive.id, path="Textures/body.jpg", name="body.jpg", is_directory=False),
+                    ArchiveEntry(archive_id=archive.id, path="parts/body.stl", name="body.stl", is_directory=False),
+                    ArchiveEntry(archive_id=archive.id, path="slicer/Cammy.ctb", name="Cammy.ctb", is_directory=False),
+                    ArchiveEntry(archive_id=archive.id, path="slicer/Cammy.chitubox", name="Cammy.chitubox", is_directory=False),
+                    ArchiveEntry(archive_id=archive.id, path="slicer/Cammy.lys", name="Cammy.lys", is_directory=False),
+                    ArchiveEntry(archive_id=archive.id, path="slicer/Cammy.lychee", name="Cammy.lychee", is_directory=False),
+                    ArchiveEntry(archive_id=archive.id, path="parts", name="parts", is_directory=True),
+                ]
+            )
+            session.add_all(
+                [
+                    ModelImage(
+                        model_id=model.id,
+                        filename="preview.jpg",
+                        relative_path="archive/preview.jpg",
+                        storage_kind="archive",
+                        format="jpg",
+                        size_bytes=100,
+                        modified_ns=1,
+                        archive_id=archive.id,
+                        cache_key="archive-images/preview.jpg.webp",
+                    ),
+                    ModelImage(
+                        model_id=model.id,
+                        filename="preview.webp",
+                        relative_path="archive/preview.webp",
+                        storage_kind="archive",
+                        format="webp",
+                        size_bytes=100,
+                        modified_ns=1,
+                        archive_id=archive.id,
+                        cache_key="archive-images/preview.webp.webp",
+                    ),
+                    ModelImage(
+                        model_id=model.id,
+                        filename="source.jpg",
+                        relative_path="Cammy/source.jpg",
+                        storage_kind="source",
+                        format="jpg",
+                        size_bytes=100,
+                        modified_ns=1,
+                    ),
+                ]
+            )
+            metadata_only_model = LibraryModel(
+                library_source_id=source.id,
+                relative_path="Metadata only",
+                name="Metadata only",
+                status="available",
+            )
+            session.add(metadata_only_model)
+            session.flush()
+            metadata_archive = Archive(
+                model_id=metadata_only_model.id,
+                filename="Metadata only.7z",
+                relative_path="Metadata only/Metadata only.7z",
+                format="7z",
+                size_bytes=1024,
+                modified_ns=1,
+                status="ready",
+                entry_count=1,
+                uncompressed_size_bytes=4096,
+            )
+            session.add(metadata_archive)
+            session.flush()
+            session.add(
+                ArchiveEntry(
+                    archive_id=metadata_archive.id,
+                    path="Akuma_STL/._preview.jpg",
+                    name="._preview.jpg",
+                    is_directory=False,
+                    size_bytes=4096,
+                    compressed_size_bytes=256,
+                )
+            )
+            session.commit()
+            model_id = model.id
+
+        response = client.get(f"/api/models/{model_id}")
+
+        assert response.status_code == 200
+        assert response.json()["archive_statistics"] == {
+            "image_files": 3,
+            "stl_files": 1,
+            "chitubox_files": 2,
+            "lychee_files": 2,
+            "exported_images": 2,
+        }
+        assert response.json()["images"][0]["url"].endswith(
+            "?v=archive-images%2Fpreview.jpg.webp"
+        )
+
+        mismatch_filter = client.get("/api/models/filters")
+        assert mismatch_filter.status_code == 200
+        assert {
+            "value": "archive_images_mismatch",
+            "count": 1,
+        } in mismatch_filter.json()["statuses"]
+
+        mismatch_models = client.get(
+            "/api/models", params={"status": "archive_images_mismatch"}
+        )
+        assert mismatch_models.status_code == 200
+        assert mismatch_models.json()["total"] == 1
+        assert mismatch_models.json()["items"][0]["id"] == model_id
+
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="user")
+        standard_user_response = client.get(f"/api/models/{model_id}")
+
+        assert standard_user_response.status_code == 200
+        assert standard_user_response.json()["archive_statistics"] is None
+        assert client.get(
+            "/api/models", params={"status": "archive_images_mismatch"}
+        ).status_code == 403
 
 
 def test_model_detail_includes_recent_scan_issues(tmp_path) -> None:

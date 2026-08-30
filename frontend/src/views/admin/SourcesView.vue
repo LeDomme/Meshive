@@ -108,10 +108,10 @@ const form = reactive({
 })
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 const scanModes: Array<{ value: ScanMode; label: string; description: string }> = [
-  { value: "incremental", label: "Incremental scan", description: "Process new models only." },
-  { value: "full", label: "Full scan", description: "Check all models and archive images." },
-  { value: "missing_images", label: "Full scan — missing images only", description: "Only generate missing images." },
-  { value: "reconcile_images", label: "Reconcile images", description: "Repair archive-image cache entries." },
+  { value: "incremental", label: "Incremental scan", description: "Index new models without reprocessing existing ones." },
+  { value: "full", label: "Full scan", description: "Check all models and repair missing or stale archive images." },
+  { value: "missing_images", label: "Full scan — repair missing images", description: "Check all models but only export missing or stale image variants." },
+  { value: "reconcile_images", label: "Reconcile images", description: "Repair missing or stale archive images from the existing catalogue." },
 ]
 
 async function loadSources() {

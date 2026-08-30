@@ -111,3 +111,27 @@ def test_rejects_unsafe_cache_key(tmp_path) -> None:
         pass
     else:
         raise AssertionError("Unsafe cache key was accepted")
+
+
+
+def test_uses_configured_pixel_limit_for_archive_derivatives(tmp_path, monkeypatch) -> None:
+    source = tmp_path / "source.jpg"
+    cache = tmp_path / "cache"
+    Image.new("RGB", (100, 100), color=(20, 180, 160)).save(source, format="JPEG")
+    stat = source.stat()
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1_000)
+
+    key = generate_cached_webp(
+        source,
+        relative_source_path="1/Franchise/Model/archive/large.jpg",
+        source_size=stat.st_size,
+        source_modified_ns=stat.st_mtime_ns,
+        cache_root=cache,
+        cache_namespace="archive-images",
+        max_size=1600,
+        quality=82,
+        max_output_bytes=768 * 1024,
+        max_pixels=20_000,
+    )
+
+    assert safe_cache_path(cache, key).is_file()

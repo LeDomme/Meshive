@@ -53,6 +53,14 @@ interface ModelScanIssue {
   created_at: string
 }
 
+interface ModelArchiveStatistics {
+  image_files: number
+  stl_files: number
+  chitubox_files: number
+  lychee_files: number
+  exported_images: number
+}
+
 interface ModelDetail {
   id: number
   name: string
@@ -75,6 +83,7 @@ interface ModelDetail {
   archives: ModelArchive[]
   archive_bundle_download_url: string | null
   recent_scan_issues: ModelScanIssue[]
+  archive_statistics: ModelArchiveStatistics | null
   tags: Tag[]
 }
 
@@ -878,6 +887,20 @@ onBeforeUnmount(() => {
                 {{ model.source_name }}
               </RouterLink>
             </dd>
+            <template v-if="auth.user?.role === 'admin' && model.archive_statistics">
+              <dt class="model-facts-section-label">Archive statistics</dt>
+              <dd></dd>
+              <dt>Exportable archive images</dt>
+              <dd>{{ model.archive_statistics.image_files }}</dd>
+              <dt>STL files</dt>
+              <dd>{{ model.archive_statistics.stl_files }}</dd>
+              <dt>Chitubox files</dt>
+              <dd>{{ model.archive_statistics.chitubox_files }}</dd>
+              <dt>Lychee files</dt>
+              <dd>{{ model.archive_statistics.lychee_files }}</dd>
+              <dt>Exported images</dt>
+              <dd>{{ model.archive_statistics.exported_images }}</dd>
+            </template>
             <dt>Tags</dt>
             <dd class="model-fact-tags">
               <div v-if="model.tags.length" class="tag-list">

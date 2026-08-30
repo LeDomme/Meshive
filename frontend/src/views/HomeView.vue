@@ -45,6 +45,7 @@ interface ModelPage {
 
 interface FilterOption {
   value: string
+  label?: string
   count: number
 }
 
@@ -188,6 +189,15 @@ const compactPaginationItems = computed(() =>
 )
 const missingCount = computed(
   () => filters.value.statuses.find((item) => item.value === "missing")?.count ?? 0,
+)
+const statusOptions = computed(() =>
+  filters.value.statuses.map((item) => ({
+    ...item,
+    label:
+      item.value === "archive_images_mismatch"
+        ? "Exportable images mismatch"
+        : item.label,
+  })),
 )
 const sourceOptions = computed(() =>
   filters.value.sources.map((item) => ({
@@ -872,7 +882,7 @@ onMounted(async () => {
         all-label="All statuses"
         search-placeholder="Search statuses"
         align="end"
-        :options="filters.statuses"
+        :options="statusOptions"
         @change="facetChanged('status')"
       />
 

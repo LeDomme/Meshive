@@ -12,6 +12,7 @@ from meshive.services.archive_images import (
     open_extracted_archive_images,
     open_validated_archive_image,
     select_archive_image_candidates,
+    validate_extracted_archive_image,
 )
 
 
@@ -80,6 +81,8 @@ def test_ignores_texture_system_unsafe_and_nested_archive_entries() -> None:
             _entry("C:/outside.jpg"),
             _entry("@entries.jpg"),
             _entry("Gallery/image?.jpg"),
+            _entry("Gallery/model-decal.jpg"),
+            _entry("stickskaneda-decal/cover.jpg"),
             _entry("extras.zip"),
             _entry("Gallery", is_directory=True, size_bytes=0),
             _entry("Gallery/valid.jpg"),
@@ -326,3 +329,59 @@ def test_handles_error_detailed_logging(tmp_path, monkeypatch) -> None:
     assert len(batches) == 1
     assert batches[0][2] is not None
     assert "Detailed error message" in str(batches[0][2])
+
+
+def test_accepts_mpo_images_as_jpeg(tmp_path, monkeypatch) -> None:
+    image_path = tmp_path / "camera-photo.jpg"
+    image_path.write_bytes(_image_bytes("JPEG"))
+    original_open = Image.open
+
+    def open_as_mpo(*args, **kwargs):
+        image = original_open(*args, **kwargs)
+        image.format = "MPO"
+        return image
+
+    monkeypatch.setattr(archive_images.Image, "open", open_as_mpo)
+
+    validated = validate_extracted_archive_image(image_path, max_pixels=1_000_000)
+
+    assert validated.format == "jpg"
+
+
+def test_uses_configured_pixel_limit_instead_of_pillow_default(
+    tmp_path, monkeypatch
+) -> None:
+    class FakeImage:
+        format = "JPEG"
+        size = (15_000, 10_000)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def verify(self) -> None:
+            pass
+
+        def load(self) -> None:
+            pass
+
+    seen_pixel_limits = []
+
+    def fake_open(*_args, **_kwargs):
+        seen_pixel_limits.append(Image.MAX_IMAGE_PIXELS)
+        return FakeImage()
+
+    previous_max_pixels = Image.MAX_IMAGE_PIXELS
+    monkeypatch.setattr(archive_images.Image, "open", fake_open)
+    image_path = tmp_path / "large.jpg"
+    image_path.write_bytes(b"placeholder")
+
+    validated = validate_extracted_archive_image(
+        image_path, max_pixels=200_000_000
+    )
+
+    assert validated.width * validated.height == 150_000_000
+    assert seen_pixel_limits == [None, None]
+    assert Image.MAX_IMAGE_PIXELS == previous_max_pixels

@@ -1,11 +1,11 @@
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import and_, column, delete, func, select, table, text, update
+from sqlalchemy import and_, column, delete, func, or_, select, table, text, update
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
@@ -21,26 +21,32 @@ from meshive.models.catalog import (
 )
 from meshive.models.creator import CreatorLink
 from meshive.models.library_source import LibrarySource
-from meshive.models.user import User
 from meshive.models.tag import ModelTag, Tag
+from meshive.models.user import User
 from meshive.schemas.catalog import (
     ArchiveEntryRead,
     ArchiveRead,
     CatalogueFilters,
     FilterOption,
+    ModelArchiveStatisticsRead,
     ModelDetail,
     ModelImageRead,
-    ModelScanIssueRead,
     ModelNavigation,
     ModelNavigationItem,
     ModelPage,
+    ModelScanIssueRead,
     ModelSummary,
     SourceFilterOption,
 )
-from meshive.schemas.scan import ScanRunRead
 from meshive.schemas.creator import CreatorMetadataLinkRead
+from meshive.schemas.scan import ScanRunRead
 from meshive.schemas.tag import TagRead
 from meshive.services.archive_bundle import BundleArchive, stream_archive_bundle
+from meshive.services.archive_images import (
+    IGNORED_ARCHIVE_IMAGE_PATH_MARKERS,
+    IGNORED_ARCHIVE_IMAGE_PATH_PARTS,
+    SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS,
+)
 from meshive.services.download_limiter import claim_download, release_download
 from meshive.services.scanner import queue_model_rescan
 from meshive.services.thumbnails import (
@@ -277,6 +283,23 @@ def catalogue_filters(
             **{key: None if key == exclude else value for key, value in values.items()}
         )
 
+    status_filters = facet_filters("model_status")
+    statuses = _text_filter_options(session, LibraryModel.status, status_filters)
+    if user.role == "admin":
+        statuses.append(
+            FilterOption(
+                value=ARCHIVE_IMAGES_MISMATCH_STATUS,
+                count=int(
+                    session.scalar(
+                        select(func.count())
+                        .select_from(LibraryModel)
+                        .where(*status_filters, _archive_images_mismatch_clause())
+                    )
+                    or 0
+                ),
+            )
+        )
+
     return CatalogueFilters(
         models=_text_filter_options(
             session, LibraryModel.name, facet_filters("model_name")
@@ -293,13 +316,7 @@ def catalogue_filters(
         collections=_text_filter_options(
             session, LibraryModel.collection, facet_filters("collection")
         ),
-        statuses=(
-            _text_filter_options(
-                session, LibraryModel.status, facet_filters("model_status")
-            )
-            if user.role == "admin"
-            else []
-        ),
+        statuses=statuses if user.role == "admin" else [],
         tags=[
             TagRead(id=tag.id, name=tag.name, color=tag.color, description=tag.description)
             for tag in session.scalars(
@@ -382,12 +399,28 @@ def model_detail(
         .order_by(Archive.filename.collate("NOCASE"))
     ).all()
     archive_reads = []
+    archive_image_files = 0
+    stl_files = 0
+    chitubox_files = 0
+    lychee_files = 0
     for archive in archives:
         entries = session.scalars(
             select(ArchiveEntry)
             .where(ArchiveEntry.archive_id == archive.id)
             .order_by(ArchiveEntry.path.collate("NOCASE"))
         ).all()
+        for entry in entries:
+            if entry.is_directory:
+                continue
+            extension = Path(entry.name).suffix.casefold()
+            if _is_exportable_archive_image_entry(entry):
+                archive_image_files += 1
+            elif extension == ".stl":
+                stl_files += 1
+            elif extension in {".ctb", ".chitubox"}:
+                chitubox_files += 1
+            elif extension in {".lys", ".lychee"}:
+                lychee_files += 1
         archive_reads.append(
             ArchiveRead(
                 id=archive.id,
@@ -414,6 +447,20 @@ def model_detail(
                 ],
             )
         )
+    is_admin = getattr(current_user, "role", None) == "admin"
+    archive_statistics = (
+        ModelArchiveStatisticsRead(
+            image_files=archive_image_files,
+            stl_files=stl_files,
+            chitubox_files=chitubox_files,
+            lychee_files=lychee_files,
+            exported_images=sum(
+                1 for image in images if image.storage_kind == "archive"
+            ),
+        )
+        if is_admin
+        else None
+    )
     recent_scan_issues = (
         list(
             session.scalars(
@@ -423,7 +470,7 @@ def model_detail(
                 .limit(5)
             )
         )
-        if getattr(current_user, "role", None) == "admin"
+        if is_admin
         else []
     )
     return ModelDetail(
@@ -455,7 +502,7 @@ def model_detail(
                 format=image.format,
                 size_bytes=image.size_bytes,
                 is_primary=image.is_primary,
-                url=f"/api/models/{model.id}/images/{image.id}",
+                url=_model_image_url(model.id, image),
             )
             for image in images
         ],
@@ -465,6 +512,7 @@ def model_detail(
             if len(archive_reads) > 1
             else None
         ),
+        archive_statistics=archive_statistics,
         recent_scan_issues=[
             ModelScanIssueRead(
                 code=issue.code,
@@ -902,8 +950,107 @@ def _model_filters(
     if source_id is not None:
         filters.append(LibraryModel.library_source_id == source_id)
     if model_status:
-        filters.append(LibraryModel.status == model_status)
+        if model_status == ARCHIVE_IMAGES_MISMATCH_STATUS:
+            filters.append(_archive_images_mismatch_clause())
+        else:
+            filters.append(LibraryModel.status == model_status)
     return filters
+
+
+ARCHIVE_IMAGES_MISMATCH_STATUS = "archive_images_mismatch"
+def _model_image_url(model_id: int, image: ModelImage) -> str:
+    version = image.cache_key or image.archive_entry_fingerprint
+    if not version:
+        version = f"{image.modified_ns}-{image.size_bytes}"
+    return f"/api/models/{model_id}/images/{image.id}?v={quote(version, safe='')}"
+
+
+
+
+def _is_exportable_archive_image_entry(entry: ArchiveEntry) -> bool:
+    path = PurePosixPath(entry.path.replace("\\", "/"))
+    if (
+        not path.parts
+        or path.is_absolute()
+        or ".." in path.parts
+        or ":" in path.parts[0]
+        or entry.path.startswith("@")
+        or path.name.startswith(".")
+        or path.suffix.casefold() not in SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS
+    ):
+        return False
+    if any(
+        marker in part.casefold()
+        for marker in IGNORED_ARCHIVE_IMAGE_PATH_MARKERS
+        for part in path.parts
+    ):
+        return False
+    return not any(
+        part.startswith(".") or part.casefold() in IGNORED_ARCHIVE_IMAGE_PATH_PARTS
+        for part in path.parts[:-1]
+    )
+
+def _exportable_archive_image_clause():
+    settings = get_settings()
+    normalized_path = func.lower(ArchiveEntry.path)
+    ignored_paths = [
+        normalized_path.like(".%"),
+        normalized_path.like("%/.%"),
+        *(
+            expression
+            for directory in IGNORED_ARCHIVE_IMAGE_PATH_PARTS
+            for expression in (
+                normalized_path.like(f"{directory}/%"),
+                normalized_path.like(f"%/{directory}/%"),
+            )
+        ),
+        *(
+            normalized_path.like(f"%{marker}%")
+            for marker in IGNORED_ARCHIVE_IMAGE_PATH_MARKERS
+        ),
+    ]
+    return and_(
+        ArchiveEntry.is_directory.is_(False),
+        ArchiveEntry.size_bytes.is_not(None),
+        ArchiveEntry.size_bytes > 0,
+        ArchiveEntry.size_bytes <= settings.archive_image_max_entry_bytes,
+        or_(
+            ArchiveEntry.compressed_size_bytes.is_(None),
+            ArchiveEntry.compressed_size_bytes
+            <= settings.archive_image_max_compressed_bytes,
+        ),
+        or_(
+            *(
+                func.lower(ArchiveEntry.name).like(f"%{extension}")
+                for extension in SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS
+            )
+        ),
+        ~or_(*ignored_paths),
+    )
+
+
+def _archive_images_mismatch_clause():
+    archive_image_count = (
+        select(func.count(ArchiveEntry.id))
+        .join(Archive, Archive.id == ArchiveEntry.archive_id)
+        .where(
+            Archive.model_id == LibraryModel.id,
+            _exportable_archive_image_clause(),
+        )
+        .correlate_except(ArchiveEntry, Archive)
+        .scalar_subquery()
+    )
+    exported_image_count = (
+        select(func.count(ModelImage.id))
+        .where(
+            ModelImage.model_id == LibraryModel.id,
+            ModelImage.storage_kind == "archive",
+            ModelImage.is_available.is_(True),
+        )
+        .correlate_except(ModelImage)
+        .scalar_subquery()
+    )
+    return archive_image_count != exported_image_count
 
 
 def _model_order(sort: str) -> tuple:
