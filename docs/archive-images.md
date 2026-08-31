@@ -21,6 +21,26 @@ Existing images beside an archive remain indexed
 as a fallback when an archive contains no usable image or processing fails.
 Meshive never removes or changes those source images.
 
+### Successful-image limit and backfill
+
+Selection first creates a deterministic candidate pool for every ready archive,
+then sorts that combined pool by image priority, archive filename, and archive
+path. Consequently, adding another archive does not depend on filesystem
+enumeration order.
+
+The configured candidate limit is the number of successful archive images that
+may remain in the gallery. To avoid losing the gallery when an otherwise
+well-ranked entry is corrupt or cannot be converted, Meshive may attempt up to
+four times that limit while still enforcing the configured total extraction
+budget. Failed validation, extraction, or derivative generation simply allows
+a later candidate to backfill the result.
+
+After processing, Meshive deterministically keeps only the first configured
+number of successful images and removes any surplus derived records. A scan
+warning records candidates skipped by the configured limits. The bounded
+per-archive candidate pool means extremely large single archives cannot crowd
+out scan resources; entries beyond that pool are not extraction backfill.
+
 ## Resource limits
 
 Selection and processing use conservative defaults:
