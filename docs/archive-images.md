@@ -1,6 +1,6 @@
 # Images from archives
 
-Meshive 1.3 introduces bounded extraction of gallery images from 7z, ZIP, and
+Meshive 1.4 introduces bounded extraction of gallery images from 7z, ZIP, and
 RAR model archives. The source archives and model directories remain read-only;
 all derived images are written only to Meshive's cache volume.
 
@@ -36,11 +36,12 @@ budget. Failed validation, extraction, or derivative generation simply allows
 a later candidate to backfill the result.
 
 After processing, Meshive deterministically keeps only the first configured
-number of successful images and removes any surplus derived records. A scan
-warning records candidates skipped by the configured limits. The bounded
-per-archive candidate pool means extremely large single archives cannot crowd
-out scan resources; entries beyond that pool are not extraction backfill.
-
+number of successful images and removes any surplus derived records. Valid candidates
+skipped by candidate, per-entry size, compressed size, or total extraction
+budget create exactly one admin scan issue per model: archive_image_candidates_skipped
+at warning severity. Hidden, invalid, texture, material, map, decal, and
+similar paths remain intentionally silent. The bounded candidate pool prevents
+large archives from crowding out scan resources; entries beyond the pool are not extracted for backfill.
 ## Resource limits
 
 Selection and processing use conservative defaults:
@@ -48,10 +49,10 @@ Selection and processing use conservative defaults:
 | Environment variable | Default | Purpose |
 | --- | ---: | --- |
 | `MESHIVE_ARCHIVE_IMAGE_MAX_CANDIDATES` | `48` | Maximum selected images per model |
-| `MESHIVE_ARCHIVE_IMAGE_MAX_ENTRY_BYTES` | `33554432` | Maximum declared uncompressed size per image |
-| `MESHIVE_ARCHIVE_IMAGE_MAX_COMPRESSED_BYTES` | `33554432` | Maximum declared compressed size per image |
-| `MESHIVE_ARCHIVE_IMAGE_MAX_TOTAL_BYTES` | `134217728` | Maximum declared total size selected per model |
-| `MESHIVE_ARCHIVE_IMAGE_MAX_PIXELS` | `40000000` | Maximum decoded pixel count per image |
+| `MESHIVE_ARCHIVE_IMAGE_MAX_ENTRY_BYTES` | `67108864` | Maximum declared uncompressed size per image |
+| `MESHIVE_ARCHIVE_IMAGE_MAX_COMPRESSED_BYTES` | `67108864` | Maximum declared compressed size per image |
+| `MESHIVE_ARCHIVE_IMAGE_MAX_TOTAL_BYTES` | `268435456` | Maximum declared total size selected per model |
+| `MESHIVE_ARCHIVE_IMAGE_MAX_PIXELS` | `100000000` | Maximum decoded pixel count per image |
 | `MESHIVE_ARCHIVE_IMAGE_TIMEOUT_SECONDS` | `90` | Processing deadline for one bounded archive-image batch |
 | `MESHIVE_ARCHIVE_IMAGE_THREADS` | `1` | 7-Zip threads used only while extracting an archive image |
 | `MESHIVE_ARCHIVE_IMAGE_DETAIL_SIZE` | `1600` | Maximum edge length of the full archive-image gallery variant |
