@@ -378,7 +378,9 @@ def _validate_extracted_image(
                         width, height = image.size
                         if width <= 0 or height <= 0 or width * height > max_pixels:
                             raise ArchiveImageError(
-                                f"Archive image exceeds the {max_pixels} pixel limit"
+                                f"Detected {detected_format.upper()} image is {width}x{height} "
+                                f"({path.stat().st_size} bytes) and exceeds the "
+                                f"{max_pixels} pixel limit"
                             )
                         image.verify()
                     with Image.open(path) as image:

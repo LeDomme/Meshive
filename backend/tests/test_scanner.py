@@ -604,6 +604,16 @@ def test_scan_handles_archive_image_processing_errors(tmp_path, monkeypatch) -> 
         assert completed_scan.models_found == 1
         assert completed_scan.models_added == 1
         assert completed_scan.issues_count == 1
+        issue = session.scalar(
+            select(ScanIssue).where(ScanIssue.scan_run_id == scan.id)
+        )
+        assert issue is not None
+        assert issue.code == "archive_image_batch_failed"
+        assert "entry 'cover.jpg'" in issue.message
+        assert "listed size 1024 bytes" in issue.message
+        assert "compressed size 512 bytes" in issue.message
+        assert "timeout 90 seconds" in issue.message
+        assert "corrupted archive content" in issue.message
 
     assert model_directory.is_dir()
     engine.dispose()

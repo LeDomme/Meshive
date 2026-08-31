@@ -222,9 +222,8 @@ def test_rejects_image_above_pixel_limit(tmp_path, monkeypatch) -> None:
     _install_fake_extractor(monkeypatch, content)
     candidate = _entry("cover.webp", size_bytes=len(content))
 
-    with (
-        pytest.raises(ArchiveImageError, match="pixel limit"),
-        open_validated_archive_image(
+    with pytest.raises(ArchiveImageError) as error:
+        with open_validated_archive_image(
             tmp_path / "model.7z",
             candidate,
             command="7z",
@@ -233,9 +232,14 @@ def test_rejects_image_above_pixel_limit(tmp_path, monkeypatch) -> None:
             max_output_bytes=1024 * 1024,
             max_compressed_bytes=1024 * 1024,
             max_pixels=9_999,
-        ),
-    ):
-        pass
+        ):
+            pass
+
+    message = str(error.value)
+    assert "WEBP" in message
+    assert "100x100" in message
+    assert f"{len(content)} bytes" in message
+    assert "pixel limit" in message
 
 
 def test_rejects_extracted_size_mismatch(tmp_path, monkeypatch) -> None:
