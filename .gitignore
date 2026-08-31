@@ -65,6 +65,9 @@ LOCAL_ROADMAP.md
 LOCAL_ROADMAP_FOR_1.4.0.md
 /backups/
 /backup/
+/backend/data/
+/backend/cache/
+/backend/backups/
 *.db
 *.sqlite
 *.sqlite3
