@@ -3,31 +3,19 @@ set -eu
 
 PUID="${PUID:-10001}"
 PGID="${PGID:-10001}"
+DATA_DIR="${MESHIVE_DATA_DIR:-/app/data}"
+CACHE_DIR="${MESHIVE_CACHE_DIR:-/app/cache}"
+BACKUP_DIR="${MESHIVE_BACKUP_DIR:-/backups}"
 
-case "$PUID:$PGID" in
-  *[!0-9:]* | :* | *:)
-    echo "PUID and PGID must be positive numeric IDs." >&2
-    exit 1
-    ;;
-esac
-
-if [ "$PUID" -eq 0 ] || [ "$PGID" -eq 0 ]; then
-  echo "PUID and PGID must not be 0." >&2
-  exit 1
-fi
-
-mkdir -p "${MESHIVE_DATA_DIR:-/app/data}" "${MESHIVE_CACHE_DIR:-/app/cache}" \
-  "${MESHIVE_BACKUP_DIR:-/backups}"
-chown -R "$PUID:$PGID" \
-  "${MESHIVE_DATA_DIR:-/app/data}" \
-  "${MESHIVE_CACHE_DIR:-/app/cache}" \
-  "${MESHIVE_BACKUP_DIR:-/backups}"
+. /app/permissions.sh
+validate_runtime_identity
+prepare_runtime_dirs "$DATA_DIR" "$CACHE_DIR" "$BACKUP_DIR"
 
 if [ "$#" -gt 0 ]; then
   exec gosu "$PUID:$PGID" "$@"
 fi
 
-if [ -f "${MESHIVE_DATA_DIR:-/app/data}/restore-request.json" ]; then
+if [ -f "$DATA_DIR/restore-request.json" ]; then
   gosu "$PUID:$PGID" meshive restore-pending
 fi
 

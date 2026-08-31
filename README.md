@@ -55,8 +55,14 @@ model library. The image has an unprivileged internal default, but deployments
 must derive both values from the permissions of their own storage rather than
 copying example IDs.
 
-Only Meshive's database and thumbnail cache are adjusted to this identity. The
+Only Meshive's database, thumbnail cache, and backup volumes are adjusted to this identity. The
 read-only model library is never changed.
+
+`MESHIVE_FIX_PERMISSIONS=auto` (the default) checks only the roots of
+Meshive's data, cache, and backup mounts, so large caches do not delay normal
+restarts. Use `MESHIVE_FIX_PERMISSIONS=always` once to recursively repair a
+legacy volume with incorrect ownership, or `never` when a NAS/NFS host manages
+ownership outside the container.
 
 ## Docker Compose
 

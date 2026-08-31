@@ -36,6 +36,8 @@ jobs:
       - name: Install backend
         run: pip install -e "./backend[dev]"
 
+      - name: Run entrypoint permission tests
+        run: sh docker/test-permissions.sh
       - name: Run backend tests
         run: pytest backend/tests
 
@@ -143,9 +145,16 @@ jobs:
           provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
           sbom: ${{ github.event_name != 'pull_request' }}
 
-      - name: Smoke-test pull request image
-        if: github.event_name == 'pull_request'
+      - name: Smoke-test container image
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
         run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            smoke_image="${REGISTRY}/${IMAGE_NAME}:pr-test"
+          else
+            smoke_image="${REGISTRY}/${IMAGE_NAME}:sha-$(echo "$GITHUB_SHA" | cut -c1-7)"
+            docker pull "$smoke_image"
+          fi
+
           docker run --detach \
             --name meshive-pr-smoke \
             --init \
@@ -157,7 +166,9 @@ jobs:
             --cap-add DAC_OVERRIDE \
             --cap-add SETUID \
             --cap-add SETGID \
-            "${REGISTRY}/${IMAGE_NAME}:pr-test"
+            --env PUID=501 \
+            --env PGID=100 \
+            "$smoke_image"
 
           for attempt in $(seq 1 30); do
             health_status=$(docker inspect --format '{{.State.Health.Status}}' meshive-pr-smoke)
@@ -170,12 +181,11 @@ jobs:
             fi
             sleep 2
           done
-
           docker logs meshive-pr-smoke
           exit 1
 
-      - name: Remove pull request smoke container
-        if: always() && github.event_name == 'pull_request'
+      - name: Remove smoke container
+        if: always() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
         run: |
           if docker container inspect meshive-pr-smoke >/dev/null 2>&1; then
             docker rm --force --volumes meshive-pr-smoke
