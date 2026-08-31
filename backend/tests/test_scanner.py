@@ -197,6 +197,44 @@ def test_incremental_scan_skips_known_models_and_processes_new_ones(tmp_path, mo
     engine.dispose()
 
 
+def test_missing_images_scan_reconciles_known_models(tmp_path, monkeypatch) -> None:
+    directory = tmp_path / "Cammy"
+    directory.mkdir()
+    (directory / "Cammy.7z").write_bytes(b"archive")
+    engine = create_engine(f"sqlite:///{tmp_path / "missing-images.db"}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+    reconciled: list[str] = []
+    monkeypatch.setattr(scanner, "_sync_archives", lambda *_args: True)
+    monkeypatch.setattr(
+        scanner, "_sync_archive_images", lambda _session, _scan, model, *_args: reconciled.append(model.name)
+    )
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Missing images", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        session.add(
+            LibraryModel(
+                library_source_id=source.id, relative_path="Cammy", name="Cammy", status="available"
+            )
+        )
+        session.commit()
+        scan = make_scan(session, source.id)
+        scan.mode = "missing_images"
+        session.commit()
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert reconciled == ["Cammy"]
+        assert scan.models_updated == 1
+
+    engine.dispose()
+
+
 def test_scans_model_archive_image_and_marks_missing(tmp_path, monkeypatch) -> None:
     model_directory = make_source_tree(tmp_path)
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
