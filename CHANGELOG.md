@@ -5,6 +5,15 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-31
+### Added
+- Added administrator scan controls, live activity, statistics, and per-model scan issue history.
+- Added batch model selection with queued rescan and picture-reset actions.
+- Added archive-image reconciliation, gallery carousel navigation, and support for MPO archive images.
+### Changed
+- Archive-image selection is deterministic, bounded, and reports one aggregated administrator warning when valid candidates are skipped by configured safety limits.
+- Container startup now checks mounted directory roots by default; recursive permission repair is an explicit one-time operation suitable for NFS-backed caches.
+- Expanded scan-mode and archive-image cache reconciliation coverage for incremental, targeted, and full scans.
 ## [1.3.0] - 2026-08-10
 
 ### Added
@@ -161,7 +170,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
-[Unreleased]: ../../compare/v1.3.0...HEAD
+[Unreleased]: ../../compare/v1.4.0...HEAD
+[1.4.0]: ../../compare/v1.3.0...v1.4.0
 [1.3.0]: ../../compare/v1.2.0...v1.3.0
 [1.2.0]: ../../compare/v1.1.0...v1.2.0
 [1.1.0]: ../../compare/v1.0.1...v1.1.0

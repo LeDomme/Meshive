@@ -1,6 +1,6 @@
-# MVP scope
+# Historical MVP scope (1.0)
 
-## Included
+This document records the completed 1.0 scope. For current capabilities and release changes, use the README and CHANGELOG.md.
 
 - Single Docker image with FastAPI, built Vue assets, and 7-Zip CLI.
 - SQLite database and separate thumbnail cache volumes.

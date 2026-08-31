@@ -32,6 +32,10 @@ Use this checklist for every stable Meshive release.
 5. Confirm the release notes, semantic image tags, `latest`, and image digest
    are visible. The `edge` tag must remain the development channel from `main`.
 
+## Pull request validation image
+For each pull request that needs a deployment test, run the Build and publish container workflow manually on the branch.
+It publishes ghcr.io/ledomme/meshive:sha-SHORTSHA and smoke-tests that exact image. PR branches do not publish edge tags.
+Deploy that SHA tag in Portainer for the manual validation, then record the result on the pull request.
 ## Rollback readiness
 
 - Keep the previous image digest and a validated pre-upgrade database backup.

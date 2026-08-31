@@ -1,5 +1,6 @@
-# Implementation plan
+# Historical implementation plan (1.0)
 
+All milestones below are complete and retained as implementation history. For current release work, use CHANGELOG.md and the release checklist.
 ## Milestone 1: Foundation
 
 - Architecture and scope documentation.
