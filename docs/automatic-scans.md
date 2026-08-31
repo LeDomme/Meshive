@@ -25,3 +25,17 @@ again.
 The scheduler uses periodic checks rather than filesystem notifications. This
 works reliably with local directories as well as Docker-mounted NFS and SMB
 storage.
+
+## Manual scan modes
+
+- **Incremental:** enumerates the source, processes new models, and marks known
+  models as seen without reparsing them.
+- **Full:** parses every discovered model and reconciles archive images while
+  reusing current cached derivatives.
+- **Full missing-images:** performs a full metadata scan and repairs models
+  whose archive-image gallery is incomplete.
+- **Reconcile images:** uses the stored archive manifest to repair missing or
+  stale derived images without reparsing library metadata.
+
+Targeted **Rescan model** and **Rebuild model images** operations are limited to
+that model. The latter intentionally regenerates its archive-derived images.

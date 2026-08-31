@@ -161,6 +161,42 @@ def test_force_rebuild_restores_cache_when_regeneration_fails(tmp_path, monkeypa
         assert cache_path.read_bytes() == b"old"
         assert not list(cache_path.parent.glob("*.rebuild-*"))
 
+def test_incremental_scan_skips_known_models_and_processes_new_ones(tmp_path, monkeypatch) -> None:
+    for name in ("Known", "New"):
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / f"{name}.7z").write_bytes(b"archive")
+    engine = create_engine(f"sqlite:///{tmp_path / "incremental.db"}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Incremental", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        known = LibraryModel(
+            library_source_id=source.id, relative_path="Known", name="Known", status="available"
+        )
+        session.add(known)
+        session.commit()
+        processed: list[str] = []
+        monkeypatch.setattr(scanner, "_scan_model", lambda *_args: processed.append(_args[5]))
+        scan = make_scan(session, source.id)
+        scan.mode = "incremental"
+        session.commit()
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert processed == ["New"]
+        assert scan.models_skipped == 1
+        assert session.get(LibraryModel, known.id).status == "available"
+
+    engine.dispose()
+
+
 def test_scans_model_archive_image_and_marks_missing(tmp_path, monkeypatch) -> None:
     model_directory = make_source_tree(tmp_path)
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
