@@ -39,6 +39,17 @@ those variables instead of overriding the container `user`. Only one Meshive
 container may use a given SQLite data volume at a time. Supported environment
 variables and limits are listed in [`.env.example`](../.env.example).
 
+`MESHIVE_FIX_PERMISSIONS=auto` is the default and creates the writable
+directories while checking and, if needed, correcting only their mount-root
+ownership. It never walks the cache tree, so it remains suitable for large or
+NFS-backed caches. Set `MESHIVE_FIX_PERMISSIONS=always` for a one-time
+recursive repair of an existing volume whose contents have the wrong owner; this
+can be slow on network storage. Set `MESHIVE_FIX_PERMISSIONS=never` when
+permissions are administered outside the container; Meshive then makes no
+ownership changes. If NFS `root_squash` prevents a requested change, initialize
+ownership on the host or use `never` only after verifying that `PUID:PGID` can
+read and write the mounted paths.
+
 ## Docker Compose
 
 Meshive includes two self-contained examples:
@@ -61,6 +72,7 @@ the target host instead of copying values from another installation:
 | `MESHIVE_BACKUP_VOLUME` | Existing external volume for independent backups |
 | `MESHIVE_SETUP_TOKEN` | Newly generated, high-entropy one-time secret |
 | `PUID` / `PGID` | Numeric identity permitted to read the model storage |
+| `MESHIVE_FIX_PERMISSIONS` | `auto` normally; `always` for one-time recursive repair; `never` for externally managed mounts |
 | `MESHIVE_ENVIRONMENT` | `development` for direct HTTP; `production` behind HTTPS |
 | `MESHIVE_PORT` | Host port for the standalone example |
 | `MESHIVE_HOST` | Public DNS name for the Traefik example |

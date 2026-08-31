@@ -20,6 +20,9 @@ and NAS permissions can be matched without granting the application root
 access. The root entrypoint only prepares the writable data/cache volumes and
 then drops privileges before migrations and the web server start.
 
+Normal startup checks only writable volume roots before dropping privileges; an
+explicit repair mode can recursively fix legacy volume ownership when required.
+
 ## Components
 
 ### Backend

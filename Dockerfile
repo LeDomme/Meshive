@@ -32,7 +32,7 @@ COPY backend ./backend
 RUN pip install --no-cache-dir ./backend
 
 COPY --from=frontend-build /build/frontend/dist ./frontend
-COPY docker/entrypoint.sh ./entrypoint.sh
+COPY docker/permissions.sh docker/entrypoint.sh ./
 RUN chmod 0755 ./entrypoint.sh \
     && mkdir -p /app/data /app/cache /backups /models
 
