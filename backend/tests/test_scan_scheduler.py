@@ -1,4 +1,3 @@
-import logging
 from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -36,21 +35,34 @@ def test_latest_daily_and_weekly_occurrences_can_catch_up() -> None:
     assert weekly.isoformat() == "2026-07-27T02:00:00+02:00"
 
 
-def test_scheduler_logs_evaluation_failure_and_keeps_looping(monkeypatch, caplog) -> None:
-    caplog.set_level(logging.ERROR, logger="meshive.services.scan_scheduler")
+def test_scheduler_logs_evaluation_failure_and_keeps_looping(monkeypatch) -> None:
+    logged_messages = []
     waits = iter([False, True])
     monkeypatch.setattr(scan_scheduler._stop, "wait", lambda _seconds: next(waits))
-    monkeypatch.setattr(scan_scheduler, "_start_due_scans", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        scan_scheduler,
+        "_start_due_scans",
+        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    monkeypatch.setattr(
+        scan_scheduler.logger,
+        "exception",
+        lambda message: logged_messages.append(message),
+    )
 
     scan_scheduler._loop()
 
-    assert "Scheduled scan evaluation failed" in caplog.text
-    assert "RuntimeError: boom" in caplog.text
+    assert logged_messages == ["Scheduled scan evaluation failed"]
 
 
-def test_invalid_timezone_warning_is_deduplicated(caplog) -> None:
-    caplog.set_level(logging.WARNING, logger="meshive.services.scan_scheduler")
+def test_invalid_timezone_warning_is_deduplicated(monkeypatch) -> None:
+    logged_messages = []
     scan_scheduler._reported_invalid_timezones.clear()
+    monkeypatch.setattr(
+        scan_scheduler.logger,
+        "warning",
+        lambda message, *args: logged_messages.append(message % args),
+    )
     invalid_source = SimpleNamespace(
         id=42,
         name="Broken schedule",
@@ -60,4 +72,6 @@ def test_invalid_timezone_warning_is_deduplicated(caplog) -> None:
     assert _is_due(None, invalid_source) is False
     assert _is_due(None, invalid_source) is False
 
-    assert caplog.text.count("unknown timezone") == 1
+    assert logged_messages == [
+        "Skipping scheduled scan for source 42 (Broken schedule): unknown timezone 'Not/A-Timezone'"
+    ]
