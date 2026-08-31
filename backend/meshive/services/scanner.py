@@ -427,6 +427,7 @@ def rescan_model(
     scan.status = "running"
     scan.started_at = utc_now()
     session.commit()
+    _raise_if_scan_cancelled(session, scan.id)
 
     cache_backups: list[tuple[Path, Path]] = []
     rebuild_succeeded = False
@@ -472,6 +473,7 @@ def rescan_model(
                     backup_path = cache_path.with_name(f"{cache_path.name}.rebuild-{scan.id}")
                     os.replace(cache_path, backup_path)
                     cache_backups.append((cache_path, backup_path))
+            _raise_if_scan_cancelled(session, scan.id)
             _scan_model(
                 session,
                 scan,
@@ -483,6 +485,8 @@ def rescan_model(
             )
         scan.status = "completed_with_errors" if scan.issues_count else "completed"
         rebuild_succeeded = True
+    except ScanCancelled:
+        raise
     except Exception as error:
         session.rollback()
         scan = session.get(ScanRun, scan.id)
