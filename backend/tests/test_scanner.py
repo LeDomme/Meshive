@@ -161,6 +161,42 @@ def test_force_rebuild_restores_cache_when_regeneration_fails(tmp_path, monkeypa
         assert cache_path.read_bytes() == b"old"
         assert not list(cache_path.parent.glob("*.rebuild-*"))
 
+def test_model_rescan_processes_only_the_target_model(tmp_path, monkeypatch) -> None:
+    for name in ("Cammy", "Chun-Li"):
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / f"{name}.7z").write_bytes(b"archive")
+    engine = create_engine(f"sqlite:///{tmp_path / "targeted-rescan.db"}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Targeted", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        target = LibraryModel(
+            library_source_id=source.id, relative_path="Cammy", name="Cammy", status="available"
+        )
+        other = LibraryModel(
+            library_source_id=source.id, relative_path="Chun-Li", name="Chun-Li", status="available"
+        )
+        session.add_all([target, other])
+        session.commit()
+        processed: list[str] = []
+        monkeypatch.setattr(scanner, "_scan_model", lambda *_args: processed.append(_args[5]))
+
+        scan = scanner.rescan_model(session, target.id)
+
+        assert processed == ["Cammy"]
+        assert scan.target_model_id == target.id
+        assert other.status == "available"
+
+    engine.dispose()
+
+
 def test_incremental_scan_skips_known_models_and_processes_new_ones(tmp_path, monkeypatch) -> None:
     for name in ("Known", "New"):
         directory = tmp_path / name
@@ -193,6 +229,61 @@ def test_incremental_scan_skips_known_models_and_processes_new_ones(tmp_path, mo
         assert processed == ["New"]
         assert scan.models_skipped == 1
         assert session.get(LibraryModel, known.id).status == "available"
+
+    engine.dispose()
+
+
+def test_archive_image_reconciliation_backfills_only_missing_cache_entries(
+    tmp_path, monkeypatch
+) -> None:
+    archive_path = tmp_path / "Cammy.7z"
+    archive_path.write_bytes(b"archive")
+    extracted = tmp_path / "missing.jpg"
+    extracted.write_bytes(b"image")
+    engine = create_engine(f"sqlite:///{tmp_path / "cache-backfill.db"}")
+    Base.metadata.create_all(engine)
+    settings = Settings(allowed_library_root=tmp_path, cache_dir=tmp_path / "cache")
+    monkeypatch.setattr(scanner, "get_settings", lambda: settings)
+    extracted_paths: list[list[str]] = []
+
+    def fake_batches(_archive_path, candidates, **_kwargs):
+        selected = list(candidates)
+        extracted_paths.append([entry.path for entry in selected])
+        yield selected, {"missing.jpg": extracted}, None
+
+    monkeypatch.setattr(scanner, "iter_extracted_archive_image_batches", fake_batches)
+    monkeypatch.setattr(scanner, "validate_extracted_archive_image", lambda *_args, **_kwargs: ValidatedArchiveImage(extracted, "jpg", 10, 10, 5))
+    monkeypatch.setattr(scanner, "generate_cached_webp", lambda *_args, **_kwargs: "archive-images/missing.webp")
+    monkeypatch.setattr(scanner, "generate_thumbnail", lambda *_args, **_kwargs: "thumbnails/missing.webp")
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(name="Cache backfill", root_path=tmp_path.as_posix(), directory_pattern="{model}", archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True)
+        session.add(source)
+        session.flush()
+        model = LibraryModel(library_source_id=source.id, relative_path="Cammy", name="Cammy", status="available", archive_image_policy_key=scanner._archive_image_selection_policy_key(settings))
+        session.add(model)
+        session.flush()
+        stat = archive_path.stat()
+        archive = Archive(model_id=model.id, filename=archive_path.name, relative_path=archive_path.name, format="7z", size_bytes=stat.st_size, modified_ns=stat.st_mtime_ns, status="ready")
+        session.add(archive)
+        session.flush()
+        cached_entry = ArchiveEntry(archive_id=archive.id, path="cover.jpg", name="cover.jpg", is_directory=False, size_bytes=123, compressed_size_bytes=100, crc="CACHED")
+        missing_entry = ArchiveEntry(archive_id=archive.id, path="missing.jpg", name="missing.jpg", is_directory=False, size_bytes=5, compressed_size_bytes=4, crc="MISSING")
+        session.add_all([cached_entry, missing_entry])
+        session.flush()
+        for key in ("archive-images/cover.webp", "thumbnails/cover.webp"):
+            target = settings.cache_dir / key
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"cached")
+        session.add(ModelImage(model_id=model.id, relative_path=f"archive/{archive.id}/cover.jpg", filename="cover.jpg", format="jpg", size_bytes=123, modified_ns=archive.modified_ns, storage_kind="archive", archive_id=archive.id, archive_entry_path=cached_entry.path, archive_entry_fingerprint=scanner._archive_entry_fingerprint(cached_entry), cache_key="archive-images/cover.webp", thumbnail_key="thumbnails/cover.webp", thumbnail_status="ready"))
+        session.commit()
+        scan = make_scan(session, source.id)
+
+        scanner._sync_archive_images(session, scan, model, tmp_path, [archive_path])
+
+        assert extracted_paths == [["missing.jpg"]]
+        assert scan.archive_images_reused == 1
+        assert scan.archive_images_generated == 1
 
     engine.dispose()
 
