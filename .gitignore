@@ -61,4 +61,19 @@ cache/*
 *.orig
 
 # Local release planning (never commit)
+LOCAL_ROADMAP.md
 LOCAL_ROADMAP_FOR_1.4.0.md
+/backups/
+/backup/
+/backend/data/
+/backend/cache/
+/backend/backups/
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+
+# Never stage source-library or locally created archive files
+*.7z
+*.rar
+*.zip
