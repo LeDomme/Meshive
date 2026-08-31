@@ -197,6 +197,42 @@ def test_incremental_scan_skips_known_models_and_processes_new_ones(tmp_path, mo
     engine.dispose()
 
 
+def test_reconcile_images_skips_models_without_ready_archives(tmp_path, monkeypatch) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / "reconcile-skip.db"}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+    calls: list[str] = []
+    monkeypatch.setattr(scanner, "_sync_archives", lambda *_args: calls.append("archives"))
+    monkeypatch.setattr(
+        scanner, "_sync_archive_images", lambda *_args: calls.append("images")
+    )
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Reconcile", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        session.add(
+            LibraryModel(
+                library_source_id=source.id, relative_path="Missing", name="Missing", status="available"
+            )
+        )
+        session.commit()
+        scan = make_scan(session, source.id)
+        scan.mode = "reconcile_images"
+        session.commit()
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert scan.models_total == 1
+        assert scan.models_found == 0
+        assert calls == []
+
+    engine.dispose()
+
+
 def test_full_scan_reconciles_known_models(tmp_path, monkeypatch) -> None:
     directory = tmp_path / "Cammy"
     directory.mkdir()
