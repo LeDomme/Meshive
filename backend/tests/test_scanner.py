@@ -233,6 +233,91 @@ def test_incremental_scan_skips_known_models_and_processes_new_ones(tmp_path, mo
     engine.dispose()
 
 
+def test_archive_image_selection_is_deterministic_across_archives(tmp_path, monkeypatch) -> None:
+    archive_a_path = tmp_path / "A.7z"
+    archive_z_path = tmp_path / "Z.7z"
+    archive_a_path.write_bytes(b"archive-a")
+    archive_z_path.write_bytes(b"archive-z")
+    extracted = tmp_path / "cover.jpg"
+    extracted.write_bytes(b"image")
+    engine = create_engine(f"sqlite:///{tmp_path / 'multi-archive.db'}")
+    Base.metadata.create_all(engine)
+    settings = Settings(
+        allowed_library_root=tmp_path,
+        cache_dir=tmp_path / "cache",
+        archive_image_max_candidates=1,
+    )
+    monkeypatch.setattr(scanner, "get_settings", lambda: settings)
+    extracted_from: list[str] = []
+
+    def fake_batches(archive_path, candidates, **_kwargs):
+        extracted_from.append(Path(archive_path).name)
+        selected = list(candidates)
+        yield selected, {entry.path: extracted for entry in selected}, None
+
+    monkeypatch.setattr(scanner, "iter_extracted_archive_image_batches", fake_batches)
+    monkeypatch.setattr(
+        scanner,
+        "validate_extracted_archive_image",
+        lambda *_args, **_kwargs: ValidatedArchiveImage(extracted, "jpg", 10, 10, 5),
+    )
+    monkeypatch.setattr(scanner, "generate_cached_webp", lambda *_args, **_kwargs: "archive-images/test.webp")
+    monkeypatch.setattr(scanner, "generate_thumbnail", lambda *_args, **_kwargs: "thumbnails/test.webp")
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Multi archive",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        model = LibraryModel(library_source_id=source.id, relative_path="Cammy", name="Cammy")
+        session.add(model)
+        session.flush()
+        archives = []
+        for archive_path in (archive_z_path, archive_a_path):
+            stat = archive_path.stat()
+            archive = Archive(
+                model_id=model.id,
+                filename=archive_path.name,
+                relative_path=archive_path.name,
+                format="7z",
+                size_bytes=stat.st_size,
+                modified_ns=stat.st_mtime_ns,
+                status="ready",
+            )
+            session.add(archive)
+            session.flush()
+            session.add(
+                ArchiveEntry(
+                    archive_id=archive.id,
+                    path="cover.jpg",
+                    name="cover.jpg",
+                    size_bytes=5,
+                    compressed_size_bytes=4,
+                    crc=archive.filename,
+                )
+            )
+            archives.append(archive)
+        session.commit()
+
+        scan = make_scan(session, source.id)
+        primary = scanner._sync_archive_images(
+            session, scan, model, tmp_path, [archive_z_path, archive_a_path]
+        )
+
+        assert extracted_from == ["A.7z", "Z.7z"]
+        assert primary is not None
+        assert primary.archive_id == archives[1].id
+        assert session.scalars(select(ModelImage)).all() == [primary]
+    engine.dispose()
+
+
 def test_archive_image_reconciliation_backfills_only_missing_cache_entries(
     tmp_path, monkeypatch
 ) -> None:

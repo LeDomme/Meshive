@@ -706,6 +706,30 @@ def test_filter_options_follow_other_selected_facets() -> None:
         ]
 
 
+def test_source_scan_preserves_requested_mode_in_responses(tmp_path, monkeypatch) -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(
+                name="Mode source", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+                archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+            )
+            session.add(source)
+            session.commit()
+            source_id = source.id
+        monkeypatch.setattr("meshive.services.scanner.dispatch_pending_scans", lambda: None)
+
+        response = client.post(
+            f"/api/admin/library-sources/{source_id}/scan",
+            json={"mode": "reconcile_images"},
+        )
+
+        assert response.status_code == 202
+        assert response.json()["mode"] == "reconcile_images"
+        scans = client.get(f"/api/admin/library-sources/{source_id}/scans")
+        assert scans.status_code == 200
+        assert scans.json()[0]["mode"] == "reconcile_images"
+
+
 def test_model_rescan_queues_a_targeted_scan(tmp_path, monkeypatch) -> None:
     with catalog_client() as (client, sessions):
         with sessions() as session:
