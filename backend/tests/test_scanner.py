@@ -13,6 +13,7 @@ from meshive.models.catalog import (
     ArchiveEntry,
     LibraryModel,
     ModelImage,
+    ScanIssue,
     ScanRun,
 )
 from meshive.models.library_source import LibrarySource
@@ -296,6 +297,104 @@ def test_scans_model_archive_image_and_marks_missing(tmp_path, monkeypatch) -> N
 
         assert model.status == "missing"
         assert session.get(ScanRun, second_scan.id).models_missing == 1
+
+    engine.dispose()
+
+
+def test_sync_archive_images_reports_aggregated_limit_skips(tmp_path, monkeypatch) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'archive-image-skips.db'}")
+    Base.metadata.create_all(engine)
+    settings = Settings(
+        allowed_library_root=tmp_path,
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+        archive_image_max_candidates=1,
+        archive_image_max_entry_bytes=2 * 1024 * 1024,
+        archive_image_max_compressed_bytes=2 * 1024 * 1024,
+        archive_image_max_total_bytes=1024 * 1024,
+    )
+    monkeypatch.setattr(scanner, "get_settings", lambda: settings)
+
+    def failed_batches(_archive_path, candidates, **_kwargs):
+        yield list(candidates), {}, ArchiveImageError("test extraction failure")
+
+    monkeypatch.setattr(scanner, "iter_extracted_archive_image_batches", failed_batches)
+
+    archive_path = tmp_path / "model.7z"
+    archive_path.write_bytes(b"archive")
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Archive image skips",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        model = LibraryModel(
+            library_source_id=source.id,
+            relative_path="Model",
+            name="Model",
+            status="available",
+        )
+        session.add(model)
+        session.flush()
+        archive = Archive(
+            model_id=model.id,
+            filename="model.7z",
+            relative_path="model.7z",
+            format="7z",
+            size_bytes=7,
+            modified_ns=1,
+            status="ready",
+        )
+        session.add(archive)
+        session.flush()
+        session.add_all(
+            [
+                ArchiveEntry(
+                    archive_id=archive.id, path="cover.jpg", name="cover.jpg",
+                    size_bytes=1024 * 1024, compressed_size_bytes=512 * 1024,
+                ),
+                ArchiveEntry(
+                    archive_id=archive.id, path="preview.jpg", name="preview.jpg",
+                    size_bytes=1024 * 1024, compressed_size_bytes=512 * 1024,
+                ),
+                ArchiveEntry(
+                    archive_id=archive.id, path="oversized.jpg", name="oversized.jpg",
+                    size_bytes=3 * 1024 * 1024, compressed_size_bytes=512 * 1024,
+                ),
+                ArchiveEntry(
+                    archive_id=archive.id, path="packed.jpg", name="packed.jpg",
+                    size_bytes=1024 * 1024, compressed_size_bytes=3 * 1024 * 1024,
+                ),
+                ArchiveEntry(
+                    archive_id=archive.id, path="Textures/body.jpg", name="body.jpg",
+                    size_bytes=3 * 1024 * 1024, compressed_size_bytes=3 * 1024 * 1024,
+                ),
+            ]
+        )
+        session.commit()
+        scan = make_scan(session, source.id)
+
+        scanner._sync_archive_images(session, scan, model, tmp_path, [archive_path])
+
+        issue = session.scalar(
+            select(ScanIssue).where(
+                ScanIssue.scan_run_id == scan.id,
+                ScanIssue.code == "archive_image_candidates_skipped",
+            )
+        )
+        assert issue is not None
+        assert issue.severity == "warning"
+        assert issue.message == (
+            "3 archive image(s) were not selected: 1 compressed size limit, "
+            "1 per-entry size limit, 1 total extraction budget."
+        )
+        assert scan.issues_count == 2
 
     engine.dispose()
 

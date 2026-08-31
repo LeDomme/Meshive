@@ -24,6 +24,7 @@ from meshive.models.catalog import (
 from meshive.models.library_source import LibrarySource
 from meshive.services.archive_images import (
     ArchiveImageError,
+    archive_image_limit_skip_counts,
     archive_image_candidate_sort_key,
     iter_extracted_archive_image_batches,
     select_archive_image_candidates,
@@ -965,6 +966,7 @@ def _sync_archive_images(
         path.relative_to(root).as_posix(): path for path in archive_paths
     }
     selected: list[tuple[Archive, ArchiveEntry]] = []
+    selection_skips: dict[str, int] = {}
     selected_bytes = 0
     # Allow later candidates to replace files that fail validation or conversion,
     # while retaining a strict, bounded amount of archive work per model.
@@ -994,6 +996,14 @@ def _sync_archive_images(
             for entry in entries
         ]
         entry_by_path = {entry.path: entry for entry in entries}
+        for reason, count in archive_image_limit_skip_counts(
+            listed_entries,
+            max_candidates=max_attempts,
+            max_entry_bytes=settings.archive_image_max_entry_bytes,
+            max_compressed_bytes=settings.archive_image_max_compressed_bytes,
+            max_total_bytes=settings.archive_image_max_total_bytes,
+        ).items():
+            selection_skips[reason] = selection_skips.get(reason, 0) + count
         candidates = select_archive_image_candidates(
             listed_entries,
             max_candidates=max_attempts,
@@ -1013,12 +1023,19 @@ def _sync_archive_images(
             item[0].relative_path.casefold(),
         )
     )
-    for archive, entry, _candidate in candidate_pool:
+    for index, (archive, entry, _candidate) in enumerate(candidate_pool):
         if len(selected) >= max_attempts:
+            remaining = len(candidate_pool) - index
+            selection_skips["candidate limit"] = (
+                selection_skips.get("candidate limit", 0) + remaining
+            )
             break
         if entry.size_bytes is None:
             continue
         if selected_bytes + entry.size_bytes > settings.archive_image_max_total_bytes:
+            selection_skips["total extraction budget"] = (
+                selection_skips.get("total extraction budget", 0) + 1
+            )
             continue
         selected.append((archive, entry))
         selected_bytes += entry.size_bytes
@@ -1213,13 +1230,31 @@ def _sync_archive_images(
         )
     ]
     kept_images = successful_images[: settings.archive_image_max_candidates]
-    for image in successful_images[settings.archive_image_max_candidates :]:
+    skipped_successes = successful_images[settings.archive_image_max_candidates :]
+    if skipped_successes:
+        selection_skips["candidate limit"] = (
+            selection_skips.get("candidate limit", 0) + len(skipped_successes)
+        )
+    for image in skipped_successes:
         existing.pop(image.relative_path, None)
         _discard_archive_image(session, image)
         scan.archive_images_removed += 1
     for image in kept_images:
         image.is_primary = image is kept_images[0]
     primary = kept_images[0] if kept_images else None
+    if selection_skips:
+        detail = ", ".join(
+            f"{count} {reason}" for reason, count in sorted(selection_skips.items())
+        )
+        _add_issue(
+            session,
+            scan,
+            model.relative_path,
+            "warning",
+            "archive_image_candidates_skipped",
+            f"{sum(selection_skips.values())} archive image(s) were not selected: {detail}.",
+            model.id,
+        )
     model.archive_image_policy_key = policy_key
     return primary
 

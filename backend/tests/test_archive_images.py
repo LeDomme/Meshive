@@ -8,6 +8,7 @@ from meshive.archives.sevenzip_cli import ListedArchiveEntry
 from meshive.services import archive_images
 from meshive.services.archive_images import (
     ArchiveImageError,
+    archive_image_limit_skip_counts,
     iter_extracted_archive_image_batches,
     open_extracted_archive_images,
     open_validated_archive_image,
@@ -108,6 +109,30 @@ def test_enforces_entry_compressed_total_and_candidate_limits() -> None:
     )
 
     assert [entry.path for entry in selected] == ["cover.jpg"]
+
+
+def test_counts_only_gallery_candidates_skipped_by_selection_limits() -> None:
+    skipped = archive_image_limit_skip_counts(
+        [
+            _entry("cover.jpg", size_bytes=8, compressed_size_bytes=4),
+            _entry("preview.png", size_bytes=7, compressed_size_bytes=4),
+            _entry("render.webp", size_bytes=6, compressed_size_bytes=6),
+            _entry("oversized.jpg", size_bytes=11, compressed_size_bytes=4),
+            _entry("Textures/body.png", size_bytes=100, compressed_size_bytes=100),
+            _entry(".hidden/cover.jpg", size_bytes=100, compressed_size_bytes=100),
+            _entry("unknown.jpg", size_bytes=None),
+        ],
+        max_candidates=1,
+        max_entry_bytes=10,
+        max_compressed_bytes=5,
+        max_total_bytes=10,
+    )
+
+    assert skipped == {
+        "candidate limit": 1,
+        "compressed size limit": 1,
+        "per-entry size limit": 1,
+    }
 
 
 def test_rejects_non_positive_limits() -> None:

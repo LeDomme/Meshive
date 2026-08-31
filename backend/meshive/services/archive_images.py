@@ -110,6 +110,54 @@ def select_archive_image_candidates(
     return selected
 
 
+def archive_image_limit_skip_counts(
+    entries: Iterable[ListedArchiveEntry],
+    *,
+    max_candidates: int,
+    max_entry_bytes: int,
+    max_compressed_bytes: int,
+    max_total_bytes: int,
+) -> dict[str, int]:
+    """Count gallery candidates rejected by configured extraction limits.
+
+    Paths which are not gallery candidates are deliberately ignored. Missing
+    size metadata is also silent: it makes an entry ineligible rather than
+    representing a configured limit being reached.
+    """
+    if min(max_entry_bytes, max_compressed_bytes) <= 0:
+        raise ValueError("Archive image selection limits must be positive")
+    if max_candidates <= 0 or max_total_bytes <= 0:
+        raise ValueError("Archive image selection limits must be positive")
+
+    skipped: dict[str, int] = {}
+    eligible: list[ListedArchiveEntry] = []
+    for entry in entries:
+        if not _is_eligible_image(
+            entry,
+            max_entry_bytes=float("inf"),
+            max_compressed_bytes=float("inf"),
+        ):
+            continue
+        assert entry.size_bytes is not None
+        if entry.size_bytes > max_entry_bytes:
+            skipped["per-entry size limit"] = skipped.get("per-entry size limit", 0) + 1
+        elif entry.compressed_size_bytes is not None and entry.compressed_size_bytes > max_compressed_bytes:
+            skipped["compressed size limit"] = skipped.get("compressed size limit", 0) + 1
+        else:
+            eligible.append(entry)
+    eligible.sort(key=archive_image_candidate_sort_key)
+    total = selected = 0
+    for entry in eligible:
+        if selected >= max_candidates:
+            skipped["candidate limit"] = skipped.get("candidate limit", 0) + 1
+        elif total + entry.size_bytes > max_total_bytes:
+            skipped["total extraction budget"] = skipped.get("total extraction budget", 0) + 1
+        else:
+            selected += 1
+            total += entry.size_bytes
+    return skipped
+
+
 @contextmanager
 def open_validated_archive_image(
     archive_path: Path,
