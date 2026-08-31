@@ -197,6 +197,47 @@ def test_model_rescan_processes_only_the_target_model(tmp_path, monkeypatch) -> 
     engine.dispose()
 
 
+def test_cancelled_targeted_rescan_does_not_process_the_model(tmp_path, monkeypatch) -> None:
+    directory = tmp_path / "Cammy"
+    directory.mkdir()
+    engine = create_engine(f"sqlite:///{tmp_path / 'cancelled-targeted-rescan.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+    monkeypatch.setattr(scanner, "dispatch_pending_scans", lambda: None)
+    processed: list[str] = []
+    monkeypatch.setattr(scanner, "_scan_model", lambda *_args: processed.append(_args[5]))
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Targeted",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        model = LibraryModel(
+            library_source_id=source.id,
+            relative_path="Cammy",
+            name="Cammy",
+            status="available",
+        )
+        session.add(model)
+        session.commit()
+        scan = scanner.queue_model_rescan(session, model.id)
+        scan.cancel_requested = True
+        session.commit()
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert processed == []
+        assert session.get(ScanRun, scan.id).status == "cancelled"
+    engine.dispose()
+
+
 def test_incremental_scan_skips_known_models_and_processes_new_ones(tmp_path, monkeypatch) -> None:
     for name in ("Known", "New"):
         directory = tmp_path / name
