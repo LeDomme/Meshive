@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -36,6 +37,7 @@ def test_latest_daily_and_weekly_occurrences_can_catch_up() -> None:
 
 
 def test_scheduler_logs_evaluation_failure_and_keeps_looping(monkeypatch, caplog) -> None:
+    caplog.set_level(logging.ERROR, logger="meshive.services.scan_scheduler")
     waits = iter([False, True])
     monkeypatch.setattr(scan_scheduler._stop, "wait", lambda _seconds: next(waits))
     monkeypatch.setattr(scan_scheduler, "_start_due_scans", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
@@ -47,6 +49,7 @@ def test_scheduler_logs_evaluation_failure_and_keeps_looping(monkeypatch, caplog
 
 
 def test_invalid_timezone_warning_is_deduplicated(caplog) -> None:
+    caplog.set_level(logging.WARNING, logger="meshive.services.scan_scheduler")
     scan_scheduler._reported_invalid_timezones.clear()
     invalid_source = SimpleNamespace(
         id=42,
