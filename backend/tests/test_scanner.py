@@ -274,6 +274,58 @@ def test_incremental_scan_skips_known_models_and_processes_new_ones(tmp_path, mo
     engine.dispose()
 
 
+def test_incremental_scan_processes_only_new_models_at_scale(tmp_path, monkeypatch) -> None:
+    known_names = [f"Known-{index:03d}" for index in range(100)]
+    new_names = ["New-001", "New-002"]
+    for name in [*known_names, *new_names]:
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / f"{name}.7z").write_bytes(b"archive")
+    engine = create_engine(f"sqlite:///{tmp_path / 'incremental-scale.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+    processed: list[str] = []
+
+    def record_new_model(_session, scan, _source, _root, _directory, normalized_path, _values):
+        processed.append(normalized_path)
+        scan.models_found += 1
+
+    monkeypatch.setattr(scanner, "_scan_model", record_new_model)
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Incremental scale",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        session.add_all(
+            LibraryModel(
+                library_source_id=source.id,
+                relative_path=name,
+                name=name,
+                status="available",
+            )
+            for name in known_names
+        )
+        session.commit()
+        scan = make_scan(session, source.id)
+        scan.mode = "incremental"
+        session.commit()
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert processed == new_names
+        assert scan.models_found == 102
+        assert scan.models_skipped == 100
+    engine.dispose()
+
+
 def test_archive_image_selection_is_deterministic_across_archives(tmp_path, monkeypatch) -> None:
     archive_a_path = tmp_path / "A.7z"
     archive_z_path = tmp_path / "Z.7z"
