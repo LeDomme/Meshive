@@ -1119,7 +1119,12 @@ def _sync_archive_images(
             ):
                 if batch_error is not None:
                     failed_images += len(batch_entries)
-                    error_msg = str(batch_error)
+                    error_msg = _archive_image_batch_failure_message(
+                        archive,
+                        batch_entries,
+                        batch_error,
+                        timeout_seconds=settings.archive_image_timeout_seconds,
+                    )
                     failure_messages.add(error_msg)
                     # Log the error for better debugging
                     logger = logging.getLogger(__name__)
@@ -1145,6 +1150,7 @@ def _sync_archive_images(
                         )
                         session.add(image)
                         existing[relative_path] = image
+                    validated = None
                     try:
                         validated = validate_extracted_archive_image(
                             extracted_paths[entry.path],
@@ -1197,7 +1203,9 @@ def _sync_archive_images(
                             model.relative_path,
                             "warning",
                             "archive_image_failed",
-                            str(error),
+                            _archive_image_failure_message(
+                                archive, entry, error, validated=validated
+                            ),
                             model.id,
                         )
             if failed_images:
@@ -1257,6 +1265,63 @@ def _sync_archive_images(
         )
     model.archive_image_policy_key = policy_key
     return primary
+
+def _archive_image_entry_context(
+    entry: ArchiveEntry,
+    *,
+    validated=None,
+) -> str:
+    details = [f"entry '{entry.path}'", f"listed size {entry.size_bytes} bytes"]
+    if entry.compressed_size_bytes is not None:
+        details.append(f"compressed size {entry.compressed_size_bytes} bytes")
+    if validated is not None:
+        details.extend(
+            [
+                f"detected format {validated.format.upper()}",
+                f"dimensions {validated.width}x{validated.height}",
+                f"extracted size {validated.size_bytes} bytes",
+            ]
+        )
+    return ", ".join(details)
+
+
+def _archive_image_batch_failure_message(
+    archive: Archive,
+    entries: list[ListedArchiveEntry],
+    error: ArchiveImageError,
+    *,
+    timeout_seconds: int,
+) -> str:
+    entry_details = "; ".join(
+        _archive_image_entry_context(
+            ArchiveEntry(
+                archive_id=archive.id,
+                path=entry.path,
+                name=entry.name,
+                size_bytes=entry.size_bytes,
+                compressed_size_bytes=entry.compressed_size_bytes,
+            )
+        )
+        for entry in entries
+    )
+    return (
+        f"Archive '{archive.filename}' extraction failed for {entry_details}; "
+        f"timeout {timeout_seconds} seconds: {error}"
+    )
+
+
+def _archive_image_failure_message(
+    archive: Archive,
+    entry: ArchiveEntry,
+    error: Exception,
+    *,
+    validated,
+) -> str:
+    return (
+        f"Archive '{archive.filename}' image processing failed for "
+        f"{_archive_image_entry_context(entry, validated=validated)}: {error}"
+    )
+
 
 def _discard_archive_image(session: Session, image: ModelImage) -> None:
     if image.id is None:
