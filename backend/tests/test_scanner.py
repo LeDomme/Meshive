@@ -197,6 +197,147 @@ def test_incremental_scan_skips_known_models_and_processes_new_ones(tmp_path, mo
     engine.dispose()
 
 
+def test_archive_image_reconciliation_reuses_current_cache_without_extraction(
+    tmp_path, monkeypatch
+) -> None:
+    archive_path = tmp_path / "Cammy.7z"
+    archive_path.write_bytes(b"archive")
+    engine = create_engine(f"sqlite:///{tmp_path / "cache-reuse.db"}")
+    Base.metadata.create_all(engine)
+    settings = Settings(allowed_library_root=tmp_path, cache_dir=tmp_path / "cache")
+    monkeypatch.setattr(scanner, "get_settings", lambda: settings)
+
+    def extraction_must_not_run(*_args, **_kwargs):
+        raise AssertionError("current archive image cache was extracted again")
+
+    monkeypatch.setattr(
+        scanner, "iter_extracted_archive_image_batches", extraction_must_not_run
+    )
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Cache reuse", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        model = LibraryModel(
+            library_source_id=source.id, relative_path="Cammy", name="Cammy",
+            status="available", archive_image_policy_key=scanner._archive_image_selection_policy_key(settings),
+        )
+        session.add(model)
+        session.flush()
+        stat = archive_path.stat()
+        archive = Archive(
+            model_id=model.id, filename=archive_path.name, relative_path=archive_path.name,
+            format="7z", size_bytes=stat.st_size, modified_ns=stat.st_mtime_ns, status="ready",
+        )
+        session.add(archive)
+        session.flush()
+        entry = ArchiveEntry(
+            archive_id=archive.id, path="cover.jpg", name="cover.jpg",
+            is_directory=False, size_bytes=123, compressed_size_bytes=100, crc="CACHE",
+        )
+        session.add(entry)
+        session.flush()
+        cache_key = "archive-images/cover.webp"
+        thumbnail_key = "thumbnails/cover.webp"
+        for key in (cache_key, thumbnail_key):
+            target = settings.cache_dir / key
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"cached")
+        image = ModelImage(
+            model_id=model.id, relative_path=f"archive/{archive.id}/cover.jpg",
+            filename="cover.jpg", format="jpg", size_bytes=123, modified_ns=archive.modified_ns,
+            storage_kind="archive", archive_id=archive.id, archive_entry_path=entry.path,
+            archive_entry_fingerprint=scanner._archive_entry_fingerprint(entry),
+            cache_key=cache_key, thumbnail_key=thumbnail_key, thumbnail_status="ready",
+        )
+        session.add(image)
+        session.commit()
+        scan = make_scan(session, source.id)
+
+        primary = scanner._sync_archive_images(session, scan, model, tmp_path, [archive_path])
+
+        assert primary is image
+        assert scan.archive_images_reused == 1
+        assert scan.archive_images_generated == 0
+
+    engine.dispose()
+
+
+def test_reconcile_images_skips_models_without_ready_archives(tmp_path, monkeypatch) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / "reconcile-skip.db"}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+    calls: list[str] = []
+    monkeypatch.setattr(scanner, "_sync_archives", lambda *_args: calls.append("archives"))
+    monkeypatch.setattr(
+        scanner, "_sync_archive_images", lambda *_args: calls.append("images")
+    )
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Reconcile", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        session.add(
+            LibraryModel(
+                library_source_id=source.id, relative_path="Missing", name="Missing", status="available"
+            )
+        )
+        session.commit()
+        scan = make_scan(session, source.id)
+        scan.mode = "reconcile_images"
+        session.commit()
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert scan.models_total == 1
+        assert scan.models_found == 0
+        assert calls == []
+
+    engine.dispose()
+
+
+def test_full_scan_reconciles_known_models(tmp_path, monkeypatch) -> None:
+    directory = tmp_path / "Cammy"
+    directory.mkdir()
+    (directory / "Cammy.7z").write_bytes(b"archive")
+    engine = create_engine(f"sqlite:///{tmp_path / "full-scan.db"}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+    reconciled: list[str] = []
+    monkeypatch.setattr(scanner, "_sync_archives", lambda *_args: True)
+    monkeypatch.setattr(
+        scanner, "_sync_archive_images", lambda _session, _scan, model, *_args: reconciled.append(model.name)
+    )
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Full scan", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        session.add(
+            LibraryModel(
+                library_source_id=source.id, relative_path="Cammy", name="Cammy", status="available"
+            )
+        )
+        session.commit()
+        scan = make_scan(session, source.id)
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert reconciled == ["Cammy"]
+        assert scan.models_updated == 1
+
+    engine.dispose()
+
+
 def test_missing_images_scan_reconciles_known_models(tmp_path, monkeypatch) -> None:
     directory = tmp_path / "Cammy"
     directory.mkdir()
