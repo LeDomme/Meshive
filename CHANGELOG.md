@@ -5,6 +5,14 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-01
+### Added
+- Single-pass source discovery, explicit live scan phases, and Smart Scan for unchanged healthy models.
+- Lightweight, admin-only diagnostics without recursive storage traversal.
+- Playwright frontend regression-test foundation and E2E documentation.
+### Changed
+- Reduced redundant scan-progress writes and fixed pending scan cancellation timestamps.
+
 ## [1.4.1] - 2026-08-31
 ### Fixed
 - Scheduled scan evaluation failures are now logged without stopping the scheduler.
