@@ -1,3 +1,4 @@
+import os
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -20,6 +21,154 @@ from meshive.models.library_source import LibrarySource
 from meshive.models.tag import AutomaticTagRule, ModelTag, Tag
 from meshive.services import scanner
 from meshive.services.archive_images import ArchiveImageError, ValidatedArchiveImage
+
+
+def test_directories_at_depths_uses_one_bounded_walk_and_keeps_requested_depths(
+    tmp_path, monkeypatch
+) -> None:
+    current = tmp_path
+    for depth in range(1, 6):
+        current = current / f"level-{depth}"
+        current.mkdir()
+    (tmp_path / "level-1" / "linked").symlink_to(tmp_path / "level-1", target_is_directory=True)
+
+    original_walk = os.walk
+    walk_calls = []
+
+    def counted_walk(*args, **kwargs):
+        walk_calls.append((args, kwargs))
+        yield from original_walk(*args, **kwargs)
+
+    monkeypatch.setattr(scanner.os, "walk", counted_walk)
+
+    directories = list(scanner._directories_at_depths(tmp_path, {2, 4}))
+
+    assert len(walk_calls) == 1
+    assert walk_calls[0][1]["followlinks"] is False
+    assert [directory.relative_to(tmp_path).as_posix() for directory in directories] == [
+        "level-1/level-2",
+        "level-1/level-2/level-3/level-4",
+    ]
+
+
+def test_directories_at_depths_handles_empty_and_root_depth(tmp_path) -> None:
+    (tmp_path / "child").mkdir()
+
+    assert list(scanner._directories_at_depths(tmp_path, set())) == []
+    assert list(scanner._directories_at_depths(tmp_path, {0})) == [tmp_path]
+
+
+def test_source_scan_transitions_from_discovering_to_scanning_and_clears_phase(
+    tmp_path, monkeypatch
+) -> None:
+    (tmp_path / "Model").mkdir()
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Pictures",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        scan = make_scan(session, source.id)
+        phases = []
+
+        def directories(_root, _depths):
+            phases.append(scan.current_phase)
+            yield tmp_path / "Model"
+
+        monkeypatch.setattr(scanner, "_directories_at_depths", directories)
+        monkeypatch.setattr(
+            scanner,
+            "_is_model_candidate",
+            lambda _directory, _source: phases.append(scan.current_phase) or False,
+        )
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert phases == ["discovering", "scanning"]
+        assert scan.status == "completed"
+        assert scan.current_phase is None
+
+
+def test_reconcile_scan_uses_reconciling_phase_and_clears_it(tmp_path, monkeypatch) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Pictures",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        scan = make_scan(session, source.id)
+        scan.mode = "reconcile_images"
+        observed_phase = []
+        monkeypatch.setattr(
+            scanner,
+            "_reconcile_source_archive_images",
+            lambda _session, active_scan, *_args: observed_phase.append(active_scan.current_phase),
+        )
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert observed_phase == ["reconciling_images"]
+        assert scan.status == "completed"
+        assert scan.current_phase is None
+
+
+def test_failed_and_cancelled_scans_clear_current_phase(tmp_path, monkeypatch) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Pictures",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+
+        cancelled = make_scan(session, source.id)
+        monkeypatch.setattr(
+            scanner,
+            "_directories_at_depths",
+            lambda _root, _depths: (_ for _ in ()).throw(scanner.ScanCancelled()),
+        )
+        scanner._execute_scan(session, source.id, cancelled.id)
+        assert cancelled.status == "cancelled"
+        assert cancelled.current_phase is None
+
+        failed = make_scan(session, source.id)
+        monkeypatch.setattr(
+            scanner,
+            "_directories_at_depths",
+            lambda _root, _depths: (_ for _ in ()).throw(RuntimeError("discovery failed")),
+        )
+        scanner._execute_scan(session, source.id, failed.id)
+        assert failed.status == "failed"
+        assert failed.current_phase is None
 
 
 def make_source_tree(root: Path) -> Path:
