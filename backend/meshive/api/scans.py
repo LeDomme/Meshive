@@ -110,6 +110,7 @@ def scan_queue(session: Session = Depends(get_session)) -> list[ScanQueueItem]:
                 target_model_id=scan.target_model_id,
                 target_model_name=scan.target_model_name,
                 current_model_name=scan.current_model_name,
+                current_phase=scan.current_phase,
                 models_total=scan.models_total,
                 models_found=scan.models_found,
                 models_skipped=scan.models_skipped,

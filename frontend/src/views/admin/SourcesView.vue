@@ -74,6 +74,7 @@ interface ScanQueueItem {
   cancel_requested: boolean
   pause_requested: boolean
   current_model_name: string | null
+  current_phase: string | null
   models_total: number
   models_found: number
   models_skipped: number
@@ -198,6 +199,17 @@ function scanIsActive(sourceId: number) {
 }
 
 function scanActivityLabel(item: ScanQueueItem) {
+  if (item.status === "running" && item.current_phase === "discovering") {
+    return "Discovering model directories"
+  }
+  if (item.status === "running" && item.current_phase === "reconciling_images") {
+    return "Reconciling archive images"
+  }
+  if (item.status === "running" && item.current_phase === "targeted_rescan") {
+    return item.trigger === "model_image_rebuild"
+      ? "Rebuilding archive images"
+      : "Rescanning model"
+  }
   if (item.target_model_name) {
     return item.trigger === "model_image_rebuild"
       ? "Rebuilding archive images"
@@ -210,7 +222,8 @@ function scanProgressLabel(item: ScanQueueItem) {
   if (item.status !== "running" || !item.models_total) return ""
   const processed = Math.min(item.models_total, item.models_found + item.models_skipped)
   const current = item.current_model_name ? ` · ${item.current_model_name}` : ""
-  return ` · ${processed} / ${item.models_total}${current}`
+  const prefix = item.current_phase === "reconciling_images" ? " · " : " · "
+  return `${prefix}${processed} / ${item.models_total}${current}`
 }
 function elapsedScanTime(startedAt: string | null) {
   if (!startedAt) return "Waiting"

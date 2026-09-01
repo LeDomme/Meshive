@@ -134,6 +134,7 @@ class ScanRun(Base):
 
     target_model_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
     current_model_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    current_phase: Mapped[str | None] = mapped_column(String(32), nullable=True)
     models_total: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -184,6 +184,13 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
         return
     scan.status = "running"
     scan.started_at = utc_now()
+    scan.current_phase = (
+        "targeted_rescan"
+        if scan.target_model_id is not None
+        else "reconciling_images"
+        if scan.mode == "reconcile_images"
+        else "discovering"
+    )
     session.commit()
 
     try:
@@ -208,13 +215,12 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
             for pattern in source.directory_pattern.splitlines()
             if pattern.strip()
         }
-        model_directories = {
-            directory for depth in depths for directory in _directories_at_depth(root, depth)
-        }
+        model_directories = set(_directories_at_depths(root, depths))
         ordered_directories = sorted(
             model_directories, key=lambda path: path.as_posix().casefold()
         )
         scan.models_total = len(ordered_directories)
+        scan.current_phase = "scanning"
         session.commit()
 
         for model_directory in ordered_directories:
@@ -330,6 +336,7 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
         scan = session.get(ScanRun, scan_run_id)
         if scan is not None:
             scan.current_model_name = None
+            scan.current_phase = None
             scan.finished_at = utc_now()
         session.commit()
 
@@ -426,6 +433,7 @@ def rescan_model(
     scan.target_model_name = model.name
     scan.status = "running"
     scan.started_at = utc_now()
+    scan.current_phase = "targeted_rescan"
     session.commit()
     _raise_if_scan_cancelled(session, scan.id)
 
@@ -503,6 +511,7 @@ def rescan_model(
                     os.replace(backup_path, cache_path)
         scan = session.get(ScanRun, scan.id)
         if scan is not None:
+            scan.current_phase = None
             scan.finished_at = utc_now()
         session.commit()
     if rebuild_succeeded:
@@ -523,15 +532,20 @@ def _validated_source_root(source: LibrarySource) -> Path:
     return root
 
 
-def _directories_at_depth(root: Path, target_depth: int):
+def _directories_at_depths(root: Path, target_depths: set[int]):
+    """Yield directories at the requested depths using one bounded tree walk."""
+    target_depths = {depth for depth in target_depths if depth >= 0}
+    if not target_depths:
+        return
+
+    max_depth = max(target_depths)
     for current, directories, _files in os.walk(root, followlinks=False):
         current_path = Path(current)
         depth = len(current_path.relative_to(root).parts)
-        if depth == target_depth:
+        if depth >= max_depth:
             directories.clear()
+        if depth in target_depths:
             yield current_path
-        elif depth > target_depth:
-            directories.clear()
 
 
 def _scan_model(
