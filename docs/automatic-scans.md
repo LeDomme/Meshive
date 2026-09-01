@@ -30,6 +30,9 @@ storage.
 
 - **Incremental:** enumerates the source, processes new models, and marks known
   models as seen without reparsing them.
+- **Smart:** processes new or changed models and skips unchanged healthy
+  models. The first Smart Scan after upgrading establishes its metadata
+  baseline and can therefore inspect existing models once.
 - **Full:** parses every discovered model and reconciles archive images while
   reusing current cached derivatives.
 - **Full missing-images:** performs a full metadata scan and repairs models
