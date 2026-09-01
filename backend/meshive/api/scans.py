@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from meshive.auth.dependencies import require_admin
+from meshive.auth.sessions import utc_now
 from meshive.database import get_session
 from meshive.models.catalog import ScanIssue, ScanRun
 from meshive.models.library_source import LibrarySource

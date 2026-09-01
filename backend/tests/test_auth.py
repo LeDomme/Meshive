@@ -86,9 +86,28 @@ def test_admin_can_login_access_admin_route_and_logout() -> None:
 
         assert client.get("/api/auth/me").status_code == 200
         assert client.get("/api/admin/library-sources").status_code == 200
+        diagnostics = client.get("/api/admin/diagnostics")
+        assert diagnostics.status_code == 200
+        assert diagnostics.json()["application"]["version"]
 
         assert client.post("/api/auth/logout").status_code == 204
         assert client.get("/api/auth/me").status_code == 401
+
+
+def test_diagnostics_requires_an_admin() -> None:
+    with authenticated_test_client() as (client, sessions):
+        assert client.get("/api/admin/diagnostics").status_code == 401
+        add_user(
+            sessions,
+            username="Viewer",
+            password="correct horse battery staple",
+            role="user",
+        )
+        assert client.post(
+            "/api/auth/login",
+            json={"username": "viewer", "password": "correct horse battery staple"},
+        ).status_code == 200
+        assert client.get("/api/admin/diagnostics").status_code == 403
 
 
 def test_login_rejects_wrong_password() -> None:
