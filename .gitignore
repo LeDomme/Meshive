@@ -28,6 +28,8 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+frontend/test-results/
+frontend/playwright-report/
 .env
 .env.local
 .env.*.local
