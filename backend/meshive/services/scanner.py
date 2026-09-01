@@ -4,6 +4,7 @@ import logging
 import os
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from sqlalchemy import delete, inspect, or_, select, update
@@ -46,6 +47,21 @@ class ScanCancelled(RuntimeError):
 
 _active_sources: set[int] = set()
 _active_sources_lock = threading.Lock()
+
+MODEL_SCAN_POLICY_VERSION = 1
+
+
+@dataclass(frozen=True)
+class ModelDirectorySnapshot:
+    """Direct model-directory state reused by candidate and scan paths."""
+
+    files: list[Path]
+    safe_files: list[Path]
+    archives: list[Path]
+    images: list[Path]
+    fingerprint: str
+    has_supported_files: bool
+    has_unsafe_files: bool
 
 
 def claim_source(source_id: int) -> bool:
@@ -230,7 +246,7 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
             session.commit()
             relative_path = model_directory.relative_to(root).as_posix()
             try:
-                is_candidate = _is_model_candidate(model_directory, source)
+                snapshot = _snapshot_model_directory(model_directory, source, root)
             except OSError as error:
                 _add_issue(
                     session,
@@ -242,7 +258,7 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
                 )
                 session.commit()
                 continue
-            if not is_candidate:
+            if not snapshot.has_supported_files:
                 _delete_empty_placeholder(session, source.id, relative_path)
                 continue
             try:
@@ -281,6 +297,20 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
                     scan.models_skipped += 1
                     session.commit()
                     continue
+            if scan.mode == "smart":
+                known_model = session.scalar(
+                    select(LibraryModel).where(
+                        LibraryModel.library_source_id == source.id,
+                        LibraryModel.relative_path == normalized_path,
+                    )
+                )
+                if _can_skip_smart_scan(known_model, snapshot, source):
+                    known_model.last_seen_at = utc_now()
+                    known_model.last_seen_scan_id = scan.id
+                    scan.models_found += 1
+                    scan.models_skipped += 1
+                    session.commit()
+                    continue
             try:
                 _scan_model(
                     session,
@@ -290,6 +320,7 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
                     model_directory,
                     normalized_path,
                     values,
+                    snapshot=snapshot,
                 )
                 session.commit()
             except Exception as error:
@@ -548,6 +579,77 @@ def _directories_at_depths(root: Path, target_depths: set[int]):
             yield current_path
 
 
+def _supported_extensions(source: LibrarySource) -> tuple[set[str], set[str]]:
+    return (
+        {f".{item.casefold()}" for item in source.archive_formats},
+        {f".{item.casefold()}" for item in source.image_formats},
+    )
+
+
+def _snapshot_model_directory(
+    directory: Path, source: LibrarySource, root: Path
+) -> ModelDirectorySnapshot:
+    """Collect direct relevant files and a deterministic metadata fingerprint."""
+    files = [path for path in directory.iterdir() if path.is_file()]
+    safe_files = [path for path in files if _path_stays_inside(path, root)]
+    archive_extensions, image_extensions = _supported_extensions(source)
+    supported_extensions = archive_extensions | image_extensions
+    archives = sorted(
+        (path for path in safe_files if path.suffix.casefold() in archive_extensions),
+        key=lambda path: path.name.casefold(),
+    )
+    images = sorted(
+        (path for path in safe_files if path.suffix.casefold() in image_extensions),
+        key=lambda path: (_image_priority(path), path.name.casefold()),
+    )
+
+    digest = hashlib.sha256()
+    for path in sorted([*archives, *images], key=lambda item: item.name):
+        stat = path.stat()
+        digest.update(f"{path.name}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
+    return ModelDirectorySnapshot(
+        files=files,
+        safe_files=safe_files,
+        archives=archives,
+        images=images,
+        fingerprint=digest.hexdigest(),
+        has_supported_files=any(
+            path.suffix.casefold() in supported_extensions for path in files
+        ),
+        has_unsafe_files=len(safe_files) != len(files),
+    )
+
+
+def _model_scan_policy_key(source: LibrarySource) -> str:
+    """Return the versioned policy that determines persisted model state."""
+    settings = get_settings()
+    policy = {
+        "version": MODEL_SCAN_POLICY_VERSION,
+        "directory_pattern": source.directory_pattern,
+        "model_pattern": source.model_pattern,
+        "archive_formats": sorted(item.casefold() for item in source.archive_formats),
+        "image_formats": sorted(item.casefold() for item in source.image_formats),
+        "archive_listing_policy": ARCHIVE_LISTING_POLICY_KEY,
+        "archive_image_policy": _archive_image_selection_policy_key(settings),
+    }
+    encoded = json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _can_skip_smart_scan(
+    model: LibraryModel | None,
+    snapshot: ModelDirectorySnapshot,
+    source: LibrarySource,
+) -> bool:
+    return (
+        model is not None
+        and model.status == "available"
+        and not snapshot.has_unsafe_files
+        and model.scan_fingerprint == snapshot.fingerprint
+        and model.scan_policy_key == _model_scan_policy_key(source)
+    )
+
+
 def _scan_model(
     session: Session,
     scan: ScanRun,
@@ -556,6 +658,8 @@ def _scan_model(
     model_directory: Path,
     relative_path: str,
     values: dict[str, str],
+    *,
+    snapshot: ModelDirectorySnapshot | None = None,
 ) -> None:
     model = session.scalar(
         select(LibraryModel).where(
@@ -589,9 +693,8 @@ def _scan_model(
     model.status = "available"
     scan.models_found += 1
 
-    files = [path for path in model_directory.iterdir() if path.is_file()]
-    safe_files = [path for path in files if _path_stays_inside(path, root)]
-    if len(safe_files) != len(files):
+    snapshot = snapshot or _snapshot_model_directory(model_directory, source, root)
+    if snapshot.has_unsafe_files:
         _add_issue(
             session,
             scan,
@@ -602,16 +705,8 @@ def _scan_model(
             model.id,
         )
 
-    archive_extensions = {f".{item.casefold()}" for item in source.archive_formats}
-    image_extensions = {f".{item.casefold()}" for item in source.image_formats}
-    archives = sorted(
-        (path for path in safe_files if path.suffix.casefold() in archive_extensions),
-        key=lambda path: path.name.casefold(),
-    )
-    images = sorted(
-        (path for path in safe_files if path.suffix.casefold() in image_extensions),
-        key=lambda path: (_image_priority(path), path.name.casefold()),
-    )
+    archives = snapshot.archives
+    images = snapshot.images
 
     fallback_primary = _sync_images(session, model, root, images)
 
@@ -632,6 +727,9 @@ def _scan_model(
         )
         _apply_primary_override(session, model)
         _apply_automatic_tags(session, scan, model)
+        if not snapshot.has_unsafe_files:
+            model.scan_fingerprint = snapshot.fingerprint
+            model.scan_policy_key = _model_scan_policy_key(source)
         return
 
     archives_ok = _sync_archives(session, scan, model, root, archives)
@@ -665,6 +763,9 @@ def _scan_model(
         model.status = "error"
     elif is_new and model.status == "available":
         model.status = "available"
+    if model.status != "error" and not snapshot.has_unsafe_files:
+        model.scan_fingerprint = snapshot.fingerprint
+        model.scan_policy_key = _model_scan_policy_key(source)
 
 
 def _apply_automatic_tags(session: Session, scan: ScanRun, model: LibraryModel) -> None:
@@ -688,9 +789,8 @@ def _apply_automatic_tags(session: Session, scan: ScanRun, model: LibraryModel) 
 
 
 def _is_model_candidate(directory: Path, source: LibrarySource) -> bool:
-    supported_extensions = {
-        f".{item.casefold()}" for item in (*source.archive_formats, *source.image_formats)
-    }
+    archive_extensions, image_extensions = _supported_extensions(source)
+    supported_extensions = archive_extensions | image_extensions
     return any(
         path.is_file() and path.suffix.casefold() in supported_extensions
         for path in directory.iterdir()

@@ -26,7 +26,7 @@ interface PreviewResponse {
   warnings: string[]
 }
 
-type ScanMode = "full" | "incremental" | "missing_images" | "reconcile_images"
+type ScanMode = "full" | "incremental" | "missing_images" | "reconcile_images" | "smart"
 
 interface ScanRun {
   id: number
@@ -110,6 +110,7 @@ const form = reactive({
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 const scanModes: Array<{ value: ScanMode; label: string; description: string }> = [
   { value: "incremental", label: "Incremental scan", description: "Index new models without reprocessing existing ones." },
+  { value: "smart", label: "Smart scan", description: "Scan new or changed models and skip unchanged healthy models. The first scan after upgrading may inspect models to establish its baseline." },
   { value: "full", label: "Full scan", description: "Check all models and repair missing or stale archive images." },
   { value: "missing_images", label: "Full scan — repair missing images", description: "Check all models but only export missing or stale image variants." },
   { value: "reconcile_images", label: "Reconcile images", description: "Repair missing or stale archive images from the existing catalogue." },

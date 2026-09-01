@@ -19,6 +19,7 @@ from meshive.models.catalog import (
 )
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import AutomaticTagRule, ModelTag, Tag
+from meshive.schemas.scan import ScanStartRequest
 from meshive.services import scanner
 from meshive.services.archive_images import ArchiveImageError, ValidatedArchiveImage
 
@@ -88,8 +89,9 @@ def test_source_scan_transitions_from_discovering_to_scanning_and_clears_phase(
         monkeypatch.setattr(scanner, "_directories_at_depths", directories)
         monkeypatch.setattr(
             scanner,
-            "_is_model_candidate",
-            lambda _directory, _source: phases.append(scan.current_phase) or False,
+            "_snapshot_model_directory",
+            lambda *_args: phases.append(scan.current_phase)
+            or scanner.ModelDirectorySnapshot([], [], [], [], "", False, False),
         )
 
         scanner._execute_scan(session, source.id, scan.id)
@@ -335,7 +337,9 @@ def test_model_rescan_processes_only_the_target_model(tmp_path, monkeypatch) -> 
         session.add_all([target, other])
         session.commit()
         processed: list[str] = []
-        monkeypatch.setattr(scanner, "_scan_model", lambda *_args: processed.append(_args[5]))
+        monkeypatch.setattr(
+            scanner, "_scan_model", lambda *_args, **_kwargs: processed.append(_args[5])
+        )
 
         scan = scanner.rescan_model(session, target.id)
 
@@ -409,7 +413,9 @@ def test_incremental_scan_skips_known_models_and_processes_new_ones(tmp_path, mo
         session.add(known)
         session.commit()
         processed: list[str] = []
-        monkeypatch.setattr(scanner, "_scan_model", lambda *_args: processed.append(_args[5]))
+        monkeypatch.setattr(
+            scanner, "_scan_model", lambda *_args, **_kwargs: processed.append(_args[5])
+        )
         scan = make_scan(session, source.id)
         scan.mode = "incremental"
         session.commit()
@@ -435,7 +441,9 @@ def test_incremental_scan_processes_only_new_models_at_scale(tmp_path, monkeypat
     monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
     processed: list[str] = []
 
-    def record_new_model(_session, scan, _source, _root, _directory, normalized_path, _values):
+    def record_new_model(
+        _session, scan, _source, _root, _directory, normalized_path, _values, **_kwargs
+    ):
         processed.append(normalized_path)
         scan.models_found += 1
 
@@ -473,6 +481,133 @@ def test_incremental_scan_processes_only_new_models_at_scale(tmp_path, monkeypat
         assert scan.models_found == 102
         assert scan.models_skipped == 100
     engine.dispose()
+
+
+def test_smart_scan_skips_unchanged_healthy_models_without_archive_work(
+    tmp_path, monkeypatch
+) -> None:
+    directory = tmp_path / "Cammy"
+    directory.mkdir()
+    (directory / "Cammy.7z").write_bytes(b"archive")
+    engine = create_engine(f"sqlite:///{tmp_path / 'smart-skip.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Smart", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        monkeypatch.setattr(scanner, "_sync_archives", lambda *_args: True)
+        monkeypatch.setattr(scanner, "_sync_archive_images", lambda *_args: object())
+        baseline = make_scan(session, source.id)
+        scanner._execute_scan(session, source.id, baseline.id)
+        model = session.scalar(select(LibraryModel))
+        assert model is not None
+        assert model.scan_fingerprint is not None
+        assert model.scan_policy_key is not None
+
+        def expensive_operation(*_args, **_kwargs):
+            raise AssertionError("unchanged Smart Scan invoked archive work")
+
+        monkeypatch.setattr(scanner, "list_archive", expensive_operation)
+        monkeypatch.setattr(scanner, "iter_extracted_archive_image_batches", expensive_operation)
+        smart = make_scan(session, source.id)
+        smart.mode = "smart"
+        session.commit()
+
+        scanner._execute_scan(session, source.id, smart.id)
+
+        assert smart.models_found == 1
+        assert smart.models_skipped == 1
+        assert smart.status == "completed"
+    engine.dispose()
+
+
+def test_smart_scan_rescans_changed_metadata_unknown_fingerprints_and_unhealthy_models(
+    tmp_path, monkeypatch
+) -> None:
+    for name in ("Changed", "Unknown", "Incomplete"):
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / f"{name}.7z").write_bytes(b"archive")
+    engine = create_engine(f"sqlite:///{tmp_path / 'smart-rescan.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Smart", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        policy_key = scanner._model_scan_policy_key(source)
+        changed_snapshot = scanner._snapshot_model_directory(tmp_path / "Changed", source, tmp_path)
+        session.add_all([
+            LibraryModel(library_source_id=source.id, relative_path="Changed", name="Changed", status="available", scan_fingerprint="old", scan_policy_key=policy_key),
+            LibraryModel(library_source_id=source.id, relative_path="Unknown", name="Unknown", status="available"),
+            LibraryModel(library_source_id=source.id, relative_path="Incomplete", name="Incomplete", status="incomplete", scan_fingerprint=scanner._snapshot_model_directory(tmp_path / "Incomplete", source, tmp_path).fingerprint, scan_policy_key=policy_key),
+        ])
+        assert changed_snapshot.fingerprint != "old"
+        session.commit()
+        processed: list[str] = []
+        monkeypatch.setattr(
+            scanner,
+            "_scan_model",
+            lambda *_args, **_kwargs: processed.append(_args[5]),
+        )
+        scan = make_scan(session, source.id)
+        scan.mode = "smart"
+        session.commit()
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert processed == ["Changed", "Incomplete", "Unknown"]
+        assert scan.models_skipped == 0
+    engine.dispose()
+
+
+def test_smart_scan_policy_change_forces_reconciliation(tmp_path, monkeypatch) -> None:
+    directory = tmp_path / "Cammy"
+    directory.mkdir()
+    (directory / "Cammy.7z").write_bytes(b"archive")
+    engine = create_engine(f"sqlite:///{tmp_path / 'smart-policy.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Smart", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        snapshot = scanner._snapshot_model_directory(directory, source, tmp_path)
+        session.add(LibraryModel(
+            library_source_id=source.id, relative_path="Cammy", name="Cammy", status="available",
+            scan_fingerprint=snapshot.fingerprint, scan_policy_key="obsolete-policy",
+        ))
+        session.commit()
+        processed: list[str] = []
+        monkeypatch.setattr(
+            scanner, "_scan_model", lambda *_args, **_kwargs: processed.append(_args[5])
+        )
+        scan = make_scan(session, source.id)
+        scan.mode = "smart"
+        session.commit()
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert processed == ["Cammy"]
+        assert scan.models_skipped == 0
+    engine.dispose()
+
+
+def test_smart_scan_mode_is_strictly_validated() -> None:
+    assert ScanStartRequest(mode="smart").mode == "smart"
 
 
 def test_archive_image_selection_is_deterministic_across_archives(tmp_path, monkeypatch) -> None:
