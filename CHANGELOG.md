@@ -5,6 +5,12 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-08-31
+### Fixed
+- Scheduled scan evaluation failures are now logged without stopping the scheduler.
+- Invalid persisted scan timezones now produce one actionable warning per source and timezone.
+- Corrected the documented default archive-image pixel limit to 100 megapixels.
+
 ## [1.4.0] - 2026-08-31
 ### Added
 - Added administrator scan controls, live activity, statistics, and per-model scan issue history.

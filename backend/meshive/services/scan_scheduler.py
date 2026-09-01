@@ -1,3 +1,4 @@
+import logging
 import threading
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -16,6 +17,9 @@ from meshive.services.scanner import (
 
 _stop = threading.Event()
 _thread: threading.Thread | None = None
+_reported_invalid_timezones: set[tuple[int, str]] = set()
+
+logger = logging.getLogger(__name__)
 
 
 def start_scheduler() -> None:
@@ -61,6 +65,7 @@ def _loop() -> None:
             _start_due_scans()
         except Exception:
             # A single malformed source schedule must not stop the web process.
+            logger.exception("Scheduled scan evaluation failed")
             continue
 
 
@@ -92,6 +97,15 @@ def _is_due(
     try:
         timezone = ZoneInfo(source.auto_scan_timezone)
     except ZoneInfoNotFoundError:
+        key = (source.id, source.auto_scan_timezone)
+        if key not in _reported_invalid_timezones:
+            _reported_invalid_timezones.add(key)
+            logger.warning(
+                "Skipping scheduled scan for source %s (%s): unknown timezone %r",
+                source.id,
+                source.name,
+                source.auto_scan_timezone,
+            )
         return False
     local_now = now.astimezone(timezone) if now else datetime.now(timezone)
     scheduled = _latest_occurrence(source, local_now)
