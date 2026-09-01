@@ -373,6 +373,13 @@ h1 {
   margin: 1.25rem 0 2.5rem;
 }
 
+.diagnostics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1rem; }
+.diagnostics-card { padding: 1.1rem; border: 1px solid var(--border-color); border-radius: 0.75rem; background: var(--surface-color); }
+.diagnostics-card h3 { margin: 0 0 0.85rem; }
+.diagnostics-card dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.45rem 1rem; margin: 0; }
+.diagnostics-card dt { color: var(--text-muted); }
+.diagnostics-card dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+
 .user-create-panel {
   margin-bottom: 1.5rem;
 }
