@@ -47,6 +47,8 @@ class LibraryModel(Base):
     archive_image_policy_key: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
+    scan_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    scan_policy_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class Archive(Base):
