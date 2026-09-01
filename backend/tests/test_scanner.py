@@ -2,11 +2,13 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
 from PIL import Image
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from meshive.archives.sevenzip_cli import ListedArchiveEntry
+from meshive.api.scans import cancel_scan, pause_scan, resume_scan
 from meshive.config import Settings
 from meshive.database import Base
 from meshive.models.catalog import (
@@ -347,6 +349,104 @@ def test_model_rescan_processes_only_the_target_model(tmp_path, monkeypatch) -> 
         assert scan.target_model_id == target.id
         assert other.status == "available"
 
+    engine.dispose()
+
+
+def test_pause_wait_observes_a_cancellation_without_sleeping(monkeypatch) -> None:
+    class PauseThenCancelSession:
+        def scalar(self, _query):
+            return True
+
+    monkeypatch.setattr(scanner.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(scanner.ScanCancelled):
+        scanner._wait_if_scan_paused(PauseThenCancelSession(), 1)
+
+
+def test_scan_controls_pause_resume_and_cancel_running_scan(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'scan-controls.db'}")
+    Base.metadata.create_all(engine)
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Controls", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        scan = make_scan(session, source.id)
+        scan.status = "running"
+        session.commit()
+
+        assert pause_scan(scan.id, session).pause_requested is True
+        assert resume_scan(scan.id, session).pause_requested is False
+        cancelled = cancel_scan(scan.id, session)
+
+        assert cancelled.cancel_requested is True
+        assert cancelled.pause_requested is False
+        assert cancelled.status == "running"
+    engine.dispose()
+
+
+def test_cancel_pending_scan_sets_its_terminal_status(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'pending-cancel.db'}")
+    Base.metadata.create_all(engine)
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Controls", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        scan = make_scan(session, source.id)
+
+        cancelled = cancel_scan(scan.id, session)
+
+        assert cancelled.status == "cancelled"
+        assert cancelled.finished_at is not None
+    engine.dispose()
+
+
+def test_source_scan_persists_only_the_parsed_name_before_model_work(
+    tmp_path, monkeypatch
+) -> None:
+    directory = tmp_path / "Cammy"
+    directory.mkdir()
+    (directory / "Cammy.7z").write_bytes(b"archive")
+    engine = create_engine(f"sqlite:///{tmp_path / 'progress-writes.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Progress", root_path=tmp_path.as_posix(), directory_pattern="{model}",
+            archive_formats=["7z"], image_formats=["jpg"], is_active=True, scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        scan = make_scan(session, source.id)
+        persisted_names: list[str | None] = []
+        original_commit = session.commit
+
+        def count_progress_commits() -> None:
+            persisted_names.append(scan.current_model_name)
+            original_commit()
+
+        monkeypatch.setattr(session, "commit", count_progress_commits)
+        observed_names: list[str | None] = []
+        monkeypatch.setattr(
+            scanner,
+            "_scan_model",
+            lambda _session, active_scan, *_args, **_kwargs: observed_names.append(
+                active_scan.current_model_name
+            ),
+        )
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert observed_names == ["Cammy"]
+        assert persisted_names.count("Cammy") == 2
     engine.dispose()
 
 

@@ -22,6 +22,7 @@ defineProps<{ title: string }>()
       <RouterLink class="text-link" to="/admin/tags">Tags</RouterLink>
       <RouterLink class="text-link" to="/admin/users">Users</RouterLink>
       <RouterLink class="text-link" to="/admin/backups">Backups</RouterLink>
+      <RouterLink class="text-link" to="/admin/diagnostics">Diagnostics</RouterLink>
       <AccountMenu />
     </nav>
   </header>

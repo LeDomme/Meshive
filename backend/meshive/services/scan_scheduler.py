@@ -18,6 +18,10 @@ from meshive.services.scanner import (
 _stop = threading.Event()
 _thread: threading.Thread | None = None
 _reported_invalid_timezones: set[tuple[int, str]] = set()
+_last_check_at: datetime | None = None
+_last_success_at: datetime | None = None
+_last_error_at: datetime | None = None
+_last_error: str | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +64,29 @@ def stop_scheduler() -> None:
 
 
 def _loop() -> None:
+    global _last_check_at, _last_success_at, _last_error_at, _last_error
     while not _stop.wait(5):
+        _last_check_at = datetime.now(UTC)
         try:
             _start_due_scans()
+            _last_success_at = datetime.now(UTC)
+            _last_error = None
         except Exception:
             # A single malformed source schedule must not stop the web process.
             logger.exception("Scheduled scan evaluation failed")
+            _last_error_at = datetime.now(UTC)
+            _last_error = "Scheduled scan evaluation failed"
             continue
+
+
+def diagnostics_status() -> dict[str, object]:
+    return {
+        "thread_alive": bool(_thread and _thread.is_alive()),
+        "last_check_at": _last_check_at,
+        "last_success_at": _last_success_at,
+        "last_error_at": _last_error_at,
+        "last_error": _last_error,
+    }
 
 
 def _start_due_scans() -> None:

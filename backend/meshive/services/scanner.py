@@ -243,7 +243,6 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
             _raise_if_scan_cancelled(session, scan_run_id)
             _wait_if_scan_paused(session, scan_run_id)
             scan.current_model_name = model_directory.name
-            session.commit()
             relative_path = model_directory.relative_to(root).as_posix()
             try:
                 snapshot = _snapshot_model_directory(model_directory, source, root)
