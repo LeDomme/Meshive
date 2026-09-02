@@ -5,7 +5,7 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
-## [1.5.1]
+## [1.5.1] - 2026-09-02
 ### Fixed
 - Added the finalizing scan phase so final catalogue work is reported accurately.
 - Corrected diagnostics for readable but read-only storage paths.
