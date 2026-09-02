@@ -10,6 +10,8 @@ Use this checklist for every stable Meshive release.
 - Build the frontend and run the complete backend test suite.
 - Run the Playwright suite; it is a required GitHub Actions check.
 - Run dependency audits and the database migration test.
+- Validate both Compose examples and confirm the development-plan file is not
+  tracked.
 - Build the runtime image and verify its health check.
 
 ## Acceptance test
@@ -22,6 +24,10 @@ Use this checklist for every stable Meshive release.
 - Confirm scheduled scans and scheduled backups run after a restart.
 - Confirm the model mounts are read-only and the browser console has no
   application-generated CSP errors.
+- For scan-related releases, verify the configured-source default, an explicit
+  alternative scan mode, and live scan activity through completion.
+- For diagnostics changes, confirm large or network-backed storage is checked
+  promptly and no probe file remains after refresh.
 
 ## Publish
 

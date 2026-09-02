@@ -1,7 +1,7 @@
 # Frontend E2E testing
 
-Meshive uses Playwright for small, deterministic frontend regression tests. The
-initial suite intercepts API requests and uses synthetic responses, so it never
+Meshive uses Playwright for deterministic frontend regression tests. The suite
+intercepts API requests and uses synthetic responses, so it never
 needs a production model library, archives, or credentials.
 
 ## Local development start
@@ -53,4 +53,6 @@ interactive debugging, use `npm run test:e2e:ui`.
 The suite runs as a required GitHub Actions frontend check. It uses mocked API
 responses, so it verifies UI behavior only; backend and database behavior
 remain covered by the backend test suite. On failure, Playwright keeps traces
-and screenshots in `frontend/test-results/`.
+and screenshots in `frontend/test-results/`. The regression suite covers login
+and role routing, catalogue filters, batch actions, scan controls, diagnostics,
+model navigation, gallery gestures, favorites, and archive download links.
