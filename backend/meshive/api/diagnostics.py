@@ -35,19 +35,12 @@ def _storage_status(path: Path) -> dict[str, object]:
         result.update(readable=False, writable=False, error="Storage is unavailable")
         return result
 
-    probe_path: str | None = None
     try:
-        descriptor, probe_path = tempfile.mkstemp(prefix=".meshive-diagnostics-", dir=path)
-        os.close(descriptor)
+        with tempfile.TemporaryFile(prefix=".meshive-diagnostics-", dir=path):
+            pass
         result["writable"] = True
     except OSError:
         result["writable"] = False
-    finally:
-        if probe_path is not None:
-            try:
-                os.unlink(probe_path)
-            except OSError:
-                result["writable"] = False
 
     try:
         usage = shutil.disk_usage(path)

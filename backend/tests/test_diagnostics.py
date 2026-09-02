@@ -2,12 +2,14 @@ from meshive.api import diagnostics
 
 
 def test_storage_diagnostics_is_root_level_and_reports_capacity(tmp_path) -> None:
+    before = set(tmp_path.iterdir())
     result = diagnostics._storage_status(tmp_path)
 
     assert result["readable"] is True
     assert result["writable"] is True
     assert result["total_bytes"] > 0
     assert result["free_bytes"] >= 0
+    assert set(tmp_path.iterdir()) == before
 
 
 def test_storage_diagnostics_preserves_access_when_capacity_check_fails(tmp_path, monkeypatch) -> None:
@@ -27,7 +29,7 @@ def test_storage_diagnostics_preserves_access_when_capacity_check_fails(tmp_path
 def test_storage_diagnostics_reports_read_only_when_write_probe_fails(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         diagnostics.tempfile,
-        "mkstemp",
+        "TemporaryFile",
         lambda **_kwargs: (_ for _ in ()).throw(OSError("read-only")),
     )
 
