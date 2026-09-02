@@ -9,7 +9,7 @@ test("admin diagnostics renders readable storage sizes", async ({ page }) => {
   await page.route("**/api/admin/diagnostics", route => {
     requests += 1
     return route.fulfill({ json: {
-    application: { version: "1.5.1", environment: "development" },
+    application: { version: "1.5.2", environment: "development" },
     database: { backend: "sqlite", reachable: true, size_bytes: 1_610_612_736 },
     storage: { data: { path: "/data", readable: true, writable: true, total_bytes: 2_199_023_255_552, free_bytes: 1_099_511_627_776 }, backup: { path: "/backups", readable: true, writable: false } },
     archive_backend: { command: "7z", available: true }, scanner: { max_concurrent_scans: 1, running: 0, pending: 0 },
@@ -34,7 +34,7 @@ test("diagnostics safely renders unavailable capacity", async ({ page }) => {
   await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
   await page.route(/\/api\/setup\/status/, route => route.fulfill({ json: { required: false, enabled: false } }))
   await page.route("**/api/admin/diagnostics", route => route.fulfill({ json: {
-    application: { version: "1.5.1", environment: "test" }, database: { backend: "sqlite", reachable: true },
+    application: { version: "1.5.2", environment: "test" }, database: { backend: "sqlite", reachable: true },
     storage: { cache: { path: "/cache", readable: false, writable: false } }, archive_backend: { command: "7z", available: true },
     scanner: { max_concurrent_scans: 1, running: 0, pending: 0 }, scheduler: { thread_alive: true, last_check_at: null, last_success_at: null, last_error_at: null, last_error: null }, catalogue: {},
   } }))

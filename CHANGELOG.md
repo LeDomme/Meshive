@@ -5,6 +5,13 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-09-03
+### Changed
+- Updated the Pillow and pydantic-settings production dependency ranges.
+- Updated the compatible Vue, Pinia, Vue Router, Vite, and Vue TypeScript tooling dependencies.
+### CI
+- Updated the pinned Docker Buildx setup action.
+
 ## [1.5.1] - 2026-09-02
 ### Fixed
 - Added the finalizing scan phase so final catalogue work is reported accurately.
@@ -192,7 +199,11 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
-[Unreleased]: ../../compare/v1.4.0...HEAD
+[Unreleased]: ../../compare/v1.5.2...HEAD
+[1.5.2]: ../../compare/v1.5.1...v1.5.2
+[1.5.1]: ../../compare/v1.5.0...v1.5.1
+[1.5.0]: ../../compare/v1.4.1...v1.5.0
+[1.4.1]: ../../compare/v1.4.0...v1.4.1
 [1.4.0]: ../../compare/v1.3.0...v1.4.0
 [1.3.0]: ../../compare/v1.2.0...v1.3.0
 [1.2.0]: ../../compare/v1.1.0...v1.2.0

@@ -40,7 +40,7 @@ test("administrators can open diagnostics from administration navigation", async
   await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
   await page.route("**/api/auth/me", route => route.fulfill({ json: admin }))
   await page.route("**/api/admin/diagnostics", route => route.fulfill({ json: {
-    application: { version: "1.5.1", environment: "test" }, database: { backend: "sqlite", reachable: true }, storage: {},
+    application: { version: "1.5.2", environment: "test" }, database: { backend: "sqlite", reachable: true }, storage: {},
     archive_backend: { command: "7z", available: true }, scanner: { max_concurrent_scans: 1, running: 0, pending: 0 },
     scheduler: { thread_alive: true, last_check_at: null, last_success_at: null, last_error_at: null, last_error: null }, catalogue: {},
   } }))
