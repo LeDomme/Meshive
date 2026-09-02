@@ -45,26 +45,25 @@ test("a finalizing scan does not display a stale model name", async ({ page }) =
   await expect(page.getByText("Stale model")).toHaveCount(0)
 })
 
-test("configured sources show Smart Scan before an administrator chooses a mode", async ({ page }) => {
+test("an explicit scan mode survives a configured-source reload", async ({ page }) => {
+  const modes: string[] = []
   await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
   await page.route(/\/api\/setup\/status/, route => route.fulfill({ json: { required: false, enabled: false } }))
   await page.route("**/api/admin/library-sources", route => route.fulfill({ json: [source] }))
-  await page.route("**/api/admin/scans/queue", route => route.fulfill({ json: [] }))
   await page.route("**/api/admin/library-sources/1/scans**", route => route.fulfill({ json: [] }))
-  await page.goto("/admin/sources")
-  await expect(page.getByLabel("Scan mode")).toHaveValue("smart")
-})
-
-test("Incremental Scan remains an immediately available manual option", async ({ page }) => {
-  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
-  await page.route(/\/api\/setup\/status/, route => route.fulfill({ json: { required: false, enabled: false } }))
-  await page.route("**/api/admin/library-sources", route => route.fulfill({ json: [source] }))
   await page.route("**/api/admin/scans/queue", route => route.fulfill({ json: [] }))
-  await page.route("**/api/admin/library-sources/1/scans**", route => route.fulfill({ json: [] }))
+  await page.route("**/api/admin/library-sources/1", route => route.fulfill({ json: source }))
+  await page.route("**/api/admin/library-sources/1/scan", async route => {
+    modes.push(route.request().postDataJSON().mode)
+    await route.fulfill({ json: { id: 2, library_source_id: 1, status: "completed", mode: "incremental", trigger: "manual", created_at: "2026-01-01T00:00:00Z", models_found: 0, models_added: 0, models_updated: 0, models_missing: 0, models_skipped: 0, archive_images_reused: 0, archive_images_generated: 0, archive_images_removed: 0, automatic_tag_matches: 0, automatic_tags_added: 0, automatic_tags_removed: 0, issues_count: 0, error_message: null } })
+  })
   await page.goto("/admin/sources")
-  await expect(page.getByRole("option", { name: "Incremental scan" })).toHaveCount(1)
   await page.getByLabel("Scan mode").selectOption("incremental")
+  await page.getByRole("button", { name: "Edit" }).click()
+  await page.getByRole("button", { name: "Save changes" }).click()
   await expect(page.getByLabel("Scan mode")).toHaveValue("incremental")
+  await page.getByRole("button", { name: "Scan now" }).click()
+  await expect.poll(() => modes).toEqual(["incremental"])
 })
 
 test("running scans can be paused, resumed, and cancelled", async ({ page }) => {
