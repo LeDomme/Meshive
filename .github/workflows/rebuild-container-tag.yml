@@ -1,0 +1,130 @@
+name: Rebuild historical container tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_tag:
+        description: Exact Meshive release Git tag to rebuild (for example, v1.0.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ledomme/meshive
+
+jobs:
+  validate-tag:
+    name: Validate requested release tag
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_tag: ${{ steps.validate.outputs.image_tag }}
+      tag_object: ${{ steps.validate.outputs.tag_object }}
+
+    steps:
+      - name: Validate exact Meshive release tag
+        id: validate
+        env:
+          GIT_TAG: ${{ inputs.git_tag }}
+          REPOSITORY_URL: https://github.com/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+
+          # Meshive currently uses final releases in this format. Do not permit
+          # arbitrary refs, commits, or floating image tags as recovery input.
+          if ! [[ "$GIT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::git_tag must be an exact Meshive release tag in the format vMAJOR.MINOR.PATCH."
+            exit 1
+          fi
+
+          if ! tag_object="$(git ls-remote --exit-code --refs "$REPOSITORY_URL" "refs/tags/$GIT_TAG" | awk 'NR == 1 { print $1 }')"; then
+            echo "::error::refs/tags/$GIT_TAG does not exist in this repository."
+            exit 1
+          fi
+          test -n "$tag_object"
+
+          echo "image_tag=${GIT_TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "tag_object=$tag_object" >> "$GITHUB_OUTPUT"
+
+  rebuild:
+    name: Rebuild and publish historical container tag
+    needs: validate-tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out exact historical Git tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.git_tag }}
+          fetch-depth: 0
+
+      - name: Verify checked out tag
+        env:
+          GIT_TAG: ${{ inputs.git_tag }}
+          EXPECTED_TAG_OBJECT: ${{ needs.validate-tag.outputs.tag_object }}
+        run: |
+          set -euo pipefail
+          actual_tag_object="$(git rev-parse "refs/tags/$GIT_TAG")"
+          checked_out_commit="$(git rev-parse HEAD)"
+          tagged_commit="$(git rev-parse "refs/tags/$GIT_TAG^{commit}")"
+
+          test "$actual_tag_object" = "$EXPECTED_TAG_OBJECT"
+          test "$checked_out_commit" = "$tagged_commit"
+          echo "checked_out_commit=$checked_out_commit" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate recovery image metadata
+        id: metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
+          # Intentionally emit exactly one immutable patch-version tag.
+          tags: |
+            type=raw,value=${{ needs.validate-tag.outputs.image_tag }}
+
+      - name: Build and publish recovery container image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+      - name: Write recovery summary
+        env:
+          GIT_TAG: ${{ inputs.git_tag }}
+          CHECKED_OUT_COMMIT: ${{ env.checked_out_commit }}
+          IMAGE_TAG: ${{ needs.validate-tag.outputs.image_tag }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Historical container tag recovery
+
+          | Field | Value |
+          | --- | --- |
+          | Requested Git tag | \`$GIT_TAG\` |
+          | Checked out commit | \`$CHECKED_OUT_COMMIT\` |
+          | Published image tag | \`${REGISTRY}/${IMAGE_NAME}:$IMAGE_TAG\` |
+
+          The rebuilt image digest can differ from the original historical image.
+
+          Buildx publishes untagged \`sha256:\` platform and attestation submanifests as part of this image. Do **not** delete them from GitHub Container Registry, or the tagged image can become unpullable.
+          EOF
