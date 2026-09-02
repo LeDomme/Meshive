@@ -28,6 +28,12 @@ function bytes(value?: number) {
   return `${(value / 1024 ** (index + 1)).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${units[index]}`
 }
 
+function storageAccess(storage: StorageStatus) {
+  if (storage.readable && storage.writable) return "Readable and writable"
+  if (storage.readable) return "Readable, read-only"
+  return "Unavailable"
+}
+
 function date(value: string | null) { return value ? new Date(value).toLocaleString() : "Not recorded" }
 
 function label(value: string) { return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) }
@@ -49,7 +55,7 @@ function label(value: string) { return value.replaceAll("_", " ").replace(/\b\w/
       <div v-else-if="diagnostics" class="diagnostics-grid">
         <section class="diagnostics-card"><h3>Application</h3><dl><dt>Version</dt><dd>{{ diagnostics.application.version }}</dd><dt>Environment</dt><dd>{{ diagnostics.application.environment }}</dd></dl></section>
         <section class="diagnostics-card"><h3>Database</h3><dl><dt>Backend</dt><dd>{{ diagnostics.database.backend }}</dd><dt>Status</dt><dd>{{ diagnostics.database.reachable ? "Reachable" : "Unavailable" }}</dd><dt>Size</dt><dd>{{ bytes(diagnostics.database.size_bytes) }}</dd></dl><p v-if="diagnostics.database.error" class="error-message">{{ diagnostics.database.error }}</p></section>
-        <section v-for="(storage, name) in diagnostics.storage" :key="name" class="diagnostics-card"><h3>{{ label(name) }} storage</h3><dl><dt>Path</dt><dd>{{ storage.path }}</dd><dt>Access</dt><dd>{{ storage.readable && storage.writable ? "Readable and writable" : "Unavailable" }}</dd><dt>Capacity</dt><dd>{{ bytes(storage.total_bytes) }}</dd><dt>Free space</dt><dd>{{ bytes(storage.free_bytes) }}</dd></dl><p v-if="storage.error" class="error-message">{{ storage.error }}</p></section>
+        <section v-for="(storage, name) in diagnostics.storage" :key="name" class="diagnostics-card"><h3>{{ label(name) }} storage</h3><dl><dt>Path</dt><dd>{{ storage.path }}</dd><dt>Access</dt><dd>{{ storageAccess(storage) }}</dd><dt>Capacity</dt><dd>{{ bytes(storage.total_bytes) }}</dd><dt>Free space</dt><dd>{{ bytes(storage.free_bytes) }}</dd></dl><p v-if="storage.error" class="error-message">{{ storage.error }}</p></section>
         <section class="diagnostics-card"><h3>Archive backend</h3><dl><dt>Command</dt><dd>{{ diagnostics.archive_backend.command }}</dd><dt>Status</dt><dd>{{ diagnostics.archive_backend.available ? "Available" : "Unavailable" }}</dd></dl></section>
         <section class="diagnostics-card"><h3>Scanner</h3><dl><dt>Maximum concurrent scans</dt><dd>{{ diagnostics.scanner.max_concurrent_scans }}</dd><dt>Running</dt><dd>{{ diagnostics.scanner.running }}</dd><dt>Pending</dt><dd>{{ diagnostics.scanner.pending }}</dd></dl></section>
         <section class="diagnostics-card"><h3>Scheduler</h3><dl><dt>Status</dt><dd>{{ diagnostics.scheduler.thread_alive ? "Running" : "Stopped" }}</dd><dt>Last check</dt><dd>{{ date(diagnostics.scheduler.last_check_at) }}</dd><dt>Last success</dt><dd>{{ date(diagnostics.scheduler.last_success_at) }}</dd><dt>Last error</dt><dd>{{ diagnostics.scheduler.last_error ?? "None" }}</dd></dl></section>

@@ -5,6 +5,14 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.5.1]
+### Fixed
+- Added the finalizing scan phase so final catalogue work is reported accurately.
+- Corrected diagnostics for readable but read-only storage paths.
+### Changed
+- Made Smart Scan the default manual mode for configured sources while retaining Incremental Scan as an explicit option.
+- Expanded Playwright UI regression coverage and made it a required CI check.
+
 ## [1.5.0] - 2026-09-01
 ### Added
 - Single-pass source discovery, explicit live scan phases, and Smart Scan for unchanged healthy models.

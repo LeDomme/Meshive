@@ -337,6 +337,11 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
                 )
                 session.commit()
 
+        _raise_if_scan_cancelled(session, scan_run_id)
+        scan.current_phase = "finalizing"
+        scan.current_model_name = None
+        session.commit()
+
         missing_result = session.execute(
             update(LibraryModel)
             .where(

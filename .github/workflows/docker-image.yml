@@ -81,8 +81,14 @@ jobs:
       - name: Audit frontend dependencies
         run: npm audit --audit-level=high
 
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Build frontend
         run: npm run build
+
+      - name: Run frontend E2E tests
+        run: npm run test:e2e
 
   build:
     needs:
