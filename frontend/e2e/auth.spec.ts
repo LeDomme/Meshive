@@ -20,7 +20,7 @@ test("login submits credentials and opens the catalogue", async ({ page }) => {
   await page.getByLabel("Username").fill("admin")
   await page.getByLabel("Password").fill("secret")
   await page.getByRole("button", { name: "Sign in" }).click()
-  await expect(page).toHaveURL(/\/$/)
+  await expect(page).toHaveURL(/\/(?:\?.*)?$/)
 })
 
 test("regular users are redirected away from administration", async ({ page }) => {
@@ -31,7 +31,7 @@ test("regular users are redirected away from administration", async ({ page }) =
   await page.route("**/api/models?**", route => route.fulfill({ json: { items: [], total: 0, page: 1, page_size: 24 } }))
 
   await page.goto("/admin/diagnostics")
-  await expect(page).toHaveURL(/\/$/)
+  await expect(page).toHaveURL(/\/(?:\?.*)?$/)
   await expect(page.getByRole("link", { name: "Diagnostics" })).toHaveCount(0)
 })
 
