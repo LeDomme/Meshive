@@ -24,3 +24,21 @@ test("gallery buttons and a horizontal swipe select exactly one adjacent image",
   await frame.dispatchEvent("pointerup", { pointerId: 1, pointerType: "touch", clientX: 80, clientY: 100 })
   await expect(page.getByRole("img", { name: "Gallery model — picture-2.jpg" })).toBeVisible()
 })
+
+test("the synthetic click emitted with a swipe does not open the image viewer", async ({ page }) => {
+  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/tags", route => route.fulfill({ json: [] }))
+  await page.route("**/api/favorite-lists/model-memberships**", route => route.fulfill({ json: [] }))
+  await page.route("**/api/models/1/navigation", route => route.fulfill({ json: { previous: null, next: null } }))
+  await page.route("**/api/models/1", route => route.fulfill({ json: model }))
+  await page.goto("/models/1")
+  await page.locator(".detail-image-frame").evaluate((frame) => {
+    const pointer = (type: string, x: number) => new PointerEvent(type, { bubbles: true, pointerId: 1, pointerType: "touch", clientX: x, clientY: 100 })
+    frame.dispatchEvent(pointer("pointerdown", 200))
+    frame.dispatchEvent(pointer("pointermove", 80))
+    frame.dispatchEvent(pointer("pointerup", 80))
+    frame.querySelector<HTMLButtonElement>(".detail-image-button")?.click()
+  })
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+})
