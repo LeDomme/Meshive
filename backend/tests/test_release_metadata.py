@@ -17,7 +17,7 @@ def test_release_versions_are_consistent() -> None:
         (repository_root / "frontend" / "package-lock.json").read_text(encoding="utf-8")
     )
 
-    assert __version__ == "1.5.1"
+    assert __version__ == "1.5.2"
     assert backend_project["project"]["version"] == __version__
     assert frontend_package["version"] == __version__
     assert frontend_lock["version"] == __version__
