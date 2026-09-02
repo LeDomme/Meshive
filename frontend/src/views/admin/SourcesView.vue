@@ -109,8 +109,8 @@ const form = reactive({
 })
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 const scanModes: Array<{ value: ScanMode; label: string; description: string }> = [
-  { value: "incremental", label: "Incremental scan", description: "Index new models without reprocessing existing ones." },
   { value: "smart", label: "Smart scan", description: "Scan new or changed models and skip unchanged healthy models. The first scan after upgrading may inspect models to establish its baseline." },
+  { value: "incremental", label: "Incremental scan", description: "Index new models without reprocessing existing ones." },
   { value: "full", label: "Full scan", description: "Check all models and repair missing or stale archive images." },
   { value: "missing_images", label: "Full scan — repair missing images", description: "Check all models but only export missing or stale image variants." },
   { value: "reconcile_images", label: "Reconcile images", description: "Repair missing or stale archive images from the existing catalogue." },
@@ -122,7 +122,7 @@ async function loadSources() {
   try {
     sources.value = await apiRequest<LibrarySource[]>("/api/admin/library-sources")
     for (const source of sources.value) {
-      scanModesBySource.value[source.id] ??= "incremental"
+      scanModesBySource.value[source.id] ??= "smart"
     }
     await Promise.all([loadQueue(), ...sources.value.map(loadLatestScan)])
   } catch (error) {
@@ -147,7 +147,7 @@ async function loadLatestScan(source: LibrarySource) {
   }
 }
 
-async function startScan(source: LibrarySource, mode = scanModesBySource.value[source.id] ?? 'incremental') {
+async function startScan(source: LibrarySource, mode = scanModesBySource.value[source.id] ?? 'smart') {
   errorMessage.value = ""
   try {
     const scan = await apiRequest<ScanRun>(
@@ -206,6 +206,9 @@ function scanActivityLabel(item: ScanQueueItem) {
   if (item.status === "running" && item.current_phase === "reconciling_images") {
     return "Reconciling archive images"
   }
+  if (item.status === "running" && item.current_phase === "finalizing") {
+    return "Finalizing scan"
+  }
   if (item.status === "running" && item.current_phase === "targeted_rescan") {
     return item.trigger === "model_image_rebuild"
       ? "Rebuilding archive images"
@@ -222,7 +225,7 @@ function scanActivityLabel(item: ScanQueueItem) {
 function scanProgressLabel(item: ScanQueueItem) {
   if (item.status !== "running" || !item.models_total) return ""
   const processed = Math.min(item.models_total, item.models_found + item.models_skipped)
-  const current = item.current_model_name ? ` · ${item.current_model_name}` : ""
+  const current = item.current_phase === "finalizing" ? "" : item.current_model_name ? ` · ${item.current_model_name}` : ""
   const prefix = item.current_phase === "reconciling_images" ? " · " : " · "
   return `${prefix}${processed} / ${item.models_total}${current}`
 }
@@ -642,8 +645,7 @@ onBeforeUnmount(() => {
             :disabled="scanIsActive(source.id) || !source.scan_enabled"
             v-model="scanModesBySource[source.id]"
           >
-            <option value="incremental">Incremental scan</option>
-            <option v-for="mode in scanModes.filter((item) => item.value !== 'incremental')" :key="mode.value" :value="mode.value">
+            <option v-for="mode in scanModes" :key="mode.value" :value="mode.value">
               {{ mode.label }}
             </option>
           </select>

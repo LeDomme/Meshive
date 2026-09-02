@@ -61,7 +61,7 @@ def test_directories_at_depths_handles_empty_and_root_depth(tmp_path) -> None:
     assert list(scanner._directories_at_depths(tmp_path, {0})) == [tmp_path]
 
 
-def test_source_scan_transitions_from_discovering_to_scanning_and_clears_phase(
+def test_source_scan_transitions_from_discovering_to_scanning_finalizing_and_clears_phase(
     tmp_path, monkeypatch
 ) -> None:
     (tmp_path / "Model").mkdir()
@@ -95,10 +95,15 @@ def test_source_scan_transitions_from_discovering_to_scanning_and_clears_phase(
             lambda *_args: phases.append(scan.current_phase)
             or scanner.ModelDirectorySnapshot([], [], [], [], "", False, False),
         )
+        monkeypatch.setattr(
+            scanner,
+            "recompute_inherited_tags",
+            lambda _session, _source_id: phases.append(scan.current_phase),
+        )
 
         scanner._execute_scan(session, source.id, scan.id)
 
-        assert phases == ["discovering", "scanning"]
+        assert phases == ["discovering", "scanning", "finalizing"]
         assert scan.status == "completed"
         assert scan.current_phase is None
 
@@ -348,6 +353,59 @@ def test_model_rescan_processes_only_the_target_model(tmp_path, monkeypatch) -> 
         assert processed == ["Cammy"]
         assert scan.target_model_id == target.id
         assert other.status == "available"
+
+    engine.dispose()
+
+
+def test_cancellation_after_last_model_skips_finalization(tmp_path, monkeypatch) -> None:
+    (tmp_path / "Model").mkdir()
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Pictures",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        existing = LibraryModel(
+            library_source_id=source.id,
+            relative_path="old-model",
+            name="Old model",
+            status="available",
+        )
+        session.add(existing)
+        session.commit()
+        scan = make_scan(session, source.id)
+        finalization_called = False
+
+        monkeypatch.setattr(scanner, "_directories_at_depths", lambda *_args: [tmp_path / "Model"])
+
+        def cancel_after_last_model(*_args):
+            scan.cancel_requested = True
+            session.commit()
+            return scanner.ModelDirectorySnapshot([], [], [], [], "", False, False)
+
+        monkeypatch.setattr(scanner, "_snapshot_model_directory", cancel_after_last_model)
+
+        def inherited_tags(*_args):
+            nonlocal finalization_called
+            finalization_called = True
+
+        monkeypatch.setattr(scanner, "recompute_inherited_tags", inherited_tags)
+        scanner._execute_scan(session, source.id, scan.id)
+
+        assert scan.status == "cancelled"
+        assert scan.current_phase is None
+        assert existing.status == "available"
+        assert finalization_called is False
 
     engine.dispose()
 

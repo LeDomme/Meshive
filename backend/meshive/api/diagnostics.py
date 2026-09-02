@@ -1,4 +1,6 @@
+import os
 import shutil
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends
@@ -24,16 +26,34 @@ def _storage_status(path: Path) -> dict[str, object]:
     """Return bounded root-level storage information without traversal."""
     result: dict[str, object] = {"configured": True, "path": path.as_posix()}
     try:
-        stat = path.stat()
-        usage = shutil.disk_usage(path)
-        result.update(
-            readable=path.is_dir(),
-            writable=path.is_dir() and bool(stat),
-            total_bytes=usage.total,
-            free_bytes=usage.free,
-        )
+        if not path.is_dir():
+            raise OSError()
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        os.close(descriptor)
+        result["readable"] = True
     except OSError:
         result.update(readable=False, writable=False, error="Storage is unavailable")
+        return result
+
+    probe_path: str | None = None
+    try:
+        descriptor, probe_path = tempfile.mkstemp(prefix=".meshive-diagnostics-", dir=path)
+        os.close(descriptor)
+        result["writable"] = True
+    except OSError:
+        result["writable"] = False
+    finally:
+        if probe_path is not None:
+            try:
+                os.unlink(probe_path)
+            except OSError:
+                result["writable"] = False
+
+    try:
+        usage = shutil.disk_usage(path)
+        result.update(total_bytes=usage.total, free_bytes=usage.free)
+    except OSError:
+        result["error"] = "Storage capacity is unavailable"
     return result
 
 

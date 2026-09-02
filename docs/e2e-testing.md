@@ -49,3 +49,8 @@ npm run test:e2e
 
 Playwright starts the existing Vite development server automatically. For
 interactive debugging, use `npm run test:e2e:ui`.
+
+The suite runs as a required GitHub Actions frontend check. It uses mocked API
+responses, so it verifies UI behavior only; backend and database behavior
+remain covered by the backend test suite. On failure, Playwright keeps traces
+and screenshots in `frontend/test-results/`.

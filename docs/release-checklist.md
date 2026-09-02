@@ -8,6 +8,7 @@ Use this checklist for every stable Meshive release.
 - Update `CHANGELOG.md` and any changed configuration in `.env.example`.
 - Review database migrations and document incompatible rollback conditions.
 - Build the frontend and run the complete backend test suite.
+- Run the Playwright suite; it is a required GitHub Actions check.
 - Run dependency audits and the database migration test.
 - Build the runtime image and verify its health check.
 
