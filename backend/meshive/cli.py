@@ -7,12 +7,13 @@ from pathlib import Path
 from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 
-from meshive.backup import create_backup, restore_backup
 from meshive.auth.action_tokens import delete_user_action_tokens
 from meshive.auth.passwords import hash_password
+from meshive.backup import create_backup, restore_backup
 from meshive.database import SessionLocal
 from meshive.models.session import UserSession
 from meshive.models.user import User
+from meshive.repositories.roles import get_system_role_for_legacy_role
 from meshive.repositories.users import get_user_by_username, normalize_username
 
 
@@ -121,6 +122,8 @@ def _create_admin(username: str, password_stdin: bool) -> None:
             normalized_username=normalize_username(username),
             password_hash=hash_password(password),
             role="admin",
+            role_definition=get_system_role_for_legacy_role(session, "admin"),
+            all_sources=True,
             is_active=True,
         )
         session.add(user)

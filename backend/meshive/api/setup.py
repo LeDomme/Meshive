@@ -12,6 +12,7 @@ from meshive.auth.sessions import create_user_session, utc_now
 from meshive.config import Settings, get_settings
 from meshive.database import get_session
 from meshive.models.user import User
+from meshive.repositories.roles import get_system_role_for_legacy_role
 from meshive.repositories.users import count_users, normalize_username
 from meshive.schemas.setup import InitialAdminCreate, SetupStatus
 from meshive.schemas.user import UserRead
@@ -82,6 +83,8 @@ def create_initial_admin(
         normalized_username=normalize_username(payload.username),
         password_hash=hash_password(payload.password),
         role="admin",
+        role_definition=get_system_role_for_legacy_role(session, "admin"),
+        all_sources=True,
         is_active=True,
         last_login_at=utc_now(),
     )

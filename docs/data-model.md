@@ -5,7 +5,12 @@ read-only library.
 
 ## Core entities
 
-- `User`: local account, password hash, role, active state, and timestamps.
+- `User`: local account, password hash, legacy compatibility role, assigned
+  role definition, source-access flag, active state, and timestamps.
+- `Role` and `RolePermission`: system or custom role definitions and their
+  stable permission keys.
+- `UserLibrarySource`: explicit source grants for users without all-source
+  access.
 - `Session`: opaque server-side session with expiry and last use.
 - `FavoriteList`: a private, named list owned by exactly one user.
 - `FavoriteListItem`: a saved model or catalogue facet with a display snapshot.
@@ -50,6 +55,8 @@ the parsed Creator, Franchise, Series, and Collection values remain directly on
 - Saved Creator, Franchise, Series, and Collection values use normalized keys.
   They link to the matching catalogue filter while that value still exists.
 - FTS tables are derived indexes and can be rebuilt.
+- `all_sources=true` grants a user access to current and future sources;
+  explicit `UserLibrarySource` grants are then ignored.
 
 ## Change detection
 

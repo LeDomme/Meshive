@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from meshive.auth.access import get_access_context
 from meshive.auth.action_tokens import delete_user_action_tokens
 from meshive.auth.dependencies import (
     get_current_session_allow_password_change,
@@ -24,15 +25,19 @@ from meshive.models.session import UserSession
 from meshive.models.user import User
 from meshive.repositories.users import get_user_by_username, normalize_username
 from meshive.schemas.user import (
-    LoginRequest,
     CatalogueFilterPreferences,
+    LoginRequest,
     PasswordChange,
+    RoleDefinitionRead,
     SessionRevocationResult,
+    SourceAccessRead,
     UserRead,
     UserSessionRead,
 )
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
+CURRENT_USER_ALLOW_PASSWORD_CHANGE = Depends(get_current_user_allow_password_change)
+AUTH_SESSION_DEPENDENCY = Depends(get_session)
 
 
 @router.post("/login", response_model=UserRead)
@@ -42,7 +47,7 @@ def login(
     response: Response,
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
-) -> User:
+) -> UserRead:
     rate_limit_key = normalize_username(payload.username)
     retry_after = login_limiter.retry_after(
         rate_limit_key,
@@ -77,7 +82,7 @@ def login(
     session.commit()
 
     set_session_cookie(response, raw_token, settings)
-    return user
+    return _user_response(user, session)
 
 
 def set_session_cookie(response: Response, raw_token: str, settings: Settings) -> None:
@@ -118,9 +123,42 @@ def logout(
 
 @router.get("/me", response_model=UserRead)
 def current_user(
-    user: User = Depends(get_current_user_allow_password_change),
-) -> User:
-    return user
+    user: User = CURRENT_USER_ALLOW_PASSWORD_CHANGE,
+    session: Session = AUTH_SESSION_DEPENDENCY,
+) -> UserRead:
+    return _user_response(user, session)
+
+
+def _user_response(user: User, session: Session) -> UserRead:
+    access = get_access_context(session, user)
+    role = user.role_definition
+    return UserRead(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        email_verified=user.email_verified,
+        role=user.role,
+        is_active=user.is_active,
+        must_change_password=user.must_change_password,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+        last_login_at=user.last_login_at,
+        role_definition=(
+            RoleDefinitionRead(
+                id=role.id,
+                name=role.name,
+                is_system=role.is_system,
+                is_superuser=role.is_superuser,
+            )
+            if role is not None
+            else None
+        ),
+        permissions=sorted(access.permission_keys),
+        source_access=SourceAccessRead(
+            all_sources=access.all_sources,
+            source_ids=sorted(access.source_ids),
+        ),
+    )
 
 
 @router.get("/sessions", response_model=list[UserSessionRead])
