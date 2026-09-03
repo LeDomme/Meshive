@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from io import BytesIO
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -10,8 +11,12 @@ from sqlalchemy.pool import StaticPool
 from meshive.auth.dependencies import get_current_user, require_admin
 from meshive.database import Base, get_session
 from meshive.main import app
+from meshive.models.authorization import UserLibrarySource
 from meshive.models.catalog import LibraryModel
 from meshive.models.library_source import LibrarySource
+from meshive.models.metadata import MetadataArtwork
+from meshive.models.user import User
+from meshive.repositories.roles import get_system_role_for_legacy_role
 
 
 def _png(width: int = 2000, height: int = 1000) -> bytes:
@@ -34,7 +39,9 @@ def test_metadata_artwork_is_validated_stored_and_served() -> None:
             yield session
 
     app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_current_user] = lambda: object()
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=1, role_id=None, role_definition=SimpleNamespace(is_superuser=True), all_sources=True
+    )
     app.dependency_overrides[require_admin] = lambda: None
     try:
         with sessions() as session:
@@ -133,6 +140,56 @@ def test_metadata_artwork_is_validated_stored_and_served() -> None:
             )
             assert deleted.status_code == 204
             assert client.get(artwork_url).status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_metadata_artwork_is_scoped_to_visible_model_sources() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+
+    def override_session() -> Generator[Session, None, None]:
+        with sessions() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with sessions() as session:
+            source_a = LibrarySource(name="A", root_path="/a", directory_pattern="{model}")
+            source_b = LibrarySource(name="B", root_path="/b", directory_pattern="{model}")
+            session.add_all([source_a, source_b])
+            session.flush()
+            session.add_all([
+                LibraryModel(library_source_id=source_a.id, relative_path="A", name="A", creator="Only A", franchise="Shared", status="available"),
+                LibraryModel(library_source_id=source_b.id, relative_path="B", name="B", creator="Only B", franchise="Shared", status="available"),
+            ])
+            artworks = [
+                MetadataArtwork(entity_type="creator", entity_value="Only A", entity_key="only a", content=b"a", content_type="image/webp", width=1, height=1, etag="a" * 64),
+                MetadataArtwork(entity_type="creator", entity_value="Only B", entity_key="only b", content=b"b", content_type="image/webp", width=1, height=1, etag="b" * 64),
+                MetadataArtwork(entity_type="franchise", entity_value="Shared", entity_key="shared", content=b"s", content_type="image/webp", width=1, height=1, etag="c" * 64),
+            ]
+            a_only = User(username="A", normalized_username="a", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
+            all_sources = User(username="All", normalized_username="all", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=True, is_active=True)
+            no_grant = User(username="None", normalized_username="none", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
+            session.add_all([*artworks, a_only, all_sources, no_grant])
+            session.flush()
+            session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_a.id))
+            session.commit()
+        with TestClient(app) as client:
+            app.dependency_overrides[get_current_user] = lambda: a_only
+            assert client.get(f"/api/metadata/artwork/{artworks[0].id}").status_code == 200
+            shared = client.get(f"/api/metadata/artwork/{artworks[2].id}")
+            assert shared.status_code == 200
+            hidden = client.get(f"/api/metadata/artwork/{artworks[1].id}")
+            assert hidden.status_code == 404
+            assert hidden.content != artworks[1].content and "etag" not in hidden.headers
+            app.dependency_overrides[get_current_user] = lambda: no_grant
+            assert client.get(f"/api/metadata/artwork/{artworks[0].id}").status_code == 404
+            app.dependency_overrides[get_current_user] = lambda: all_sources
+            assert client.get(f"/api/metadata/artwork/{artworks[1].id}").status_code == 200
     finally:
         app.dependency_overrides.clear()
         Base.metadata.drop_all(engine)

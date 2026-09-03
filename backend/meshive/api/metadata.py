@@ -16,6 +16,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from meshive.auth.access import get_access_context, visible_model_scope
 from meshive.auth.dependencies import get_current_user, require_admin
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
@@ -177,11 +178,22 @@ def delete_metadata_artwork(
 @router.get("/artwork/{artwork_id}")
 def metadata_artwork(
     artwork_id: int,
-    _user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> Response:
     artwork = session.get(MetadataArtwork, artwork_id)
     if artwork is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Custom artwork not found",
+        )
+    access = get_access_context(session, current_user)
+    column = _ENTITY_COLUMNS[artwork.entity_type]
+    scope = visible_model_scope(access)
+    statement = select(column).where(column.is_not(None), column != "")
+    if scope is not None:
+        statement = statement.where(scope)
+    if not any(_normalize(value) == artwork.entity_key for value in session.scalars(statement)):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Custom artwork not found",
