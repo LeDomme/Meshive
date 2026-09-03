@@ -1,6 +1,6 @@
 import re
 from pathlib import Path, PurePosixPath
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -80,6 +80,9 @@ admin_router = APIRouter(
     prefix="/admin/models",
     tags=["catalogue administration"],
 )
+
+CurrentUser = Annotated[User, Depends(get_current_user)]
+SessionDependency = Annotated[Session, Depends(get_session)]
 
 
 @router.get("", response_model=ModelPage)
@@ -566,8 +569,8 @@ def model_detail(
 @router.get("/{model_id}/archives/download-all", response_class=StreamingResponse)
 def download_all_archives(
     model_id: int,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    session: SessionDependency,
+    current_user: CurrentUser,
 ) -> StreamingResponse:
     access = get_access_context(session, current_user)
     model = get_visible_model_or_404(session, access, model_id)
@@ -640,8 +643,8 @@ def download_all_archives(
 def download_archive(
     model_id: int,
     archive_id: int,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    session: SessionDependency,
+    current_user: CurrentUser,
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
@@ -686,8 +689,8 @@ def download_archive(
 def model_image(
     model_id: int,
     image_id: int,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    session: SessionDependency,
+    current_user: CurrentUser,
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
@@ -739,8 +742,8 @@ def model_image(
 @router.get("/{model_id}/thumbnail", response_class=FileResponse)
 def model_thumbnail(
     model_id: int,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    session: SessionDependency,
+    current_user: CurrentUser,
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
@@ -777,7 +780,7 @@ def model_thumbnail(
 def set_primary_model_image(
     model_id: int,
     image_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> dict[str, int]:
     _require_visible_model_permission(session, current_user, model_id, MODELS_PRIMARY_IMAGE)
@@ -808,7 +811,7 @@ def set_primary_model_image(
 )
 def rescan_single_model(
     model_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> ScanRunRead:
     _require_visible_model_permission(session, current_user, model_id, MODELS_RESCAN)
@@ -825,7 +828,7 @@ def rescan_single_model(
 )
 def rebuild_single_model_images(
     model_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> ScanRunRead:
     _require_visible_model_permission(session, current_user, model_id, MODELS_REBUILD_IMAGES)
@@ -837,7 +840,7 @@ def rebuild_single_model_images(
 @admin_router.delete("/{model_id}/scan-issues")
 def clear_model_scan_issues(
     model_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> dict[str, int]:
     _require_visible_model_permission(session, current_user, model_id, CATALOGUE_VIEW_MAINTENANCE)
@@ -851,7 +854,7 @@ def clear_model_scan_issues(
 @admin_router.delete("/{model_id}/images")
 def reset_model_images(
     model_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> dict[str, int]:
     _require_visible_model_permission(session, current_user, model_id, MODELS_RESET_IMAGES)
@@ -885,7 +888,7 @@ def reset_model_images(
 
 @admin_router.delete("/missing")
 def delete_all_missing_models(
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> dict[str, int]:
     access = get_access_context(session, current_user)
@@ -908,7 +911,7 @@ def delete_all_missing_models(
 @admin_router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_missing_model(
     model_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> None:
     model = _require_visible_model_permission(

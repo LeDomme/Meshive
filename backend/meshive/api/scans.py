@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -35,7 +37,8 @@ router = APIRouter(
     prefix="/admin",
     tags=["scans"],
 )
-SCANS_VIEW_DEPENDENCY = Depends(require_permission(SCANS_VIEW))
+CurrentUser = Annotated[User, Depends(get_current_user)]
+ScansViewAccess = Annotated[AccessContext, Depends(require_permission(SCANS_VIEW))]
 
 
 @router.post(
@@ -45,7 +48,7 @@ SCANS_VIEW_DEPENDENCY = Depends(require_permission(SCANS_VIEW))
 )
 def start_source_scan(
     source_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
     payload: ScanStartRequest | None = None,
 ) -> ScanRun:
@@ -78,7 +81,7 @@ def start_source_scan(
 )
 def list_source_scans(
     source_id: int,
-    access: AccessContext = SCANS_VIEW_DEPENDENCY,
+    access: ScansViewAccess,
     session: Session = Depends(get_session),
 ) -> list[ScanRun]:
     statement = (
@@ -92,7 +95,7 @@ def list_source_scans(
 
 @router.get("/scans/queue", response_model=list[ScanQueueItem])
 def scan_queue(
-    access: AccessContext = SCANS_VIEW_DEPENDENCY,
+    access: ScansViewAccess,
     session: Session = Depends(get_session),
 ) -> list[ScanQueueItem]:
     statement = (
@@ -142,7 +145,7 @@ def scan_queue(
 @router.post("/scans/{scan_id}/cancel", response_model=ScanRunRead)
 def cancel_scan(
     scan_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> ScanRun:
     access = get_access_context(session, current_user)
@@ -161,7 +164,7 @@ def cancel_scan(
 @router.post("/scans/{scan_id}/pause", response_model=ScanRunRead)
 def pause_scan(
     scan_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> ScanRun:
     access = get_access_context(session, current_user)
@@ -177,7 +180,7 @@ def pause_scan(
 @router.post("/scans/{scan_id}/resume", response_model=ScanRunRead)
 def resume_scan(
     scan_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> ScanRun:
     access = get_access_context(session, current_user)
@@ -192,7 +195,7 @@ def resume_scan(
 @router.get("/scans/{scan_id}", response_model=ScanDetail)
 def get_scan(
     scan_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> ScanDetail:
     access = get_access_context(session, current_user)

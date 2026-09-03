@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -44,11 +46,12 @@ admin_router = APIRouter(
     prefix="/admin", tags=["tag administration"], dependencies=[Depends(require_admin)]
 )
 model_tag_router = APIRouter(prefix="/admin", tags=["tag administration"])
+CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 @router.get("", response_model=list[TagRead])
 def list_tags(
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> list[Tag]:
     scope = visible_model_scope(get_access_context(session, current_user))
@@ -116,7 +119,7 @@ def delete_tag(tag_id: int, session: Session = Depends(get_session)) -> Response
 def add_model_tag(
     model_id: int,
     tag_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> Response:
     access = get_access_context(session, current_user)
@@ -147,7 +150,7 @@ def add_model_tag(
 def remove_model_tag(
     model_id: int,
     tag_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> Response:
     access = get_access_context(session, current_user)
