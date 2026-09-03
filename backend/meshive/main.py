@@ -23,6 +23,7 @@ from meshive.api.scans import router as scans_router
 from meshive.api.setup import router as setup_router
 from meshive.api.system import router as system_router
 from meshive.api.tags import admin_router as tags_admin_router
+from meshive.api.tags import model_tag_router
 from meshive.api.tags import router as tags_router
 from meshive.api.users import router as users_router
 from meshive.config import get_settings
@@ -107,6 +108,7 @@ app.include_router(setup_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(tags_router, prefix="/api")
+app.include_router(model_tag_router, prefix="/api")
 app.include_router(tags_admin_router, prefix="/api")
 app.include_router(backups_router, prefix="/api")
 

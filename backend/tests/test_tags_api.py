@@ -7,14 +7,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from meshive.auth.dependencies import get_current_user, require_admin
+from meshive.auth.permissions import MODELS_TAGS
 from meshive.database import Base, get_session
 from meshive.main import app
-from meshive.models.authorization import UserLibrarySource
+from meshive.models.authorization import Role, RolePermission, UserLibrarySource
 from meshive.models.catalog import LibraryModel
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import ModelTag, Tag
 from meshive.models.user import User
-from meshive.repositories.roles import get_system_role_for_legacy_role
 
 
 def test_direct_and_recursive_tags_are_exposed_and_filterable() -> None:
@@ -124,15 +124,19 @@ def test_tags_and_direct_model_actions_are_source_scoped() -> None:
         with sessions() as session:
             a = LibrarySource(name="A", root_path="/a", directory_pattern="{model}")
             b = LibrarySource(name="B", root_path="/b", directory_pattern="{model}")
-            session.add_all([a, b]); session.flush()
+            tag_editor = Role(name="Tag editor", normalized_name="tag editor")
+            no_tags_role = Role(name="No tags", normalized_name="no tags")
+            session.add_all([a, b, tag_editor, no_tags_role]); session.flush()
+            session.add(RolePermission(role_id=tag_editor.id, permission_key=MODELS_TAGS))
             model_a = LibraryModel(library_source_id=a.id, relative_path="A", name="A", status="available")
             model_b = LibraryModel(library_source_id=b.id, relative_path="B", name="B", status="available")
             tag_a, tag_b, tag_shared = Tag(name="A tag"), Tag(name="B tag"), Tag(name="Shared tag")
-            a_only = User(username="A", normalized_username="a", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
-            all_sources = User(username="All", normalized_username="all", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=True, is_active=True)
-            no_grant = User(username="None", normalized_username="none", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
-            session.add_all([model_a, model_b, tag_a, tag_b, tag_shared, a_only, all_sources, no_grant]); session.flush()
-            session.add_all([UserLibrarySource(user_id=a_only.id, library_source_id=a.id), ModelTag(model_id=model_a.id, tag_id=tag_a.id), ModelTag(model_id=model_a.id, tag_id=tag_shared.id), ModelTag(model_id=model_b.id, tag_id=tag_b.id), ModelTag(model_id=model_b.id, tag_id=tag_shared.id)])
+            a_only = User(username="A", normalized_username="a", password_hash="unused", role="user", role_definition=tag_editor, all_sources=False, is_active=True)
+            all_sources = User(username="All", normalized_username="all", password_hash="unused", role="user", role_definition=tag_editor, all_sources=True, is_active=True)
+            no_grant = User(username="None", normalized_username="none", password_hash="unused", role="user", role_definition=tag_editor, all_sources=False, is_active=True)
+            no_tags = User(username="No tags", normalized_username="no tags", password_hash="unused", role="user", role_definition=no_tags_role, all_sources=False, is_active=True)
+            session.add_all([model_a, model_b, tag_a, tag_b, tag_shared, a_only, all_sources, no_grant, no_tags]); session.flush()
+            session.add_all([UserLibrarySource(user_id=a_only.id, library_source_id=a.id), UserLibrarySource(user_id=no_tags.id, library_source_id=a.id), ModelTag(model_id=model_a.id, tag_id=tag_a.id), ModelTag(model_id=model_a.id, tag_id=tag_shared.id), ModelTag(model_id=model_b.id, tag_id=tag_b.id), ModelTag(model_id=model_b.id, tag_id=tag_shared.id)])
             session.commit()
         with TestClient(app) as client:
             app.dependency_overrides[get_current_user] = lambda: a_only
@@ -141,6 +145,9 @@ def test_tags_and_direct_model_actions_are_source_scoped() -> None:
             with sessions() as session:
                 assert session.scalar(select(ModelTag).where(ModelTag.model_id == model_b.id, ModelTag.tag_id == tag_a.id)) is None
             assert client.put(f"/api/admin/models/{model_a.id}/tags/999").status_code == 404
+            assert client.delete(f"/api/admin/models/{model_b.id}/tags/{tag_b.id}").status_code == 404
+            app.dependency_overrides[get_current_user] = lambda: no_tags
+            assert client.put(f"/api/admin/models/{model_a.id}/tags/{tag_a.id}").status_code == 403
             assert client.delete(f"/api/admin/models/{model_b.id}/tags/{tag_b.id}").status_code == 404
             app.dependency_overrides[get_current_user] = lambda: no_grant
             assert client.get("/api/tags").json() == []

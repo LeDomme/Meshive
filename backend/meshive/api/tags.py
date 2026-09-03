@@ -3,8 +3,14 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from meshive.auth.access import get_access_context, get_visible_model_or_404, visible_model_scope
+from meshive.auth.access import (
+    get_access_context,
+    get_visible_model_or_404,
+    require_access_permission,
+    visible_model_scope,
+)
 from meshive.auth.dependencies import get_current_user, require_admin
+from meshive.auth.permissions import MODELS_TAGS
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
 from meshive.models.library_source import LibrarySource
@@ -37,6 +43,7 @@ router = APIRouter(prefix="/tags", tags=["tags"], dependencies=[Depends(get_curr
 admin_router = APIRouter(
     prefix="/admin", tags=["tag administration"], dependencies=[Depends(require_admin)]
 )
+model_tag_router = APIRouter(prefix="/admin", tags=["tag administration"])
 
 
 @router.get("", response_model=list[TagRead])
@@ -105,14 +112,16 @@ def delete_tag(tag_id: int, session: Session = Depends(get_session)) -> Response
     return Response(status_code=204)
 
 
-@admin_router.put("/models/{model_id}/tags/{tag_id}", status_code=204)
+@model_tag_router.put("/models/{model_id}/tags/{tag_id}", status_code=204)
 def add_model_tag(
     model_id: int,
     tag_id: int,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> Response:
-    get_visible_model_or_404(session, get_access_context(session, current_user), model_id)
+    access = get_access_context(session, current_user)
+    get_visible_model_or_404(session, access, model_id)
+    require_access_permission(access, MODELS_TAGS)
     if session.get(Tag, tag_id) is None:
         raise HTTPException(status_code=404, detail="Model or tag not found")
     assignment = session.scalar(
@@ -134,14 +143,16 @@ def add_model_tag(
     return Response(status_code=204)
 
 
-@admin_router.delete("/models/{model_id}/tags/{tag_id}", status_code=204)
+@model_tag_router.delete("/models/{model_id}/tags/{tag_id}", status_code=204)
 def remove_model_tag(
     model_id: int,
     tag_id: int,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> Response:
-    get_visible_model_or_404(session, get_access_context(session, current_user), model_id)
+    access = get_access_context(session, current_user)
+    get_visible_model_or_404(session, access, model_id)
+    require_access_permission(access, MODELS_TAGS)
     if session.get(Tag, tag_id) is None:
         raise HTTPException(status_code=404, detail="Model or tag not found")
     assignment = session.scalar(
