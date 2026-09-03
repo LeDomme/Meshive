@@ -8,7 +8,7 @@ from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import ALL_PERMISSION_KEYS
 from meshive.database import get_session
 from meshive.models.authorization import RolePermission, UserLibrarySource
-from meshive.models.catalog import LibraryModel
+from meshive.models.catalog import LibraryModel, ScanRun
 from meshive.models.library_source import LibrarySource
 from meshive.models.user import User
 
@@ -85,6 +85,14 @@ def visible_model_scope(access: AccessContext) -> ColumnElement[bool] | None:
     return None if source_ids is None else LibraryModel.library_source_id.in_(source_ids)
 
 
+def scope_scan_runs(statement: Select, access: AccessContext) -> Select:
+    """Restrict a ScanRun statement to sources visible to the user."""
+    source_ids = get_visible_source_ids(access)
+    return statement if source_ids is None else statement.where(
+        ScanRun.library_source_id.in_(source_ids)
+    )
+
+
 def get_visible_model_or_404(
     session: Session, access: AccessContext, model_id: int
 ) -> LibraryModel:
@@ -94,6 +102,13 @@ def get_visible_model_or_404(
     if model is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
     return model
+
+
+def get_visible_scan_or_404(session: Session, access: AccessContext, scan_id: int) -> ScanRun:
+    scan = session.scalar(scope_scan_runs(select(ScanRun).where(ScanRun.id == scan_id), access))
+    if scan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+    return scan
 
 
 def get_operable_source_or_404(
@@ -114,6 +129,14 @@ def get_operable_source_or_404(
     return source
 
 
+def require_access_permission(access: AccessContext, permission_key: str) -> None:
+    if permission_key not in access.permission_keys:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied",
+        )
+
+
 def require_permission(permission_key: str):
     if permission_key not in ALL_PERMISSION_KEYS:
         raise ValueError(f"Unknown permission key: {permission_key}")
@@ -123,11 +146,7 @@ def require_permission(permission_key: str):
         session: Session = SESSION_DEPENDENCY,
     ) -> AccessContext:
         access = get_access_context(session, user)
-        if permission_key not in access.permission_keys:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Permission denied",
-            )
+        require_access_permission(access, permission_key)
         return access
 
     return dependency
