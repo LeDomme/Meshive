@@ -81,16 +81,19 @@ def start_source_scan(
 )
 def list_source_scans(
     source_id: int,
-    access: ScansViewAccess,
+    current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> list[ScanRun]:
+    access = get_access_context(session, current_user)
+    get_operable_source_or_404(session, access, source_id)
+    require_access_permission(access, SCANS_VIEW)
     statement = (
         select(ScanRun)
         .where(ScanRun.library_source_id == source_id)
         .order_by(ScanRun.id.desc())
         .limit(20)
     )
-    return list(session.scalars(scope_scan_runs(statement, access)))
+    return list(session.scalars(statement))
 
 
 @router.get("/scans/queue", response_model=list[ScanQueueItem])

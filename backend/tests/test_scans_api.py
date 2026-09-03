@@ -106,6 +106,7 @@ def test_reading_scans_is_scoped_by_source_and_permission() -> None:
             current_user[:] = [admin]
             assert {scan["id"] for scan in client.get(f"/api/admin/library-sources/{source_a.id}/scans").json()} == a_scan_ids
             assert {scan["id"] for scan in client.get(f"/api/admin/library-sources/{source_b.id}/scans").json()} == b_scan_ids
+            assert client.get("/api/admin/library-sources/999999/scans").status_code == 404
             assert {scan["id"] for scan in client.get("/api/admin/scans/queue").json()} == {
                 a_pending_id,
                 b_pending_id,
@@ -122,7 +123,7 @@ def test_reading_scans_is_scoped_by_source_and_permission() -> None:
             current_user[:] = [a_only]
             a_history = client.get(f"/api/admin/library-sources/{source_a.id}/scans")
             assert {scan["id"] for scan in a_history.json()} == a_scan_ids
-            assert client.get(f"/api/admin/library-sources/{source_b.id}/scans").json() == []
+            assert client.get(f"/api/admin/library-sources/{source_b.id}/scans").status_code == 404
             queue = client.get("/api/admin/scans/queue")
             assert {scan["id"] for scan in queue.json()} == {
                 a_pending_id
@@ -133,12 +134,14 @@ def test_reading_scans_is_scoped_by_source_and_permission() -> None:
             assert client.get(f"/api/admin/scans/{b_pending_id}").status_code == 404
 
             current_user[:] = [no_grant]
-            assert client.get(f"/api/admin/library-sources/{source_a.id}/scans").json() == []
+            assert client.get(f"/api/admin/library-sources/{source_a.id}/scans").status_code == 404
+            assert client.get(f"/api/admin/library-sources/{source_b.id}/scans").status_code == 404
             assert client.get("/api/admin/scans/queue").json() == []
             assert client.get(f"/api/admin/scans/{b_pending_id}").status_code == 404
 
             current_user[:] = [viewer]
             assert client.get(f"/api/admin/library-sources/{source_a.id}/scans").status_code == 403
+            assert client.get(f"/api/admin/library-sources/{source_b.id}/scans").status_code == 404
             assert client.get("/api/admin/scans/queue").status_code == 403
             assert client.get(f"/api/admin/scans/{next(iter(a_scan_ids))}").status_code == 403
             assert client.get(f"/api/admin/scans/{b_pending_id}").status_code == 404
