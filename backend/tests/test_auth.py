@@ -60,6 +60,8 @@ def add_user(
             normalized_username=username.casefold(),
             password_hash=hash_password(password),
             role=role,
+            role_definition=get_system_role_for_legacy_role(session, role),
+            all_sources=True,
             is_active=True,
         )
         session.add(user)
@@ -105,16 +107,18 @@ def test_current_user_response_includes_role_permissions_and_source_access() -> 
                 password_hash=hash_password("correct horse battery staple"),
                 role="admin",
                 role_definition=administrator,
-                all_sources=True,
+                all_sources=False,
                 is_active=True,
             )
             session.add(user)
             session.commit()
 
-        assert client.post(
+        login = client.post(
             "/api/auth/login",
             json={"username": "admin", "password": "correct horse battery staple"},
-        ).status_code == 200
+        )
+        assert login.status_code == 200
+        assert login.json()["source_access"] == {"all_sources": True, "source_ids": []}
         response = client.get("/api/auth/me")
 
         assert response.status_code == 200
@@ -196,6 +200,9 @@ def test_legacy_user_api_create_and_update_assign_system_roles_and_all_sources()
             },
         )
         assert created.status_code == 201
+        assert "role_definition" not in created.json()
+        assert "permissions" not in created.json()
+        assert "source_access" not in created.json()
         member_id = created.json()["id"]
         with sessions() as session:
             member = session.get(User, member_id)
@@ -215,6 +222,9 @@ def test_legacy_user_api_create_and_update_assign_system_roles_and_all_sources()
             },
         )
         assert updated.status_code == 200
+        assert "role_definition" not in updated.json()
+        assert "permissions" not in updated.json()
+        assert "source_access" not in updated.json()
         with sessions() as session:
             administrator = session.get(User, member_id)
             assert administrator is not None
@@ -392,6 +402,9 @@ def test_initial_password_must_be_changed_before_catalogue_access() -> None:
         )
         assert changed.status_code == 200
         assert changed.json()["must_change_password"] is False
+        assert changed.json()["role_definition"]["name"] == "Member"
+        assert "archives.download" in changed.json()["permissions"]
+        assert changed.json()["source_access"] == {"all_sources": True, "source_ids": []}
         assert client.get("/api/models").status_code == 200
 
 
@@ -615,6 +628,10 @@ def test_first_run_setup_creates_and_signs_in_initial_admin() -> None:
         )
         assert created.status_code == 201
         assert created.json()["role"] == "admin"
+        assert created.json()["role_definition"]["name"] == "Administrator"
+        assert created.json()["role_definition"]["is_superuser"] is True
+        assert created.json()["permissions"] == sorted(created.json()["permissions"])
+        assert created.json()["source_access"] == {"all_sources": True, "source_ids": []}
         current_user = client.get("/api/auth/me")
         assert current_user.status_code == 200
         assert current_user.json()["role_definition"]["name"] == "Administrator"

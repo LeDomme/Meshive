@@ -2,7 +2,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 
-from meshive.auth.permissions import ALL_PERMISSION_KEYS
+from meshive.auth.permissions import SYSTEM_ROLE_DEFINITIONS
 from meshive.config import get_settings
 
 
@@ -40,16 +40,12 @@ def test_role_migration_preserves_existing_admin_and_user_access(tmp_path, monke
             roles = connection.execute(
                 text("SELECT name, is_system, is_superuser FROM roles ORDER BY id")
             ).all()
-            administrator_permissions = {
-                row[0]
-                for row in connection.execute(
-                    text(
-                        "SELECT role_permissions.permission_key FROM role_permissions "
-                        "JOIN roles ON roles.id = role_permissions.role_id "
-                        "WHERE roles.normalized_name = 'administrator'"
-                    )
+            permission_rows = connection.execute(
+                text(
+                    "SELECT roles.name, role_permissions.permission_key "
+                    "FROM role_permissions JOIN roles ON roles.id = role_permissions.role_id"
                 )
-            }
+            ).all()
             foreign_keys = connection.execute(text("PRAGMA foreign_key_list(users)")).all()
         engine.dispose()
 
@@ -61,7 +57,13 @@ def test_role_migration_preserves_existing_admin_and_user_access(tmp_path, monke
             ("Operator", 1, 0),
             ("Administrator", 1, 1),
         ]
-        assert administrator_permissions == ALL_PERMISSION_KEYS
+        assert {
+            name: {permission for role_name, permission in permission_rows if role_name == name}
+            for name in {definition.name for definition in SYSTEM_ROLE_DEFINITIONS}
+        } == {
+            definition.name: set(definition.permission_keys)
+            for definition in SYSTEM_ROLE_DEFINITIONS
+        }
         assert any(foreign_key[2] == "roles" for foreign_key in foreign_keys)
 
         command.downgrade(config, "20260901_33")

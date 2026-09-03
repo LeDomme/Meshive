@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from meshive.api.auth import set_session_cookie
+from meshive.auth.current_user import build_current_user_response
 from meshive.auth.passwords import hash_password
 from meshive.auth.rate_limit import setup_limiter
 from meshive.auth.sessions import create_user_session, utc_now
@@ -15,7 +16,7 @@ from meshive.models.user import User
 from meshive.repositories.roles import get_system_role_for_legacy_role
 from meshive.repositories.users import count_users, normalize_username
 from meshive.schemas.setup import InitialAdminCreate, SetupStatus
-from meshive.schemas.user import UserRead
+from meshive.schemas.user import CurrentUserRead
 
 router = APIRouter(prefix="/setup", tags=["initial setup"])
 
@@ -31,14 +32,14 @@ def setup_status(
     )
 
 
-@router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=CurrentUserRead, status_code=status.HTTP_201_CREATED)
 def create_initial_admin(
     payload: InitialAdminCreate,
     request: Request,
     response: Response,
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
-) -> User:
+) -> CurrentUserRead:
     rate_limit_key = "initial-setup"
     retry_after = setup_limiter.retry_after(
         rate_limit_key,
@@ -104,4 +105,4 @@ def create_initial_admin(
     session.refresh(user)
     setup_limiter.clear(rate_limit_key)
     set_session_cookie(response, raw_token, settings)
-    return user
+    return build_current_user_response(user, session)

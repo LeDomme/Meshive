@@ -16,6 +16,7 @@ from meshive.database import Base, get_session
 from meshive.main import app
 from meshive.models.user import User
 from meshive.models.user_token import UserActionToken
+from meshive.repositories.roles import get_system_role_for_legacy_role
 
 
 def recovery_settings(**overrides: object) -> Settings:
@@ -82,6 +83,8 @@ def add_recovery_user(
             email_verified_at=utc_now() if verified else None,
             password_hash=hash_password("a sufficiently long password"),
             role="user",
+            role_definition=get_system_role_for_legacy_role(session, "user"),
+            all_sources=True,
             is_active=True,
         )
         session.add(user)
@@ -142,6 +145,9 @@ def test_user_can_verify_recovery_email(monkeypatch) -> None:
         assert changed.status_code == 200
         assert changed.json()["email"] == "Viewer@example.com"
         assert changed.json()["email_verified"] is False
+        assert changed.json()["role_definition"]["name"] == "Member"
+        assert "archives.download" in changed.json()["permissions"]
+        assert changed.json()["source_access"] == {"all_sources": True, "source_ids": []}
         assert len(delivered) == 1
 
         verified = client.post(

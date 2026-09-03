@@ -43,6 +43,18 @@ class UserUpdate(BaseModel):
         return stripped
 
 
+class RoleDefinitionRead(BaseModel):
+    id: int
+    name: str
+    is_system: bool
+    is_superuser: bool
+
+
+class SourceAccessRead(BaseModel):
+    all_sources: bool
+    source_ids: list[int]
+
+
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -56,23 +68,12 @@ class UserRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_login_at: datetime | None
-    role_definition: "RoleDefinitionRead | None" = None
-    permissions: list[str] = Field(default_factory=list)
-    source_access: "SourceAccessRead" = Field(
-        default_factory=lambda: SourceAccessRead(all_sources=False, source_ids=[])
-    )
 
 
-class RoleDefinitionRead(BaseModel):
-    id: int
-    name: str
-    is_system: bool
-    is_superuser: bool
-
-
-class SourceAccessRead(BaseModel):
-    all_sources: bool
-    source_ids: list[int]
+class CurrentUserRead(UserRead):
+    role_definition: RoleDefinitionRead | None
+    permissions: list[str]
+    source_access: SourceAccessRead
 
 
 class CatalogueFilterPreferences(BaseModel):

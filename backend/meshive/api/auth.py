@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from meshive.auth.access import get_access_context
 from meshive.auth.action_tokens import delete_user_action_tokens
+from meshive.auth.current_user import build_current_user_response
 from meshive.auth.dependencies import (
     get_current_session_allow_password_change,
     get_current_user_allow_password_change,
@@ -26,12 +26,10 @@ from meshive.models.user import User
 from meshive.repositories.users import get_user_by_username, normalize_username
 from meshive.schemas.user import (
     CatalogueFilterPreferences,
+    CurrentUserRead,
     LoginRequest,
     PasswordChange,
-    RoleDefinitionRead,
     SessionRevocationResult,
-    SourceAccessRead,
-    UserRead,
     UserSessionRead,
 )
 
@@ -40,14 +38,14 @@ CURRENT_USER_ALLOW_PASSWORD_CHANGE = Depends(get_current_user_allow_password_cha
 AUTH_SESSION_DEPENDENCY = Depends(get_session)
 
 
-@router.post("/login", response_model=UserRead)
+@router.post("/login", response_model=CurrentUserRead)
 def login(
     payload: LoginRequest,
     request: Request,
     response: Response,
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
-) -> UserRead:
+) -> CurrentUserRead:
     rate_limit_key = normalize_username(payload.username)
     retry_after = login_limiter.retry_after(
         rate_limit_key,
@@ -82,7 +80,7 @@ def login(
     session.commit()
 
     set_session_cookie(response, raw_token, settings)
-    return _user_response(user, session)
+    return build_current_user_response(user, session)
 
 
 def set_session_cookie(response: Response, raw_token: str, settings: Settings) -> None:
@@ -121,44 +119,12 @@ def logout(
     return response
 
 
-@router.get("/me", response_model=UserRead)
+@router.get("/me", response_model=CurrentUserRead)
 def current_user(
     user: User = CURRENT_USER_ALLOW_PASSWORD_CHANGE,
     session: Session = AUTH_SESSION_DEPENDENCY,
-) -> UserRead:
-    return _user_response(user, session)
-
-
-def _user_response(user: User, session: Session) -> UserRead:
-    access = get_access_context(session, user)
-    role = user.role_definition
-    return UserRead(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        email_verified=user.email_verified,
-        role=user.role,
-        is_active=user.is_active,
-        must_change_password=user.must_change_password,
-        created_at=user.created_at,
-        updated_at=user.updated_at,
-        last_login_at=user.last_login_at,
-        role_definition=(
-            RoleDefinitionRead(
-                id=role.id,
-                name=role.name,
-                is_system=role.is_system,
-                is_superuser=role.is_superuser,
-            )
-            if role is not None
-            else None
-        ),
-        permissions=sorted(access.permission_keys),
-        source_access=SourceAccessRead(
-            all_sources=access.all_sources,
-            source_ids=sorted(access.source_ids),
-        ),
-    )
+) -> CurrentUserRead:
+    return build_current_user_response(user, session)
 
 
 @router.get("/sessions", response_model=list[UserSessionRead])
@@ -256,14 +222,14 @@ def _session_response(
     )
 
 
-@router.post("/change-password", response_model=UserRead)
+@router.post("/change-password", response_model=CurrentUserRead)
 def change_password(
     payload: PasswordChange,
     request: Request,
     user: User = Depends(get_current_user_allow_password_change),
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
-) -> User:
+) -> CurrentUserRead:
     rate_limit_key = f"current-password:{user.id}"
     retry_after = recovery_limiter.retry_after(
         rate_limit_key,
@@ -302,7 +268,7 @@ def change_password(
     session.execute(statement)
     session.commit()
     session.refresh(user)
-    return user
+    return build_current_user_response(user, session)
 
 
 @router.get("/catalogue-preferences", response_model=CatalogueFilterPreferences)

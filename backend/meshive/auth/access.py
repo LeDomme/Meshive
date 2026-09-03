@@ -38,7 +38,7 @@ def get_access_context(session: Session, user: User) -> AccessContext:
             )
             if key in ALL_PERMISSION_KEYS
         )
-    all_sources = bool(user.all_sources)
+    all_sources = bool(user.all_sources) or is_superuser
     source_ids = (
         frozenset()
         if all_sources or is_superuser
