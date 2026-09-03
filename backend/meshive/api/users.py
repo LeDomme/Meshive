@@ -15,6 +15,7 @@ from meshive.config import Settings, get_settings
 from meshive.database import get_session
 from meshive.models.user import User
 from meshive.repositories import users as repository
+from meshive.repositories.roles import get_system_role_for_legacy_role
 from meshive.schemas.user import (
     ActionMessage,
     AdminEmailVerification,
@@ -49,6 +50,8 @@ def create_user(
         ),
         password_hash=hash_password(payload.password),
         role=payload.role,
+        role_definition=get_system_role_for_legacy_role(session, payload.role),
+        all_sources=True,
         is_active=payload.is_active,
         must_change_password=payload.must_change_password,
     )
@@ -103,6 +106,8 @@ def update_user(
     user.email = new_email
     user.normalized_email = normalized_email
     user.role = payload.role
+    user.role_definition = get_system_role_for_legacy_role(session, payload.role)
+    user.all_sources = True
     user.is_active = payload.is_active
     user.must_change_password = payload.must_change_password
     if payload.password:

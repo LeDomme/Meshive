@@ -1,1 +1,1 @@
-"""Persistence repositories."""
+"""Database repositories."""

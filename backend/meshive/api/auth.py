@@ -6,6 +6,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from meshive.auth.action_tokens import delete_user_action_tokens
+from meshive.auth.current_user import build_current_user_response
 from meshive.auth.dependencies import (
     get_current_session_allow_password_change,
     get_current_user_allow_password_change,
@@ -24,25 +25,27 @@ from meshive.models.session import UserSession
 from meshive.models.user import User
 from meshive.repositories.users import get_user_by_username, normalize_username
 from meshive.schemas.user import (
-    LoginRequest,
     CatalogueFilterPreferences,
+    CurrentUserRead,
+    LoginRequest,
     PasswordChange,
     SessionRevocationResult,
-    UserRead,
     UserSessionRead,
 )
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
+CURRENT_USER_ALLOW_PASSWORD_CHANGE = Depends(get_current_user_allow_password_change)
+AUTH_SESSION_DEPENDENCY = Depends(get_session)
 
 
-@router.post("/login", response_model=UserRead)
+@router.post("/login", response_model=CurrentUserRead)
 def login(
     payload: LoginRequest,
     request: Request,
     response: Response,
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
-) -> User:
+) -> CurrentUserRead:
     rate_limit_key = normalize_username(payload.username)
     retry_after = login_limiter.retry_after(
         rate_limit_key,
@@ -77,7 +80,7 @@ def login(
     session.commit()
 
     set_session_cookie(response, raw_token, settings)
-    return user
+    return build_current_user_response(user, session)
 
 
 def set_session_cookie(response: Response, raw_token: str, settings: Settings) -> None:
@@ -116,11 +119,12 @@ def logout(
     return response
 
 
-@router.get("/me", response_model=UserRead)
+@router.get("/me", response_model=CurrentUserRead)
 def current_user(
-    user: User = Depends(get_current_user_allow_password_change),
-) -> User:
-    return user
+    user: User = CURRENT_USER_ALLOW_PASSWORD_CHANGE,
+    session: Session = AUTH_SESSION_DEPENDENCY,
+) -> CurrentUserRead:
+    return build_current_user_response(user, session)
 
 
 @router.get("/sessions", response_model=list[UserSessionRead])
@@ -218,14 +222,14 @@ def _session_response(
     )
 
 
-@router.post("/change-password", response_model=UserRead)
+@router.post("/change-password", response_model=CurrentUserRead)
 def change_password(
     payload: PasswordChange,
     request: Request,
     user: User = Depends(get_current_user_allow_password_change),
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
-) -> User:
+) -> CurrentUserRead:
     rate_limit_key = f"current-password:{user.id}"
     retry_after = recovery_limiter.retry_after(
         rate_limit_key,
@@ -264,7 +268,7 @@ def change_password(
     session.execute(statement)
     session.commit()
     session.refresh(user)
-    return user
+    return build_current_user_response(user, session)
 
 
 @router.get("/catalogue-preferences", response_model=CatalogueFilterPreferences)

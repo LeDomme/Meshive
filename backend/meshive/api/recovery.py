@@ -13,6 +13,7 @@ from meshive.auth.action_tokens import (
     find_action_token,
     issue_action_token,
 )
+from meshive.auth.current_user import build_current_user_response
 from meshive.auth.dependencies import get_current_user_allow_password_change
 from meshive.auth.passwords import hash_password, verify_password
 from meshive.auth.rate_limit import recovery_limiter
@@ -29,11 +30,11 @@ from meshive.repositories.users import (
 from meshive.schemas.user import (
     ActionMessage,
     ActionTokenRequest,
+    CurrentUserRead,
     EmailChange,
     PasswordRecoveryRequest,
     PasswordReset,
     RecoveryStatus,
-    UserRead,
 )
 from meshive.services.mailer import (
     EmailDeliveryError,
@@ -125,13 +126,13 @@ def reset_password(
     )
 
 
-@router.post("/email", response_model=UserRead)
+@router.post("/email", response_model=CurrentUserRead)
 def change_recovery_email(
     payload: EmailChange,
     user: User = Depends(get_current_user_allow_password_change),
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
-) -> User:
+) -> CurrentUserRead:
     rate_key = f"current-password:{user.id}"
     _enforce_recovery_rate_limit(rate_key, settings)
     if not verify_password(payload.current_password, user.password_hash):
@@ -180,7 +181,7 @@ def change_recovery_email(
     _record_verification_attempt(user.id, settings)
     _send_verification_or_error(settings, email, raw_token)
     session.refresh(user)
-    return user
+    return build_current_user_response(user, session)
 
 
 @router.post("/email/resend", response_model=ActionMessage)

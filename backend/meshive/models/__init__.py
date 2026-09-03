@@ -1,3 +1,4 @@
+from meshive.models.authorization import Role, RolePermission, UserLibrarySource
 from meshive.models.backup import BackupRun, BackupSchedule
 from meshive.models.catalog import (
     Archive,
@@ -38,10 +39,13 @@ __all__ = [
     "MetadataArtwork",
     "ModelImage",
     "ModelTag",
+    "Role",
+    "RolePermission",
     "ScanIssue",
     "ScanRun",
     "Tag",
     "User",
     "UserActionToken",
+    "UserLibrarySource",
     "UserSession",
 ]
