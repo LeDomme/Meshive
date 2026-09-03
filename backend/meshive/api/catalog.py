@@ -12,10 +12,20 @@ from starlette.background import BackgroundTask
 from meshive.auth.access import (
     get_access_context,
     get_visible_model_or_404,
+    require_access_permission,
     visible_model_scope,
 )
-from meshive.auth.dependencies import get_current_user, require_admin
-from meshive.auth.permissions import ARCHIVES_DOWNLOAD, ARCHIVES_VIEW_ENTRIES
+from meshive.auth.dependencies import get_current_user
+from meshive.auth.permissions import (
+    ARCHIVES_DOWNLOAD,
+    ARCHIVES_VIEW_ENTRIES,
+    CATALOGUE_VIEW_MAINTENANCE,
+    MODELS_DELETE_MISSING,
+    MODELS_PRIMARY_IMAGE,
+    MODELS_REBUILD_IMAGES,
+    MODELS_RESCAN,
+    MODELS_RESET_IMAGES,
+)
 from meshive.config import get_settings
 from meshive.database import get_session
 from meshive.models.catalog import (
@@ -69,7 +79,6 @@ router = APIRouter(
 admin_router = APIRouter(
     prefix="/admin/models",
     tags=["catalogue administration"],
-    dependencies=[Depends(require_admin)],
 )
 
 
@@ -100,8 +109,8 @@ def list_models(
     session: Session = Depends(get_session),
 ) -> ModelPage:
     access = get_access_context(session, user)
-    if model_status is not None and user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+    if model_status is not None:
+        require_access_permission(access, CATALOGUE_VIEW_MAINTENANCE)
     filters = _model_filters(
         search=search,
         model_name=model_name,
@@ -221,8 +230,8 @@ def model_navigation(
     session: Session = Depends(get_session),
 ) -> ModelNavigation:
     access = get_access_context(session, user)
-    if model_status is not None and user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+    if model_status is not None:
+        require_access_permission(access, CATALOGUE_VIEW_MAINTENANCE)
 
     filters = _model_filters(
         search=search,
@@ -279,8 +288,8 @@ def catalogue_filters(
     session: Session = Depends(get_session),
 ) -> CatalogueFilters:
     access = get_access_context(session, user)
-    if model_status is not None and user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+    if model_status is not None:
+        require_access_permission(access, CATALOGUE_VIEW_MAINTENANCE)
     values = {
         "search": search,
         "model_name": model_name,
@@ -304,7 +313,7 @@ def catalogue_filters(
 
     status_filters = facet_filters("model_status")
     statuses = _text_filter_options(session, LibraryModel.status, status_filters)
-    if user.role == "admin":
+    if CATALOGUE_VIEW_MAINTENANCE in access.permission_keys:
         statuses.append(
             FilterOption(
                 value=ARCHIVE_IMAGES_MISMATCH_STATUS,
@@ -335,7 +344,7 @@ def catalogue_filters(
         collections=_text_filter_options(
             session, LibraryModel.collection, facet_filters("collection")
         ),
-        statuses=statuses if user.role == "admin" else [],
+        statuses=statuses if CATALOGUE_VIEW_MAINTENANCE in access.permission_keys else [],
         tags=[
             TagRead(id=tag.id, name=tag.name, color=tag.color, description=tag.description)
             for tag in session.scalars(
@@ -768,8 +777,10 @@ def model_thumbnail(
 def set_primary_model_image(
     model_id: int,
     image_id: int,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, int]:
+    _require_visible_model_permission(session, current_user, model_id, MODELS_PRIMARY_IMAGE)
     image = session.scalar(
         select(ModelImage).where(
             ModelImage.id == image_id,
@@ -797,8 +808,10 @@ def set_primary_model_image(
 )
 def rescan_single_model(
     model_id: int,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> ScanRunRead:
+    _require_visible_model_permission(session, current_user, model_id, MODELS_RESCAN)
     try:
         return queue_model_rescan(session, model_id)
     except LookupError as error:
@@ -812,8 +825,10 @@ def rescan_single_model(
 )
 def rebuild_single_model_images(
     model_id: int,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> ScanRunRead:
+    _require_visible_model_permission(session, current_user, model_id, MODELS_REBUILD_IMAGES)
     try:
         return queue_model_rescan(session, model_id, force_image_rebuild=True)
     except LookupError as error:
@@ -822,11 +837,10 @@ def rebuild_single_model_images(
 @admin_router.delete("/{model_id}/scan-issues")
 def clear_model_scan_issues(
     model_id: int,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, int]:
-    model = session.get(LibraryModel, model_id)
-    if model is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
+    _require_visible_model_permission(session, current_user, model_id, CATALOGUE_VIEW_MAINTENANCE)
     deleted = session.execute(
         delete(ScanIssue).where(ScanIssue.model_id == model_id)
     ).rowcount
@@ -837,11 +851,10 @@ def clear_model_scan_issues(
 @admin_router.delete("/{model_id}/images")
 def reset_model_images(
     model_id: int,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, int]:
-    model = session.get(LibraryModel, model_id)
-    if model is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
+    _require_visible_model_permission(session, current_user, model_id, MODELS_RESET_IMAGES)
     cache_keys = [
         key
         for key in session.scalars(
@@ -872,11 +885,18 @@ def reset_model_images(
 
 @admin_router.delete("/missing")
 def delete_all_missing_models(
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, int]:
+    access = get_access_context(session, current_user)
+    require_access_permission(access, MODELS_DELETE_MISSING)
+    scope = visible_model_scope(access)
     model_ids = list(
         session.scalars(
-            select(LibraryModel.id).where(LibraryModel.status == "missing")
+            select(LibraryModel.id).where(
+                LibraryModel.status == "missing",
+                *([scope] if scope is not None else []),
+            )
         )
     )
     cache_keys = _delete_model_records(session, model_ids)
@@ -887,13 +907,13 @@ def delete_all_missing_models(
 
 @admin_router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_missing_model(
-    model_id: int, session: Session = Depends(get_session)
+    model_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
 ) -> None:
-    model = session.get(LibraryModel, model_id)
-    if model is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Model not found"
-        )
+    model = _require_visible_model_permission(
+        session, current_user, model_id, MODELS_DELETE_MISSING
+    )
     if model.status != "missing":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -903,6 +923,18 @@ def delete_missing_model(
     cache_keys = _delete_model_records(session, [model.id])
     for key in cache_keys:
         remove_cached_file(get_settings().cache_dir, key)
+
+
+def _require_visible_model_permission(
+    session: Session,
+    current_user: User,
+    model_id: int,
+    permission_key: str,
+) -> LibraryModel:
+    access = get_access_context(session, current_user)
+    model = get_visible_model_or_404(session, access, model_id)
+    require_access_permission(access, permission_key)
+    return model
 
 
 def _delete_model_records(session: Session, model_ids: list[int]) -> list[str]:
