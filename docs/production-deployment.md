@@ -39,6 +39,10 @@ those variables instead of overriding the container `user`. Only one Meshive
 container may use a given SQLite data volume at a time. Supported environment
 variables and limits are listed in [`.env.example`](../.env.example).
 
+The Compose examples retain `CAP_KILL` after dropping all other capabilities so
+their `tini` PID-1 init process can forward shutdown signals to Meshive running
+as `PUID:PGID`.
+
 `MESHIVE_FIX_PERMISSIONS=auto` is the default and creates the writable
 directories while checking and, if needed, correcting only their mount-root
 ownership. It never walks the cache tree, so it remains suitable for large or
