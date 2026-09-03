@@ -108,7 +108,8 @@ def list_models(
         source_id=source_id,
         model_status=model_status,
     )
-    if scope := visible_model_scope(access):
+    scope = visible_model_scope(access)
+    if scope is not None:
         filters.append(scope)
     total = int(
         session.scalar(
@@ -229,7 +230,8 @@ def model_navigation(
         source_id=source_id,
         model_status=model_status,
     )
-    if scope := visible_model_scope(access):
+    scope = visible_model_scope(access)
+    if scope is not None:
         filters.append(scope)
     models = list(
         session.execute(
@@ -290,7 +292,8 @@ def catalogue_filters(
         filters = _model_filters(
             **{key: None if key == exclude else value for key, value in values.items()}
         )
-        if scope := visible_model_scope(access):
+        scope = visible_model_scope(access)
+        if scope is not None:
             filters.append(scope)
         return filters
 

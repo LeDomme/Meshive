@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, get_session
 from meshive.main import app
+from meshive.models.authorization import UserLibrarySource
 from meshive.models.catalog import (
     Archive,
     ArchiveEntry,
@@ -22,6 +23,8 @@ from meshive.models.catalog import (
     ScanRun,
 )
 from meshive.models.library_source import LibrarySource
+from meshive.models.user import User
+from meshive.repositories.roles import get_system_role_for_legacy_role
 
 
 @contextmanager
@@ -201,6 +204,153 @@ def test_lists_searches_filters_and_downloads_models(tmp_path) -> None:
         assert filters.json()["models"] == [{"value": model.name, "count": 1}]
         assert filters.json()["creators"] == [{"value": "Aoae", "count": 1}]
         assert filters.json()["series"] == [{"value": "Moikaloop", "count": 1}]
+
+
+def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source_a = LibrarySource(
+                name="Source A",
+                root_path="/models/a",
+                directory_pattern="{creator}/{model}",
+            )
+            source_b = LibrarySource(
+                name="Source B",
+                root_path="/models/b",
+                directory_pattern="{creator}/{model}",
+            )
+            session.add_all([source_a, source_b])
+            session.flush()
+            models = [
+                LibraryModel(
+                    library_source_id=source_a.id,
+                    relative_path="A/Amber",
+                    name="Amber Model",
+                    creator="Creator A",
+                    franchise="Franchise A",
+                    status="available",
+                ),
+                LibraryModel(
+                    library_source_id=source_b.id,
+                    relative_path="B/Blue",
+                    name="Blue Model",
+                    creator="Creator B",
+                    franchise="Franchise B",
+                    status="available",
+                ),
+                LibraryModel(
+                    library_source_id=source_b.id,
+                    relative_path="B/Bronze",
+                    name="Bronze Model",
+                    creator="Creator B",
+                    franchise="Franchise B",
+                    status="available",
+                ),
+            ]
+            session.add_all(models)
+            session.flush()
+            for model in models:
+                session.execute(
+                    text(
+                        "INSERT INTO model_search(model_id, name, variant, creator, "
+                        "franchise, series, collection, tags) VALUES "
+                        "(:id, :name, '', :creator, :franchise, '', '', '')"
+                    ),
+                    {
+                        "id": model.id,
+                        "name": model.name,
+                        "creator": model.creator,
+                        "franchise": model.franchise,
+                    },
+                )
+            administrator = User(
+                username="Administrator",
+                normalized_username="administrator",
+                password_hash="unused",
+                role="admin",
+                role_definition=get_system_role_for_legacy_role(session, "admin"),
+                all_sources=False,
+                is_active=True,
+            )
+            all_sources_user = User(
+                username="All sources",
+                normalized_username="all sources",
+                password_hash="unused",
+                role="user",
+                role_definition=get_system_role_for_legacy_role(session, "user"),
+                all_sources=True,
+                is_active=True,
+            )
+            a_only_user = User(
+                username="A only",
+                normalized_username="a only",
+                password_hash="unused",
+                role="user",
+                role_definition=get_system_role_for_legacy_role(session, "user"),
+                all_sources=False,
+                is_active=True,
+            )
+            no_sources_user = User(
+                username="No sources",
+                normalized_username="no sources",
+                password_hash="unused",
+                role="user",
+                role_definition=get_system_role_for_legacy_role(session, "user"),
+                all_sources=False,
+                is_active=True,
+            )
+            session.add_all(
+                [
+                    administrator,
+                    all_sources_user,
+                    a_only_user,
+                    no_sources_user,
+                ]
+            )
+            session.flush()
+            session.add(
+                UserLibrarySource(user_id=a_only_user.id, library_source_id=source_a.id)
+            )
+            session.commit()
+
+        def use_user(user: User) -> None:
+            app.dependency_overrides[get_current_user] = lambda: user
+
+        for user in (administrator, all_sources_user):
+            use_user(user)
+            response = client.get("/api/models", params={"sort": "name_asc"})
+            assert response.status_code == 200
+            assert response.json()["total"] == 3
+            assert {item["source_id"] for item in response.json()["items"]} == {
+                source_a.id,
+                source_b.id,
+            }
+
+        use_user(a_only_user)
+        response = client.get("/api/models", params={"sort": "name_asc", "page_size": 1})
+        assert response.status_code == 200
+        assert response.json()["total"] == 1
+        assert [item["name"] for item in response.json()["items"]] == ["Amber Model"]
+        assert client.get("/api/models", params={"search": "blue"}).json()["total"] == 0
+        assert client.get("/api/models", params={"page": 2, "page_size": 1}).json()["items"] == []
+
+        facets = client.get("/api/models/filters").json()
+        assert facets["models"] == [{"value": "Amber Model", "count": 1}]
+        assert facets["creators"] == [{"value": "Creator A", "count": 1}]
+        assert facets["franchises"] == [{"value": "Franchise A", "count": 1}]
+        assert facets["sources"] == [{"id": source_a.id, "name": "Source A", "count": 1}]
+        assert client.get(f"/api/models/{models[1].id}").status_code == 404
+        assert client.get(f"/api/models/{models[1].id}/navigation").status_code == 404
+        navigation = client.get(f"/api/models/{models[0].id}/navigation").json()
+        assert navigation == {"previous": None, "next": None}
+
+        use_user(no_sources_user)
+        response = client.get("/api/models", params={"search": "model"})
+        assert response.json() == {"items": [], "total": 0, "page": 1, "page_size": 48}
+        facets = client.get("/api/models/filters").json()
+        assert all(not facets[key] for key in ("models", "creators", "franchises", "sources"))
+        assert client.get(f"/api/models/{models[0].id}").status_code == 404
+        assert client.get(f"/api/models/{models[0].id}/navigation").status_code == 404
 
 
 def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:
