@@ -65,6 +65,7 @@ services:
     cap_add:
       - CHOWN
       - DAC_OVERRIDE
+      - KILL
       - SETUID
       - SETGID
     networks:
