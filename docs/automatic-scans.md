@@ -20,7 +20,8 @@ being scanned. Scans above the configured concurrency limit remain in a
 persistent first-in, first-out queue. The source administration page displays
 running scans and queue positions. If the container was offline at the
 scheduled time, one missed scan is queued after Meshive becomes available
-again.
+again. Scheduled scans always use **Smart** mode: they process new or changed
+models and skip unchanged healthy models.
 
 The scheduler uses periodic checks rather than filesystem notifications. This
 works reliably with local directories as well as Docker-mounted NFS and SMB

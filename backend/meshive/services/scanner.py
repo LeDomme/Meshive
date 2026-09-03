@@ -85,7 +85,7 @@ def create_scan_run(
     source_id: int,
     *,
     trigger: str = "manual",
-    mode: str = "full",
+    mode: str,
 ) -> ScanRun:
     scan = ScanRun(
         library_source_id=source_id,

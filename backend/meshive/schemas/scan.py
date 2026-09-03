@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 class ScanStartRequest(BaseModel):
     """Choose how deeply a library source is inspected."""
 
-    mode: Literal["full", "missing_images", "incremental", "reconcile_images", "smart"] = "full"
+    mode: Literal["full", "missing_images", "incremental", "reconcile_images", "smart"] = "smart"
 
 class ScanRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)

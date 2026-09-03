@@ -105,7 +105,7 @@ def test_scans_representative_mixed_library(tmp_path, monkeypatch) -> None:
         )
         session.add(source)
         session.commit()
-        scan = scanner.create_scan_run(session, source.id)
+        scan = scanner.create_scan_run(session, source.id, mode="smart")
 
         scanner._execute_scan(session, source.id, scan.id)
 

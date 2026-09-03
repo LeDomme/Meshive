@@ -54,7 +54,7 @@ def start_source_scan(
         session,
         source_id,
         trigger="manual",
-        mode=payload.mode if payload is not None else "full",
+        mode=payload.mode if payload is not None else "smart",
     )
     dispatch_pending_scans()
     return scan
