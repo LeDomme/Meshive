@@ -75,6 +75,9 @@ jobs:
       - name: Install locked frontend dependencies
         run: npm ci --include=dev --ignore-scripts
 
+      - name: Update npm audit client
+        run: npm install --global npm@10.9.8
+
       - name: Verify frontend build dependencies
         run: npm ls --depth=0 vite vue-tsc typescript
 
