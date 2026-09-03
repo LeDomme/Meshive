@@ -119,6 +119,27 @@ def test_user_access_assignments_are_validated_and_hidden_grants_are_cleared() -
             assert not session.query(UserLibrarySource).filter_by(user_id=user_id).count()
 
 
+def test_user_create_defaults_to_legacy_member_role_without_role_selection() -> None:
+    with _admin_client() as (client, sessions):
+        _add_admin(sessions)
+        assert client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "correct horse battery staple"},
+        ).status_code == 200
+        created = client.post(
+            "/api/admin/users",
+            json={
+                "username": "Default member",
+                "password": "a sufficiently long password",
+                "is_active": True,
+            },
+        )
+        assert created.status_code == 201
+        assert created.json()["role"] == "user"
+        assert created.json()["role_definition"]["name"] == "Member"
+        assert created.json()["all_sources"] is True
+
+
 def test_last_system_superuser_cannot_be_demoted_or_deleted() -> None:
     with _admin_client() as (client, sessions):
         _add_admin(sessions)

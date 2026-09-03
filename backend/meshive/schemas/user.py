@@ -20,7 +20,7 @@ class UserCreate(BaseModel):
     username: str = Field(min_length=1, max_length=120)
     email: EmailStr | None = None
     password: str = Field(min_length=12, max_length=1024)
-    role: Literal["admin", "user"] | None = None
+    role: Literal["admin", "user"] = "user"
     role_id: int | None = Field(default=None, ge=1)
     all_sources: bool = True
     source_ids: list[int] = Field(default_factory=list, max_length=500)
@@ -37,8 +37,8 @@ class UserCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_role_selection(self) -> "UserCreate":
-        if (self.role is None) == (self.role_id is None):
-            raise ValueError("Provide exactly one of role or role_id")
+        if self.role_id is not None and "role" in self.model_fields_set:
+            raise ValueError("Provide role or role_id, not both")
         return self
 
 
