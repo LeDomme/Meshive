@@ -367,31 +367,52 @@ def test_media_and_download_routes_are_source_scoped(tmp_path, monkeypatch) -> N
             session.flush()
             archive_a = Archive(model_id=model_a.id, filename="a.zip", relative_path="A/a.zip", format="zip", size_bytes=6, modified_ns=1, status="ready")
             archive_b = Archive(model_id=model_b.id, filename="b.zip", relative_path="B/b.zip", format="zip", size_bytes=6, modified_ns=1, status="ready")
-            session.add_all([archive_a, archive_b])
+            archive_b_extra = Archive(model_id=model_b.id, filename="b-extra.zip", relative_path="B/b-extra.zip", format="zip", size_bytes=6, modified_ns=1, status="ready")
+            session.add_all([archive_a, archive_b, archive_b_extra])
             session.flush()
+            session.add(
+                ArchiveEntry(
+                    archive_id=archive_a.id,
+                    path="files/a.stl",
+                    name="a.stl",
+                    is_directory=False,
+                )
+            )
+            image_a = ModelImage(model_id=model_a.id, filename="a.jpg", relative_path="A/a.jpg", storage_kind="source", format="jpg", size_bytes=1, modified_ns=1, is_available=True)
             image_b = ModelImage(model_id=model_b.id, filename="b.jpg", relative_path="B/b.jpg", storage_kind="source", format="jpg", size_bytes=1, modified_ns=1, is_available=True)
-            session.add(image_b)
+            session.add_all([image_a, image_b])
             member = User(username="Member", normalized_username="member", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=True, is_active=True)
             viewer = User(username="Viewer", normalized_username="viewer", password_hash="unused", role="user", role_definition=Role(name="Viewer test", normalized_name="viewer test"), all_sources=True, is_active=True)
             a_only = User(username="A only media", normalized_username="a only media", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
-            session.add_all([member, viewer, a_only])
+            no_grant = User(username="No grant media", normalized_username="no grant media", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
+            session.add_all([member, viewer, a_only, no_grant])
             session.flush()
             session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_a.id))
             session.commit()
         (tmp_path / "a" / "A").mkdir(parents=True)
         (tmp_path / "b" / "B").mkdir(parents=True)
         (tmp_path / "a" / "A" / "a.zip").write_bytes(b"abcdef")
+        (tmp_path / "a" / "A" / "a.jpg").write_bytes(b"x")
         (tmp_path / "b" / "B" / "b.zip").write_bytes(b"abcdef")
+        (tmp_path / "b" / "B" / "b-extra.zip").write_bytes(b"abcdef")
         (tmp_path / "b" / "B" / "b.jpg").write_bytes(b"x")
         app.dependency_overrides[get_current_user] = lambda: member
         assert client.get(f"/api/models/{model_a.id}/archives/{archive_a.id}/download", headers={"Range": "bytes=1-3"}).status_code == 206
+        assert client.get(f"/api/models/{model_b.id}/archives/download-all").status_code == 200
+        assert client.get(f"/api/models/{model_a.id}/images/{image_a.id}").status_code == 200
+        assert client.get(f"/api/models/{model_a.id}/images/{image_b.id}").status_code == 404
+        assert client.get(f"/api/models/{model_a.id}").json()["archives"][0]["entries"]
         app.dependency_overrides[get_current_user] = lambda: viewer
         assert client.get(f"/api/models/{model_a.id}/archives/{archive_a.id}/download").status_code == 403
+        assert client.get(f"/api/models/{model_a.id}").json()["archives"][0]["entries"] == []
         app.dependency_overrides[get_current_user] = lambda: a_only
         assert client.get(f"/api/models/{model_b.id}/images/{image_b.id}").status_code == 404
         assert client.get(f"/api/models/{model_b.id}/thumbnail").status_code == 404
         assert client.get(f"/api/models/{model_b.id}/archives/{archive_b.id}/download", headers={"Range": "bytes=0-1"}).status_code == 404
+        assert client.get(f"/api/models/{model_b.id}/archives/download-all").status_code == 404
         assert client.get(f"/api/models/{model_a.id}/archives/{archive_b.id}/download").status_code == 404
+        app.dependency_overrides[get_current_user] = lambda: no_grant
+        assert client.get(f"/api/models/{model_b.id}/archives/download-all").status_code == 404
 
 
 def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:

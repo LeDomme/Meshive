@@ -15,7 +15,7 @@ from meshive.auth.access import (
     visible_model_scope,
 )
 from meshive.auth.dependencies import get_current_user, require_admin
-from meshive.auth.permissions import ARCHIVES_DOWNLOAD
+from meshive.auth.permissions import ARCHIVES_DOWNLOAD, ARCHIVES_VIEW_ENTRIES
 from meshive.config import get_settings
 from meshive.database import get_session
 from meshive.models.catalog import (
@@ -422,17 +422,22 @@ def model_detail(
         .where(Archive.model_id == model.id)
         .order_by(Archive.filename.collate("NOCASE"))
     ).all()
+    can_view_entries = ARCHIVES_VIEW_ENTRIES in access.permission_keys
     archive_reads = []
     archive_image_files = 0
     stl_files = 0
     chitubox_files = 0
     lychee_files = 0
     for archive in archives:
-        entries = session.scalars(
-            select(ArchiveEntry)
-            .where(ArchiveEntry.archive_id == archive.id)
-            .order_by(ArchiveEntry.path.collate("NOCASE"))
-        ).all()
+        entries = (
+            session.scalars(
+                select(ArchiveEntry)
+                .where(ArchiveEntry.archive_id == archive.id)
+                .order_by(ArchiveEntry.path.collate("NOCASE"))
+            ).all()
+            if can_view_entries
+            else []
+        )
         for entry in entries:
             if entry.is_directory:
                 continue
