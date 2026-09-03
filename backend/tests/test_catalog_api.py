@@ -6,7 +6,7 @@ from io import BytesIO
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, delete, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -706,7 +706,7 @@ def test_filter_options_follow_other_selected_facets() -> None:
         ]
 
 
-def test_source_scan_preserves_requested_mode_in_responses(tmp_path, monkeypatch) -> None:
+def test_source_scan_defaults_to_smart_and_preserves_requested_modes(tmp_path, monkeypatch) -> None:
     with catalog_client() as (client, sessions):
         with sessions() as session:
             source = LibrarySource(
@@ -716,18 +716,34 @@ def test_source_scan_preserves_requested_mode_in_responses(tmp_path, monkeypatch
             session.add(source)
             session.commit()
             source_id = source.id
-        monkeypatch.setattr("meshive.services.scanner.dispatch_pending_scans", lambda: None)
+        monkeypatch.setattr("meshive.api.scans.dispatch_pending_scans", lambda: None)
+
+        default_response = client.post(f"/api/admin/library-sources/{source_id}/scan")
+
+        assert default_response.status_code == 202
+        assert default_response.json()["mode"] == "smart"
+
+        with sessions() as session:
+            session.execute(delete(ScanRun))
+            session.commit()
 
         response = client.post(
             f"/api/admin/library-sources/{source_id}/scan",
-            json={"mode": "reconcile_images"},
+            json={"mode": "incremental"},
         )
 
         assert response.status_code == 202
-        assert response.json()["mode"] == "reconcile_images"
+        assert response.json()["mode"] == "incremental"
         scans = client.get(f"/api/admin/library-sources/{source_id}/scans")
         assert scans.status_code == 200
-        assert scans.json()[0]["mode"] == "reconcile_images"
+        assert [scan["mode"] for scan in scans.json()] == ["incremental"]
+
+        invalid_response = client.post(
+            f"/api/admin/library-sources/{source_id}/scan",
+            json={"mode": "unknown"},
+        )
+
+        assert invalid_response.status_code == 422
 
 
 def test_model_rescan_queues_a_targeted_scan(tmp_path, monkeypatch) -> None:
@@ -761,6 +777,7 @@ def test_model_rescan_queues_a_targeted_scan(tmp_path, monkeypatch) -> None:
     assert response.json()["status"] == "pending"
     assert response.json()["target_model_id"] == model_id
     assert response.json()["trigger"] == "model_rescan"
+    assert response.json()["mode"] == "full"
 
 
 def test_model_image_rebuild_queues_a_targeted_rebuild(tmp_path, monkeypatch) -> None:
@@ -794,6 +811,7 @@ def test_model_image_rebuild_queues_a_targeted_rebuild(tmp_path, monkeypatch) ->
         assert response.json()["status"] == "pending"
         assert response.json()["target_model_id"] == model_id
         assert response.json()["trigger"] == "model_image_rebuild"
+        assert response.json()["mode"] == "full"
 
 
 def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:

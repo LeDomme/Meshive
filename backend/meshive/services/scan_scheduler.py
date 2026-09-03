@@ -105,7 +105,7 @@ def _start_due_scans() -> None:
                 continue
             if has_queued_or_running_scan(session, source.id):
                 continue
-            create_scan_run(session, source.id, trigger="scheduled")
+            create_scan_run(session, source.id, trigger="scheduled", mode="smart")
     dispatch_pending_scans()
 
 

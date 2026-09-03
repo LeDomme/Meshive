@@ -13,10 +13,9 @@ read-only library.
   Franchise, or Collection value.
 - `LibrarySource`: display name, container root, parsing patterns, defaults,
   supported formats, and scan settings.
-- `Creator`: parsed creator identity plus optional manual display override.
-- `Group`: a franchise, collection, or unspecified grouping.
 - `LibraryModel`: one indexed model, uniquely identified by source and relative
-  path.
+  path. Creator, Franchise, Series, and Collection are currently parsed text
+  fields on this record.
 - `Archive`: the expected archive for a model, including format, size,
   modification time, scan state, and aggregate entry information.
 - `ArchiveEntry`: cached file or directory metadata from an archive listing.
@@ -27,9 +26,10 @@ read-only library.
 - `ScanRun`: status and statistics for one source scan.
 - `ScanIssue`: structured warning or error produced by a scan.
 
-The first scanner migration stores parsed creator, franchise, and collection
-values directly on `LibraryModel`. Normalized browse/filter tables can be
-derived from these values later without rereading source archives.
+Creator links and metadata artwork are currently associated through normalized
+text keys. Meshive does not yet have normalized `Creator` or `Group` entities;
+the parsed Creator, Franchise, Series, and Collection values remain directly on
+`LibraryModel`. A stable Creator entity is planned for a later release.
 
 ## Important constraints
 

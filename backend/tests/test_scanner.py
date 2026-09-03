@@ -765,6 +765,7 @@ def test_smart_scan_policy_change_forces_reconciliation(tmp_path, monkeypatch) -
 
 
 def test_smart_scan_mode_is_strictly_validated() -> None:
+    assert ScanStartRequest().mode == "smart"
     assert ScanStartRequest(mode="smart").mode == "smart"
 
 

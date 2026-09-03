@@ -75,3 +75,32 @@ def test_invalid_timezone_warning_is_deduplicated(monkeypatch) -> None:
     assert logged_messages == [
         "Skipping scheduled scan for source 42 (Broken schedule): unknown timezone 'Not/A-Timezone'"
     ]
+
+
+def test_scheduler_explicitly_starts_smart_scans(monkeypatch) -> None:
+    scheduled_source = SimpleNamespace(id=7)
+    created: list[tuple[int, str, str]] = []
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def scalars(self, _statement):
+            return [scheduled_source]
+
+    monkeypatch.setattr(scan_scheduler, "SessionLocal", FakeSession)
+    monkeypatch.setattr(scan_scheduler, "_is_due", lambda *_args: True)
+    monkeypatch.setattr(scan_scheduler, "has_queued_or_running_scan", lambda *_args: False)
+    monkeypatch.setattr(
+        scan_scheduler,
+        "create_scan_run",
+        lambda _session, source_id, *, trigger, mode: created.append((source_id, trigger, mode)),
+    )
+    monkeypatch.setattr(scan_scheduler, "dispatch_pending_scans", lambda: None)
+
+    scan_scheduler._start_due_scans()
+
+    assert created == [(7, "scheduled", "smart")]
