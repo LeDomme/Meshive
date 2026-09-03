@@ -82,7 +82,7 @@ admin_router = APIRouter(
 )
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
-SessionDependency = Annotated[Session, Depends(get_session)]
+CurrentUserDependency = Depends(get_current_user)
 
 
 @router.get("", response_model=ModelPage)
@@ -569,8 +569,8 @@ def model_detail(
 @router.get("/{model_id}/archives/download-all", response_class=StreamingResponse)
 def download_all_archives(
     model_id: int,
-    session: SessionDependency,
-    current_user: CurrentUser,
+    session: Session = Depends(get_session),
+    current_user: User = CurrentUserDependency,
 ) -> StreamingResponse:
     access = get_access_context(session, current_user)
     model = get_visible_model_or_404(session, access, model_id)
@@ -643,8 +643,8 @@ def download_all_archives(
 def download_archive(
     model_id: int,
     archive_id: int,
-    session: SessionDependency,
-    current_user: CurrentUser,
+    session: Session = Depends(get_session),
+    current_user: User = CurrentUserDependency,
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
@@ -689,8 +689,8 @@ def download_archive(
 def model_image(
     model_id: int,
     image_id: int,
-    session: SessionDependency,
-    current_user: CurrentUser,
+    session: Session = Depends(get_session),
+    current_user: User = CurrentUserDependency,
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
@@ -742,8 +742,8 @@ def model_image(
 @router.get("/{model_id}/thumbnail", response_class=FileResponse)
 def model_thumbnail(
     model_id: int,
-    session: SessionDependency,
-    current_user: CurrentUser,
+    session: Session = Depends(get_session),
+    current_user: User = CurrentUserDependency,
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
