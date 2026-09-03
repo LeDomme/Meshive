@@ -13,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, get_session
 from meshive.main import app
-from meshive.models.authorization import UserLibrarySource
+from meshive.models.authorization import Role, UserLibrarySource
 from meshive.models.catalog import (
     Archive,
     ArchiveEntry,
@@ -351,6 +351,47 @@ def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
         assert all(not facets[key] for key in ("models", "creators", "franchises", "sources"))
         assert client.get(f"/api/models/{models[0].id}").status_code == 404
         assert client.get(f"/api/models/{models[0].id}/navigation").status_code == 404
+
+
+def test_media_and_download_routes_are_source_scoped(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("meshive.api.catalog.get_settings", lambda: SimpleNamespace(cache_dir=tmp_path))
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source_a = LibrarySource(name="A", root_path=str(tmp_path / "a"), directory_pattern="{model}")
+            source_b = LibrarySource(name="B", root_path=str(tmp_path / "b"), directory_pattern="{model}")
+            session.add_all([source_a, source_b])
+            session.flush()
+            model_a = LibraryModel(library_source_id=source_a.id, relative_path="A", name="A", status="available")
+            model_b = LibraryModel(library_source_id=source_b.id, relative_path="B", name="B", status="available")
+            session.add_all([model_a, model_b])
+            session.flush()
+            archive_a = Archive(model_id=model_a.id, filename="a.zip", relative_path="A/a.zip", format="zip", size_bytes=6, modified_ns=1, status="ready")
+            archive_b = Archive(model_id=model_b.id, filename="b.zip", relative_path="B/b.zip", format="zip", size_bytes=6, modified_ns=1, status="ready")
+            session.add_all([archive_a, archive_b])
+            session.flush()
+            image_b = ModelImage(model_id=model_b.id, filename="b.jpg", relative_path="B/b.jpg", storage_kind="source", format="jpg", size_bytes=1, modified_ns=1, is_available=True)
+            session.add(image_b)
+            member = User(username="Member", normalized_username="member", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=True, is_active=True)
+            viewer = User(username="Viewer", normalized_username="viewer", password_hash="unused", role="user", role_definition=Role(name="Viewer test", normalized_name="viewer test"), all_sources=True, is_active=True)
+            a_only = User(username="A only media", normalized_username="a only media", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
+            session.add_all([member, viewer, a_only])
+            session.flush()
+            session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_a.id))
+            session.commit()
+        (tmp_path / "a" / "A").mkdir(parents=True)
+        (tmp_path / "b" / "B").mkdir(parents=True)
+        (tmp_path / "a" / "A" / "a.zip").write_bytes(b"abcdef")
+        (tmp_path / "b" / "B" / "b.zip").write_bytes(b"abcdef")
+        (tmp_path / "b" / "B" / "b.jpg").write_bytes(b"x")
+        app.dependency_overrides[get_current_user] = lambda: member
+        assert client.get(f"/api/models/{model_a.id}/archives/{archive_a.id}/download", headers={"Range": "bytes=1-3"}).status_code == 206
+        app.dependency_overrides[get_current_user] = lambda: viewer
+        assert client.get(f"/api/models/{model_a.id}/archives/{archive_a.id}/download").status_code == 403
+        app.dependency_overrides[get_current_user] = lambda: a_only
+        assert client.get(f"/api/models/{model_b.id}/images/{image_b.id}").status_code == 404
+        assert client.get(f"/api/models/{model_b.id}/thumbnail").status_code == 404
+        assert client.get(f"/api/models/{model_b.id}/archives/{archive_b.id}/download", headers={"Range": "bytes=0-1"}).status_code == 404
+        assert client.get(f"/api/models/{model_a.id}/archives/{archive_b.id}/download").status_code == 404
 
 
 def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:

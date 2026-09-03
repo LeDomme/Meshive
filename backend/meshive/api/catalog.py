@@ -9,8 +9,13 @@ from sqlalchemy import and_, column, delete, func, or_, select, table, text, upd
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
-from meshive.auth.access import get_access_context, visible_model_scope
+from meshive.auth.access import (
+    get_access_context,
+    get_visible_model_or_404,
+    visible_model_scope,
+)
 from meshive.auth.dependencies import get_current_user, require_admin
+from meshive.auth.permissions import ARCHIVES_DOWNLOAD
 from meshive.config import get_settings
 from meshive.database import get_session
 from meshive.models.catalog import (
@@ -548,12 +553,12 @@ def model_detail(
 def download_all_archives(
     model_id: int,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
-    model = session.get(LibraryModel, model_id)
-    if model is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Model not found"
-        )
+    access = get_access_context(session, current_user)
+    model = get_visible_model_or_404(session, access, model_id)
+    if ARCHIVES_DOWNLOAD not in access.permission_keys:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
     rows = session.execute(
         select(Archive, LibrarySource.root_path)
         .join(LibraryModel, LibraryModel.id == Archive.model_id)
@@ -622,7 +627,12 @@ def download_archive(
     model_id: int,
     archive_id: int,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> FileResponse:
+    access = get_access_context(session, current_user)
+    get_visible_model_or_404(session, access, model_id)
+    if ARCHIVES_DOWNLOAD not in access.permission_keys:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
     row = session.execute(
         select(Archive, LibrarySource.root_path)
         .join(LibraryModel, LibraryModel.id == Archive.model_id)
@@ -663,7 +673,10 @@ def model_image(
     model_id: int,
     image_id: int,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> FileResponse:
+    access = get_access_context(session, current_user)
+    get_visible_model_or_404(session, access, model_id)
     row = session.execute(
         select(ModelImage, LibrarySource.root_path)
         .join(LibraryModel, LibraryModel.id == ModelImage.model_id)
@@ -711,8 +724,12 @@ def model_image(
 
 @router.get("/{model_id}/thumbnail", response_class=FileResponse)
 def model_thumbnail(
-    model_id: int, session: Session = Depends(get_session)
+    model_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> FileResponse:
+    access = get_access_context(session, current_user)
+    get_visible_model_or_404(session, access, model_id)
     key = session.scalar(
         select(ModelImage.thumbnail_key).where(
             ModelImage.model_id == model_id,
