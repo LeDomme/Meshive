@@ -1,15 +1,20 @@
 from collections.abc import Generator
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from meshive.auth.dependencies import get_current_user, require_admin
 from meshive.database import Base, get_session
 from meshive.main import app
+from meshive.models.authorization import UserLibrarySource
 from meshive.models.catalog import LibraryModel
 from meshive.models.library_source import LibrarySource
+from meshive.models.tag import ModelTag, Tag
+from meshive.models.user import User
+from meshive.repositories.roles import get_system_role_for_legacy_role
 
 
 def test_direct_and_recursive_tags_are_exposed_and_filterable() -> None:
@@ -24,7 +29,9 @@ def test_direct_and_recursive_tags_are_exposed_and_filterable() -> None:
             yield session
 
     app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_current_user] = lambda: object()
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=1, role_id=None, role_definition=SimpleNamespace(is_superuser=True), all_sources=True
+    )
     app.dependency_overrides[require_admin] = lambda: None
     try:
         with sessions() as session:
@@ -102,3 +109,43 @@ def test_direct_and_recursive_tags_are_exposed_and_filterable() -> None:
         app.dependency_overrides.clear()
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+def test_tags_and_direct_model_actions_are_source_scoped() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    def override_session() -> Generator[Session, None, None]:
+        with sessions() as session:
+            yield session
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[require_admin] = lambda: None
+    try:
+        with sessions() as session:
+            a = LibrarySource(name="A", root_path="/a", directory_pattern="{model}")
+            b = LibrarySource(name="B", root_path="/b", directory_pattern="{model}")
+            session.add_all([a, b]); session.flush()
+            model_a = LibraryModel(library_source_id=a.id, relative_path="A", name="A", status="available")
+            model_b = LibraryModel(library_source_id=b.id, relative_path="B", name="B", status="available")
+            tag_a, tag_b, tag_shared = Tag(name="A tag"), Tag(name="B tag"), Tag(name="Shared tag")
+            a_only = User(username="A", normalized_username="a", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
+            all_sources = User(username="All", normalized_username="all", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=True, is_active=True)
+            no_grant = User(username="None", normalized_username="none", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
+            session.add_all([model_a, model_b, tag_a, tag_b, tag_shared, a_only, all_sources, no_grant]); session.flush()
+            session.add_all([UserLibrarySource(user_id=a_only.id, library_source_id=a.id), ModelTag(model_id=model_a.id, tag_id=tag_a.id), ModelTag(model_id=model_a.id, tag_id=tag_shared.id), ModelTag(model_id=model_b.id, tag_id=tag_b.id), ModelTag(model_id=model_b.id, tag_id=tag_shared.id)])
+            session.commit()
+        with TestClient(app) as client:
+            app.dependency_overrides[get_current_user] = lambda: a_only
+            assert [tag["name"] for tag in client.get("/api/tags").json()] == ["A tag", "Shared tag"]
+            assert client.put(f"/api/admin/models/{model_b.id}/tags/{tag_a.id}").status_code == 404
+            with sessions() as session:
+                assert session.scalar(select(ModelTag).where(ModelTag.model_id == model_b.id, ModelTag.tag_id == tag_a.id)) is None
+            assert client.put(f"/api/admin/models/{model_a.id}/tags/999").status_code == 404
+            assert client.delete(f"/api/admin/models/{model_b.id}/tags/{tag_b.id}").status_code == 404
+            app.dependency_overrides[get_current_user] = lambda: no_grant
+            assert client.get("/api/tags").json() == []
+            app.dependency_overrides[get_current_user] = lambda: all_sources
+            assert {tag["name"] for tag in client.get("/api/tags").json()} == {"A tag", "B tag", "Shared tag"}
+            assert client.put(f"/api/admin/models/{model_a.id}/tags/{tag_b.id}").status_code == 204
+    finally:
+        app.dependency_overrides.clear(); Base.metadata.drop_all(engine); engine.dispose()

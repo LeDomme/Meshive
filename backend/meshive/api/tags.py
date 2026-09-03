@@ -3,6 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from meshive.auth.access import get_access_context, get_visible_model_or_404, visible_model_scope
 from meshive.auth.dependencies import get_current_user, require_admin
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
@@ -14,6 +15,7 @@ from meshive.models.tag import (
     ModelTag,
     Tag,
 )
+from meshive.models.user import User
 from meshive.schemas.tag import (
     AutomaticTagEvaluationRead,
     AutomaticTagRuleCreate,
@@ -38,8 +40,21 @@ admin_router = APIRouter(
 
 
 @router.get("", response_model=list[TagRead])
-def list_tags(session: Session = Depends(get_session)) -> list[Tag]:
-    return list(session.scalars(select(Tag).order_by(Tag.name.collate("NOCASE"))))
+def list_tags(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> list[Tag]:
+    scope = visible_model_scope(get_access_context(session, current_user))
+    statement = (
+        select(Tag)
+        .join(ModelTag, ModelTag.tag_id == Tag.id)
+        .join(LibraryModel, LibraryModel.id == ModelTag.model_id)
+        .distinct()
+        .order_by(Tag.name.collate("NOCASE"))
+    )
+    if scope is not None:
+        statement = statement.where(scope)
+    return list(session.scalars(statement))
 
 
 @admin_router.post("/tags", response_model=TagRead, status_code=201)
@@ -91,8 +106,14 @@ def delete_tag(tag_id: int, session: Session = Depends(get_session)) -> Response
 
 
 @admin_router.put("/models/{model_id}/tags/{tag_id}", status_code=204)
-def add_model_tag(model_id: int, tag_id: int, session: Session = Depends(get_session)) -> Response:
-    if session.get(LibraryModel, model_id) is None or session.get(Tag, tag_id) is None:
+def add_model_tag(
+    model_id: int,
+    tag_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Response:
+    get_visible_model_or_404(session, get_access_context(session, current_user), model_id)
+    if session.get(Tag, tag_id) is None:
         raise HTTPException(status_code=404, detail="Model or tag not found")
     assignment = session.scalar(
         select(ModelTag).where(ModelTag.model_id == model_id, ModelTag.tag_id == tag_id)
@@ -115,8 +136,14 @@ def add_model_tag(model_id: int, tag_id: int, session: Session = Depends(get_ses
 
 @admin_router.delete("/models/{model_id}/tags/{tag_id}", status_code=204)
 def remove_model_tag(
-    model_id: int, tag_id: int, session: Session = Depends(get_session)
+    model_id: int,
+    tag_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
 ) -> Response:
+    get_visible_model_or_404(session, get_access_context(session, current_user), model_id)
+    if session.get(Tag, tag_id) is None:
+        raise HTTPException(status_code=404, detail="Model or tag not found")
     assignment = session.scalar(
         select(ModelTag).where(ModelTag.model_id == model_id, ModelTag.tag_id == tag_id)
     )
