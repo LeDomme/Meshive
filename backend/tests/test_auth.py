@@ -200,9 +200,9 @@ def test_legacy_user_api_create_and_update_assign_system_roles_and_all_sources()
             },
         )
         assert created.status_code == 201
-        assert "role_definition" not in created.json()
-        assert "permissions" not in created.json()
-        assert "source_access" not in created.json()
+        assert created.json()["role_definition"]["name"] == "Member"
+        assert created.json()["all_sources"] is True
+        assert created.json()["source_ids"] == []
         member_id = created.json()["id"]
         with sessions() as session:
             member = session.get(User, member_id)
@@ -222,9 +222,9 @@ def test_legacy_user_api_create_and_update_assign_system_roles_and_all_sources()
             },
         )
         assert updated.status_code == 200
-        assert "role_definition" not in updated.json()
-        assert "permissions" not in updated.json()
-        assert "source_access" not in updated.json()
+        assert updated.json()["role_definition"]["name"] == "Administrator"
+        assert updated.json()["all_sources"] is True
+        assert updated.json()["source_ids"] == []
         with sessions() as session:
             administrator = session.get(User, member_id)
             assert administrator is not None

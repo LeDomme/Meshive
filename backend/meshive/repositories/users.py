@@ -1,6 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from meshive.models.authorization import Role
 from meshive.models.user import User
 
 
@@ -45,6 +46,20 @@ def list_users(session: Session) -> list[User]:
 def count_active_admins(session: Session) -> int:
     statement = select(func.count()).select_from(User).where(
         User.role == "admin", User.is_active.is_(True)
+    )
+    return int(session.scalar(statement) or 0)
+
+
+def count_active_system_superusers(session: Session) -> int:
+    statement = (
+        select(func.count())
+        .select_from(User)
+        .join(Role, Role.id == User.role_id)
+        .where(
+            User.is_active.is_(True),
+            Role.is_system.is_(True),
+            Role.is_superuser.is_(True),
+        )
     )
     return int(session.scalar(statement) or 0)
 
