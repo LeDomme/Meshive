@@ -11,9 +11,10 @@ from meshive.database import Base, create_database_engine, get_session
 from meshive.main import app
 from meshive.models.authorization import UserLibrarySource
 from meshive.models.catalog import LibraryModel, ModelImage
+from meshive.models.favorite import FavoriteListItem
 from meshive.models.library_source import LibrarySource
 from meshive.models.metadata import MetadataArtwork
-from meshive.models.tag import Tag
+from meshive.models.tag import ModelTag, Tag
 from meshive.models.user import User
 from meshive.repositories.roles import get_system_role_for_legacy_role
 
@@ -96,6 +97,7 @@ def test_favorite_lists_are_private_and_resolve_catalogue_targets(tmp_path) -> N
             tag = Tag(name="Bust", color="#00aaff")
             session.add_all([model, tag])
             session.flush()
+            session.add(ModelTag(model_id=model.id, tag_id=tag.id))
             session.add(
                 MetadataArtwork(
                     entity_type="creator",
@@ -217,23 +219,10 @@ def test_favorite_lists_are_private_and_resolve_catalogue_targets(tmp_path) -> N
             session.commit()
 
         unavailable = client.get(f"/api/favorite-lists/{favorite_list_id}").json()
-        unavailable_items = {
-            item["entity_type"]: item for item in unavailable["items"]
-        }
-        assert unavailable_items["model"]["label"] == "Psylocke — Chibi"
-        assert unavailable_items["model"]["url"] is None
-        assert unavailable_items["model"]["is_available"] is False
-        assert unavailable_items["tag"]["label"] == "Bust"
-        assert unavailable_items["tag"]["is_available"] is False
-
-        model_item_id = unavailable_items["model"]["id"]
-        removed = client.delete(
-            f"/api/favorite-lists/{favorite_list_id}/items/{model_item_id}"
-        )
-        assert removed.status_code == 204
-        assert client.get(f"/api/favorite-lists/{favorite_list_id}").json()[
-            "item_count"
-        ] == 5
+        assert unavailable["item_count"] == 1
+        assert len(unavailable["items"]) == 1
+        assert unavailable["items"][0]["entity_type"] == "model"
+        assert unavailable["items"][0]["url"] is None
 
         deleted = client.delete(f"/api/favorite-lists/{favorite_list_id}")
         assert deleted.status_code == 204
@@ -313,3 +302,160 @@ def test_model_favorites_hide_revoked_sources_without_deleting_them(tmp_path) ->
             session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_b.id))
             session.commit()
         assert client.get(f"/api/favorite-lists/{favorite_id}").json()["item_count"] == 2
+
+
+def test_non_model_favorites_are_scoped_by_visible_sources(tmp_path) -> None:
+    with favorite_client(tmp_path) as (client, sessions, _current_user):
+        with sessions() as session:
+            source_a = LibrarySource(name="A", root_path="/models/a", directory_pattern="{model}")
+            source_b = LibrarySource(name="B", root_path="/models/b", directory_pattern="{model}")
+            session.add_all([source_a, source_b])
+            session.flush()
+            model_a = LibraryModel(
+                library_source_id=source_a.id,
+                relative_path="A",
+                name="A",
+                creator="Creator A",
+                franchise="Franchise A",
+                series="Shared series",
+                collection="Collection A",
+                status="available",
+            )
+            model_b = LibraryModel(
+                library_source_id=source_b.id,
+                relative_path="B",
+                name="B",
+                creator="Creator B",
+                franchise="Franchise B",
+                series="Shared series",
+                collection="Collection B",
+                status="available",
+            )
+            tag_a, tag_b, tag_shared = Tag(name="Tag A"), Tag(name="Tag B"), Tag(name="Tag shared")
+            a_only = User(
+                username="A only",
+                normalized_username="a only",
+                password_hash="unused",
+                role="user",
+                role_definition=get_system_role_for_legacy_role(session, "user"),
+                all_sources=False,
+                is_active=True,
+            )
+            no_grant = User(
+                username="No grant",
+                normalized_username="no grant",
+                password_hash="unused",
+                role="user",
+                role_definition=get_system_role_for_legacy_role(session, "user"),
+                all_sources=False,
+                is_active=True,
+            )
+            all_sources = User(
+                username="All sources",
+                normalized_username="all sources",
+                password_hash="unused",
+                role="user",
+                role_definition=get_system_role_for_legacy_role(session, "user"),
+                all_sources=True,
+                is_active=True,
+            )
+            session.add_all([
+                model_a, model_b, tag_a, tag_b, tag_shared, a_only, no_grant, all_sources,
+            ])
+            session.flush()
+            session.add_all([
+                UserLibrarySource(user_id=a_only.id, library_source_id=source_a.id),
+                ModelTag(model_id=model_a.id, tag_id=tag_a.id),
+                ModelTag(model_id=model_a.id, tag_id=tag_shared.id),
+                ModelTag(model_id=model_b.id, tag_id=tag_b.id),
+                ModelTag(model_id=model_b.id, tag_id=tag_shared.id),
+                MetadataArtwork(
+                    entity_type="creator",
+                    entity_value="Creator B",
+                    entity_key="creator b",
+                    content=b"webp",
+                    content_type="image/webp",
+                    width=1,
+                    height=1,
+                    etag="b" * 64,
+                ),
+            ])
+            session.commit()
+
+        app.dependency_overrides[get_current_user] = lambda: a_only
+        favorite_id = client.post("/api/favorite-lists", json={"name": "Scoped"}).json()["id"]
+        for payload in (
+            {"entity_type": "tag", "tag_id": tag_b.id},
+            {"entity_type": "creator", "value": "Creator B"},
+            {"entity_type": "franchise", "value": "Franchise B"},
+            {"entity_type": "collection", "value": "Collection B"},
+        ):
+            assert client.post(f"/api/favorite-lists/{favorite_id}/items", json=payload).status_code == 404
+        for payload in (
+            {"entity_type": "tag", "tag_id": tag_a.id},
+            {"entity_type": "tag", "tag_id": tag_shared.id},
+            {"entity_type": "creator", "value": "Creator A"},
+            {"entity_type": "series", "value": "Shared series"},
+        ):
+            assert client.post(f"/api/favorite-lists/{favorite_id}/items", json=payload).status_code == 201
+
+        with sessions() as session:
+            session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_b.id))
+            session.commit()
+        hidden_tag_item = client.post(
+            f"/api/favorite-lists/{favorite_id}/items",
+            json={"entity_type": "tag", "tag_id": tag_b.id},
+        ).json()["id"]
+        hidden_creator_item = client.post(
+            f"/api/favorite-lists/{favorite_id}/items",
+            json={"entity_type": "creator", "value": "Creator B"},
+        ).json()["id"]
+        assert client.post(
+            f"/api/favorite-lists/{favorite_id}/items",
+            json={"entity_type": "franchise", "value": "Franchise B"},
+        ).status_code == 201
+
+        with sessions() as session:
+            session.delete(session.get(UserLibrarySource, (a_only.id, source_b.id)))
+            session.commit()
+        hidden = client.get(f"/api/favorite-lists/{favorite_id}").json()
+        assert hidden["item_count"] == 4
+        assert {item["label"] for item in hidden["items"]} == {
+            "Tag A", "Tag shared", "Creator A", "Shared series"
+        }
+        assert all(item["artwork_url"] is None for item in hidden["items"])
+        assert all("Creator+B" not in (item["url"] or "") for item in hidden["items"])
+        assert client.get("/api/favorite-lists").json()[0]["item_count"] == 4
+        assert client.delete(
+            f"/api/favorite-lists/{favorite_id}/items/{hidden_creator_item}"
+        ).status_code == 404
+        with sessions() as session:
+            assert session.get(FavoriteListItem, hidden_creator_item) is not None
+            assert session.get(FavoriteListItem, hidden_tag_item) is not None
+
+        with sessions() as session:
+            session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_b.id))
+            session.commit()
+        restored = client.get(f"/api/favorite-lists/{favorite_id}").json()
+        assert restored["item_count"] == 7
+        restored_creator = next(item for item in restored["items"] if item["id"] == hidden_creator_item)
+        assert restored_creator["label"] == "Creator B"
+        assert restored_creator["artwork_url"].startswith("/api/metadata/artwork/")
+        assert client.delete(
+            f"/api/favorite-lists/{favorite_id}/items/{hidden_creator_item}"
+        ).status_code == 204
+
+        app.dependency_overrides[get_current_user] = lambda: no_grant
+        empty_id = client.post("/api/favorite-lists", json={"name": "Empty"}).json()["id"]
+        assert client.post(
+            f"/api/favorite-lists/{empty_id}/items",
+            json={"entity_type": "tag", "tag_id": tag_a.id},
+        ).status_code == 404
+        assert client.get(f"/api/favorite-lists/{empty_id}").json()["items"] == []
+
+        app.dependency_overrides[get_current_user] = lambda: all_sources
+        all_id = client.post("/api/favorite-lists", json={"name": "All"}).json()["id"]
+        assert client.post(
+            f"/api/favorite-lists/{all_id}/items",
+            json={"entity_type": "tag", "tag_id": tag_b.id},
+        ).status_code == 201

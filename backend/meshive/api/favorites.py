@@ -2,7 +2,7 @@ import unicodedata
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,7 @@ from meshive.database import get_session
 from meshive.models.catalog import LibraryModel, ModelImage
 from meshive.models.favorite import FavoriteList, FavoriteListItem
 from meshive.models.metadata import MetadataArtwork
-from meshive.models.tag import Tag
+from meshive.models.tag import ModelTag, Tag
 from meshive.models.user import User
 from meshive.schemas.favorite import (
     FavoriteListDetail,
@@ -137,7 +137,7 @@ def get_favorite_list(
     items = _visible_items(session, access, favorite.id)
     return FavoriteListDetail(
         **_summary(favorite, len(items)).model_dump(),
-        items=_item_reads(session, items),
+        items=_item_reads(session, access, items),
     )
 
 
@@ -148,6 +148,7 @@ def rename_favorite_list(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> FavoriteListSummary:
+    access = get_access_context(session, user)
     favorite = _owned_list(session, user.id, favorite_list_id)
     favorite.name = payload.name
     favorite.normalized_name = _normalize(payload.name)
@@ -160,15 +161,7 @@ def rename_favorite_list(
             detail="A favorite list with this name already exists",
         ) from error
     session.refresh(favorite)
-    item_count = int(
-        session.scalar(
-            select(func.count(FavoriteListItem.id)).where(
-                FavoriteListItem.favorite_list_id == favorite.id
-            )
-        )
-        or 0
-    )
-    return _summary(favorite, item_count)
+    return _summary(favorite, len(_visible_items(session, access, favorite.id)))
 
 
 @router.delete("/{favorite_list_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -206,7 +199,7 @@ def add_favorite_list_item(
             detail="This entry is already on the favorite list",
         ) from error
     session.refresh(item)
-    return _item_reads(session, [item])[0]
+    return _item_reads(session, get_access_context(session, user), [item])[0]
 
 
 @router.delete(
@@ -228,8 +221,11 @@ def delete_favorite_list_item(
     )
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
-    if item.entity_type == "model" and item.model_id is not None:
-        get_visible_model_or_404(session, get_access_context(session, user), item.model_id)
+    access = get_access_context(session, user)
+    if item.id not in {
+        visible_item.id for visible_item in _visible_items(session, access, favorite.id)
+    }:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
     session.delete(item)
     favorite.updated_at = utc_now()
     session.commit()
@@ -263,7 +259,23 @@ def _visible_items(session: Session, access, favorite_list_id: int) -> list[Favo
         statement = statement.where(
             (FavoriteListItem.entity_type != "model") | scope
         )
-    return list(session.scalars(statement))
+    items = list(session.scalars(statement))
+    visible_tag_ids = _visible_tag_ids(session, access, {
+        item.tag_id for item in items if item.tag_id is not None
+    })
+    visible_text_values = _visible_text_values(session, access, {
+        item.entity_type for item in items if item.entity_type in _TEXT_COLUMNS
+    })
+    return [
+        item
+        for item in items
+        if item.entity_type == "model"
+        or (item.entity_type == "tag" and item.tag_id in visible_tag_ids)
+        or (
+            item.entity_type in _TEXT_COLUMNS
+            and item.entity_key in visible_text_values[item.entity_type]
+        )
+    ]
 
 
 def _new_item(
@@ -279,8 +291,9 @@ def _new_item(
             model_id=model.id,
         )
     if payload.entity_type == "tag":
+        visible_tag_ids = _visible_tag_ids(session, access, {payload.tag_id})
         tag = session.get(Tag, payload.tag_id)
-        if tag is None:
+        if tag is None or tag.id not in visible_tag_ids:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
         return FavoriteListItem(
             favorite_list_id=favorite_list_id,
@@ -290,18 +303,10 @@ def _new_item(
             tag_id=tag.id,
         )
 
-    column = _TEXT_COLUMNS[payload.entity_type]
     requested = payload.value or ""
-    canonical = next(
-        (
-            value
-            for value in session.scalars(
-                select(column).where(column.is_not(None), column != "").distinct()
-            )
-            if _normalize(value) == _normalize(requested)
-        ),
-        None,
-    )
+    canonical = _visible_text_values(session, access, {payload.entity_type}).get(
+        payload.entity_type, {}
+    ).get(_normalize(requested))
     if canonical is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -316,7 +321,7 @@ def _new_item(
 
 
 def _item_reads(
-    session: Session, items: list[FavoriteListItem]
+    session: Session, access, items: list[FavoriteListItem]
 ) -> list[FavoriteListItemRead]:
     model_ids = {item.model_id for item in items if item.model_id is not None}
     tag_ids = {item.tag_id for item in items if item.tag_id is not None}
@@ -338,20 +343,16 @@ def _item_reads(
             )
         )
     }
+    visible_tag_ids = _visible_tag_ids(session, access, tag_ids)
     tags = {
         tag.id: tag
-        for tag in session.scalars(select(Tag).where(Tag.id.in_(tag_ids)))
+        for tag in session.scalars(select(Tag).where(Tag.id.in_(visible_tag_ids)))
     }
-    text_values = {
-        entity_type: {
-            _normalize(value): value
-            for value in session.scalars(
-                select(column).where(column.is_not(None), column != "").distinct()
-            )
-        }
-        for entity_type, column in _TEXT_COLUMNS.items()
-        if any(item.entity_type == entity_type for item in items)
-    }
+    text_values = _visible_text_values(
+        session,
+        access,
+        {item.entity_type for item in items if item.entity_type in _TEXT_COLUMNS},
+    )
     artwork = {
         (entity_type, entity_key): (artwork_id, etag)
         for artwork_id, entity_type, entity_key, etag in session.execute(
@@ -415,6 +416,33 @@ def _item_reads(
             )
         )
     return reads
+
+
+def _visible_tag_ids(session: Session, access, tag_ids: set[int]) -> set[int]:
+    if not tag_ids:
+        return set()
+    scope = visible_model_scope(access)
+    statement = (
+        select(ModelTag.tag_id)
+        .join(LibraryModel, LibraryModel.id == ModelTag.model_id)
+        .where(ModelTag.tag_id.in_(tag_ids))
+        .distinct()
+    )
+    if scope is not None:
+        statement = statement.where(scope)
+    return set(session.scalars(statement))
+
+
+def _visible_text_values(session: Session, access, entity_types: set[str]) -> dict[str, dict[str, str]]:
+    scope = visible_model_scope(access)
+    values: dict[str, dict[str, str]] = {}
+    for entity_type in entity_types:
+        column = _TEXT_COLUMNS[entity_type]
+        statement = select(column).where(column.is_not(None), column != "").distinct()
+        if scope is not None:
+            statement = statement.where(scope)
+        values[entity_type] = {_normalize(value): value for value in session.scalars(statement)}
+    return values
 
 
 def _summary(favorite: FavoriteList, item_count: int) -> FavoriteListSummary:
