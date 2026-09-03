@@ -11,8 +11,17 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from meshive.auth.dependencies import get_current_user
+from meshive.auth.permissions import (
+    CATALOGUE_VIEW_MAINTENANCE,
+    MODELS_DELETE_MISSING,
+    MODELS_PRIMARY_IMAGE,
+    MODELS_REBUILD_IMAGES,
+    MODELS_RESCAN,
+    MODELS_RESET_IMAGES,
+)
 from meshive.database import Base, get_session
 from meshive.main import app
+from meshive.models.authorization import Role, RolePermission, UserLibrarySource
 from meshive.models.catalog import (
     Archive,
     ArchiveEntry,
@@ -22,6 +31,8 @@ from meshive.models.catalog import (
     ScanRun,
 )
 from meshive.models.library_source import LibrarySource
+from meshive.models.user import User
+from meshive.repositories.roles import get_system_role_for_legacy_role
 
 
 @contextmanager
@@ -45,7 +56,13 @@ def catalog_client() -> Generator[tuple[TestClient, sessionmaker], None, None]:
             yield session
 
     app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="admin")
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=1,
+        role="admin",
+        role_id=None,
+        role_definition=SimpleNamespace(is_superuser=True),
+        all_sources=True,
+    )
     try:
         with TestClient(app) as client:
             yield client, sessions
@@ -195,6 +212,215 @@ def test_lists_searches_filters_and_downloads_models(tmp_path) -> None:
         assert filters.json()["models"] == [{"value": model.name, "count": 1}]
         assert filters.json()["creators"] == [{"value": "Aoae", "count": 1}]
         assert filters.json()["series"] == [{"value": "Moikaloop", "count": 1}]
+
+
+def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source_a = LibrarySource(
+                name="Source A",
+                root_path="/models/a",
+                directory_pattern="{creator}/{model}",
+            )
+            source_b = LibrarySource(
+                name="Source B",
+                root_path="/models/b",
+                directory_pattern="{creator}/{model}",
+            )
+            session.add_all([source_a, source_b])
+            session.flush()
+            models = [
+                LibraryModel(
+                    library_source_id=source_a.id,
+                    relative_path="A/Amber",
+                    name="Amber Model",
+                    creator="Creator A",
+                    franchise="Franchise A",
+                    status="available",
+                ),
+                LibraryModel(
+                    library_source_id=source_b.id,
+                    relative_path="B/Blue",
+                    name="Blue Model",
+                    creator="Creator B",
+                    franchise="Franchise B",
+                    status="available",
+                ),
+                LibraryModel(
+                    library_source_id=source_b.id,
+                    relative_path="B/Bronze",
+                    name="Bronze Model",
+                    creator="Creator B",
+                    franchise="Franchise B",
+                    status="available",
+                ),
+            ]
+            session.add_all(models)
+            session.flush()
+            for model in models:
+                session.execute(
+                    text(
+                        "INSERT INTO model_search(model_id, name, variant, creator, "
+                        "franchise, series, collection, tags) VALUES "
+                        "(:id, :name, '', :creator, :franchise, '', '', '')"
+                    ),
+                    {
+                        "id": model.id,
+                        "name": model.name,
+                        "creator": model.creator,
+                        "franchise": model.franchise,
+                    },
+                )
+            administrator = User(
+                username="Administrator",
+                normalized_username="administrator",
+                password_hash="unused",
+                role="admin",
+                role_definition=get_system_role_for_legacy_role(session, "admin"),
+                all_sources=False,
+                is_active=True,
+            )
+            all_sources_user = User(
+                username="All sources",
+                normalized_username="all sources",
+                password_hash="unused",
+                role="user",
+                role_definition=get_system_role_for_legacy_role(session, "user"),
+                all_sources=True,
+                is_active=True,
+            )
+            a_only_user = User(
+                username="A only",
+                normalized_username="a only",
+                password_hash="unused",
+                role="user",
+                role_definition=get_system_role_for_legacy_role(session, "user"),
+                all_sources=False,
+                is_active=True,
+            )
+            no_sources_user = User(
+                username="No sources",
+                normalized_username="no sources",
+                password_hash="unused",
+                role="user",
+                role_definition=get_system_role_for_legacy_role(session, "user"),
+                all_sources=False,
+                is_active=True,
+            )
+            session.add_all(
+                [
+                    administrator,
+                    all_sources_user,
+                    a_only_user,
+                    no_sources_user,
+                ]
+            )
+            session.flush()
+            session.add(
+                UserLibrarySource(user_id=a_only_user.id, library_source_id=source_a.id)
+            )
+            session.commit()
+
+        def use_user(user: User) -> None:
+            app.dependency_overrides[get_current_user] = lambda: user
+
+        for user in (administrator, all_sources_user):
+            use_user(user)
+            response = client.get("/api/models", params={"sort": "name_asc"})
+            assert response.status_code == 200
+            assert response.json()["total"] == 3
+            assert {item["source_id"] for item in response.json()["items"]} == {
+                source_a.id,
+                source_b.id,
+            }
+
+        use_user(a_only_user)
+        response = client.get("/api/models", params={"sort": "name_asc", "page_size": 1})
+        assert response.status_code == 200
+        assert response.json()["total"] == 1
+        assert [item["name"] for item in response.json()["items"]] == ["Amber Model"]
+        assert client.get("/api/models", params={"search": "blue"}).json()["total"] == 0
+        assert client.get("/api/models", params={"page": 2, "page_size": 1}).json()["items"] == []
+
+        facets = client.get("/api/models/filters").json()
+        assert facets["models"] == [{"value": "Amber Model", "count": 1}]
+        assert facets["creators"] == [{"value": "Creator A", "count": 1}]
+        assert facets["franchises"] == [{"value": "Franchise A", "count": 1}]
+        assert facets["sources"] == [{"id": source_a.id, "name": "Source A", "count": 1}]
+        assert client.get(f"/api/models/{models[1].id}").status_code == 404
+        assert client.get(f"/api/models/{models[1].id}/navigation").status_code == 404
+        navigation = client.get(f"/api/models/{models[0].id}/navigation").json()
+        assert navigation == {"previous": None, "next": None}
+
+        use_user(no_sources_user)
+        response = client.get("/api/models", params={"search": "model"})
+        assert response.json() == {"items": [], "total": 0, "page": 1, "page_size": 48}
+        facets = client.get("/api/models/filters").json()
+        assert all(not facets[key] for key in ("models", "creators", "franchises", "sources"))
+        assert client.get(f"/api/models/{models[0].id}").status_code == 404
+        assert client.get(f"/api/models/{models[0].id}/navigation").status_code == 404
+
+
+def test_media_and_download_routes_are_source_scoped(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("meshive.api.catalog.get_settings", lambda: SimpleNamespace(cache_dir=tmp_path))
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source_a = LibrarySource(name="A", root_path=str(tmp_path / "a"), directory_pattern="{model}")
+            source_b = LibrarySource(name="B", root_path=str(tmp_path / "b"), directory_pattern="{model}")
+            session.add_all([source_a, source_b])
+            session.flush()
+            model_a = LibraryModel(library_source_id=source_a.id, relative_path="A", name="A", status="available")
+            model_b = LibraryModel(library_source_id=source_b.id, relative_path="B", name="B", status="available")
+            session.add_all([model_a, model_b])
+            session.flush()
+            archive_a = Archive(model_id=model_a.id, filename="a.zip", relative_path="A/a.zip", format="zip", size_bytes=6, modified_ns=1, status="ready")
+            archive_b = Archive(model_id=model_b.id, filename="b.zip", relative_path="B/b.zip", format="zip", size_bytes=6, modified_ns=1, status="ready")
+            archive_b_extra = Archive(model_id=model_b.id, filename="b-extra.zip", relative_path="B/b-extra.zip", format="zip", size_bytes=6, modified_ns=1, status="ready")
+            session.add_all([archive_a, archive_b, archive_b_extra])
+            session.flush()
+            session.add(
+                ArchiveEntry(
+                    archive_id=archive_a.id,
+                    path="files/a.stl",
+                    name="a.stl",
+                    is_directory=False,
+                )
+            )
+            image_a = ModelImage(model_id=model_a.id, filename="a.jpg", relative_path="A/a.jpg", storage_kind="source", format="jpg", size_bytes=1, modified_ns=1, is_available=True)
+            image_b = ModelImage(model_id=model_b.id, filename="b.jpg", relative_path="B/b.jpg", storage_kind="source", format="jpg", size_bytes=1, modified_ns=1, is_available=True)
+            session.add_all([image_a, image_b])
+            member = User(username="Member", normalized_username="member", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=True, is_active=True)
+            viewer = User(username="Viewer", normalized_username="viewer", password_hash="unused", role="user", role_definition=Role(name="Viewer test", normalized_name="viewer test"), all_sources=True, is_active=True)
+            a_only = User(username="A only media", normalized_username="a only media", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
+            no_grant = User(username="No grant media", normalized_username="no grant media", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
+            session.add_all([member, viewer, a_only, no_grant])
+            session.flush()
+            session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_a.id))
+            session.commit()
+        (tmp_path / "a" / "A").mkdir(parents=True)
+        (tmp_path / "b" / "B").mkdir(parents=True)
+        (tmp_path / "a" / "A" / "a.zip").write_bytes(b"abcdef")
+        (tmp_path / "a" / "A" / "a.jpg").write_bytes(b"x")
+        (tmp_path / "b" / "B" / "b.zip").write_bytes(b"abcdef")
+        (tmp_path / "b" / "B" / "b-extra.zip").write_bytes(b"abcdef")
+        (tmp_path / "b" / "B" / "b.jpg").write_bytes(b"x")
+        app.dependency_overrides[get_current_user] = lambda: member
+        assert client.get(f"/api/models/{model_a.id}/archives/{archive_a.id}/download", headers={"Range": "bytes=1-3"}).status_code == 206
+        assert client.get(f"/api/models/{model_b.id}/archives/download-all").status_code == 200
+        assert client.get(f"/api/models/{model_a.id}/images/{image_a.id}").status_code == 200
+        assert client.get(f"/api/models/{model_a.id}/images/{image_b.id}").status_code == 404
+        assert client.get(f"/api/models/{model_a.id}").json()["archives"][0]["entries"]
+        app.dependency_overrides[get_current_user] = lambda: viewer
+        assert client.get(f"/api/models/{model_a.id}/archives/{archive_a.id}/download").status_code == 403
+        assert client.get(f"/api/models/{model_a.id}").json()["archives"][0]["entries"] == []
+        app.dependency_overrides[get_current_user] = lambda: a_only
+        assert client.get(f"/api/models/{model_b.id}/images/{image_b.id}").status_code == 404
+        assert client.get(f"/api/models/{model_b.id}/thumbnail").status_code == 404
+        assert client.get(f"/api/models/{model_b.id}/archives/{archive_b.id}/download", headers={"Range": "bytes=0-1"}).status_code == 404
+        assert client.get(f"/api/models/{model_b.id}/archives/download-all").status_code == 404
+        assert client.get(f"/api/models/{model_a.id}/archives/{archive_b.id}/download").status_code == 404
+        app.dependency_overrides[get_current_user] = lambda: no_grant
+        assert client.get(f"/api/models/{model_b.id}/archives/download-all").status_code == 404
 
 
 def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:
@@ -960,7 +1186,13 @@ def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:
         assert mismatch_models.json()["total"] == 1
         assert mismatch_models.json()["items"][0]["id"] == model_id
 
-        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="user")
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            id=2,
+            role="user",
+            role_id=None,
+            role_definition=None,
+            all_sources=True,
+        )
         standard_user_response = client.get(f"/api/models/{model_id}")
 
         assert standard_user_response.status_code == 200
@@ -1030,15 +1262,162 @@ def test_model_detail_includes_recent_scan_issues(tmp_path) -> None:
         ]
         assert all(issue["created_at"] for issue in issues)
 
-        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="user")
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            id=2,
+            role="user",
+            role_id=None,
+            role_definition=None,
+            all_sources=True,
+        )
         standard_user_response = client.get(f"/api/models/{model_id}")
 
         assert standard_user_response.status_code == 200
         assert standard_user_response.json()["recent_scan_issues"] == []
 
-        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="admin")
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            id=1,
+            role="admin",
+            role_id=None,
+            role_definition=SimpleNamespace(is_superuser=True),
+            all_sources=True,
+        )
         cleared = client.delete(f"/api/admin/models/{model_id}/scan-issues")
 
         assert cleared.status_code == 200
         assert cleared.json() == {"deleted": 2}
         assert client.get(f"/api/models/{model_id}").json()["recent_scan_issues"] == []
+
+
+def test_admin_model_actions_are_scoped_by_source_and_permission(monkeypatch) -> None:
+    monkeypatch.setattr("meshive.services.scanner.dispatch_pending_scans", lambda: None)
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            permissions = {
+                CATALOGUE_VIEW_MAINTENANCE,
+                MODELS_DELETE_MISSING,
+                MODELS_PRIMARY_IMAGE,
+                MODELS_REBUILD_IMAGES,
+                MODELS_RESCAN,
+                MODELS_RESET_IMAGES,
+            }
+            operator = Role(name="Model operator", normalized_name="model operator")
+            session.add(operator)
+            session.flush()
+            session.add_all(
+                [RolePermission(role_id=operator.id, permission_key=permission) for permission in permissions]
+            )
+            source_a = LibrarySource(name="Source A", root_path="/a", directory_pattern="{model}")
+            source_b = LibrarySource(name="Source B", root_path="/b", directory_pattern="{model}")
+            a_only = User(
+                username="A only", normalized_username="a only", password_hash="unused",
+                role="user", role_definition=operator, all_sources=False,
+            )
+            all_sources = User(
+                username="All sources", normalized_username="all sources", password_hash="unused",
+                role="user", role_definition=operator, all_sources=True,
+            )
+            viewer = User(
+                username="Viewer", normalized_username="viewer", password_hash="unused",
+                role="user", role_definition=Role(name="Viewer", normalized_name="viewer"),
+                all_sources=False,
+            )
+            no_grant = User(
+                username="No grant", normalized_username="no grant", password_hash="unused",
+                role="user", role_definition=operator, all_sources=False,
+            )
+            session.add_all([source_a, source_b, a_only, all_sources, viewer, no_grant])
+            session.flush()
+            models_a = {
+                name: LibraryModel(
+                    library_source_id=source_a.id,
+                    relative_path=name,
+                    name=name,
+                    status="missing" if name == "missing-a" else "available",
+                )
+                for name in ("primary-a", "rescan-a", "rebuild-a", "reset-a", "issues-a", "missing-a")
+            }
+            model_b = LibraryModel(
+                library_source_id=source_b.id,
+                relative_path="hidden-b",
+                name="hidden-b",
+                status="missing",
+            )
+            session.add_all([*models_a.values(), model_b])
+            session.flush()
+            primary_a = ModelImage(
+                model_id=models_a["primary-a"].id, filename="primary-a.jpg",
+                relative_path="primary-a.jpg", format="jpg", size_bytes=1, modified_ns=1,
+            )
+            reset_a = ModelImage(
+                model_id=models_a["reset-a"].id, filename="reset-a.jpg",
+                relative_path="reset-a.jpg", format="jpg", size_bytes=1, modified_ns=1,
+            )
+            primary_b = ModelImage(
+                model_id=model_b.id, filename="hidden-b.jpg", relative_path="hidden-b.jpg",
+                format="jpg", size_bytes=1, modified_ns=1,
+            )
+            scan = ScanRun(library_source_id=source_a.id, status="completed", mode="full")
+            session.add_all([primary_a, reset_a, primary_b, scan])
+            session.flush()
+            session.add(ScanIssue(
+                scan_run_id=scan.id, model_id=models_a["issues-a"].id,
+                relative_path="issues-a", severity="warning", code="test", message="test issue",
+            ))
+            session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_a.id))
+            session.add(UserLibrarySource(user_id=viewer.id, library_source_id=source_a.id))
+            session.commit()
+            model_ids = {name: model.id for name, model in models_a.items()}
+            model_b_id, primary_a_id, primary_b_id = model_b.id, primary_a.id, primary_b.id
+
+        app.dependency_overrides[get_current_user] = lambda: a_only
+        maintenance = client.get("/api/models", params={"status": "missing"})
+        assert maintenance.status_code == 200
+        assert maintenance.json()["total"] == 1
+        assert [item["id"] for item in maintenance.json()["items"]] == [model_ids["missing-a"]]
+        filters = client.get("/api/models/filters", params={"status": "missing"})
+        assert {source["id"] for source in filters.json()["sources"]} == {source_a.id}
+        assert client.put(f"/api/admin/models/{model_ids['primary-a']}/images/{primary_a_id}/primary").status_code == 200
+        assert client.post(f"/api/admin/models/{model_ids['rescan-a']}/rescan").status_code == 202
+        assert client.post(f"/api/admin/models/{model_ids['rebuild-a']}/rebuild-images").status_code == 202
+        assert client.delete(f"/api/admin/models/{model_ids['issues-a']}/scan-issues").json() == {"deleted": 1}
+        assert client.delete(f"/api/admin/models/{model_ids['reset-a']}/images").json() == {"deleted": 1}
+        assert client.put(f"/api/admin/models/{model_b_id}/images/{primary_b_id}/primary").status_code == 404
+        assert client.post(f"/api/admin/models/{model_b_id}/rescan").status_code == 404
+        assert client.post(f"/api/admin/models/{model_b_id}/rebuild-images").status_code == 404
+        assert client.delete(f"/api/admin/models/{model_b_id}/scan-issues").status_code == 404
+        assert client.delete(f"/api/admin/models/{model_b_id}/images").status_code == 404
+        assert client.delete(f"/api/admin/models/{model_b_id}").status_code == 404
+
+        app.dependency_overrides[get_current_user] = lambda: viewer
+        assert client.get("/api/models", params={"status": "missing"}).status_code == 403
+        assert client.put(f"/api/admin/models/{model_ids['primary-a']}/images/{primary_a_id}/primary").status_code == 403
+        assert client.post(f"/api/admin/models/{model_ids['rescan-a']}/rescan").status_code == 403
+        assert client.post(f"/api/admin/models/{model_ids['rebuild-a']}/rebuild-images").status_code == 403
+        assert client.delete(f"/api/admin/models/{model_ids['issues-a']}/scan-issues").status_code == 403
+        assert client.delete(f"/api/admin/models/{model_ids['reset-a']}/images").status_code == 403
+        assert client.delete(f"/api/admin/models/{model_ids['missing-a']}").status_code == 403
+        assert client.put(f"/api/admin/models/{model_b_id}/images/{primary_b_id}/primary").status_code == 404
+
+        app.dependency_overrides[get_current_user] = lambda: no_grant
+        assert client.post(f"/api/admin/models/{model_ids['rescan-a']}/rescan").status_code == 404
+        assert client.delete("/api/admin/models/missing").json() == {"deleted": 0}
+
+        app.dependency_overrides[get_current_user] = lambda: a_only
+        assert client.delete("/api/admin/models/missing").json() == {"deleted": 1}
+
+        with sessions() as session:
+            hidden_image = session.get(ModelImage, primary_b_id)
+            assert hidden_image is not None
+            assert hidden_image.is_primary is False
+            assert session.get(LibraryModel, model_b_id) is not None
+            assert session.scalar(
+                select(ScanRun.id).where(ScanRun.library_source_id == source_b.id)
+            ) is None
+
+        app.dependency_overrides[get_current_user] = lambda: all_sources
+        assert client.put(f"/api/admin/models/{model_b_id}/images/{primary_b_id}/primary").status_code == 200
+
+        with sessions() as session:
+            assert session.get(LibraryModel, model_b_id) is not None
+            assert session.get(LibraryModel, model_ids["missing-a"]) is None
+            assert session.get(ModelImage, primary_b_id) is not None

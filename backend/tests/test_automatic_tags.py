@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -26,7 +27,12 @@ def test_automatic_rules_match_paths_and_preserve_manual_tags() -> None:
             yield session
 
     app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_current_user] = lambda: object()
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=1,
+        role_id=None,
+        role_definition=SimpleNamespace(is_superuser=True),
+        all_sources=True,
+    )
     app.dependency_overrides[require_admin] = lambda: None
     try:
         with sessions() as session:

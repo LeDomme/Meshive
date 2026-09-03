@@ -1,14 +1,15 @@
 import os
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from meshive.archives.sevenzip_cli import ListedArchiveEntry
 from meshive.api.scans import cancel_scan, pause_scan, resume_scan
+from meshive.archives.sevenzip_cli import ListedArchiveEntry
 from meshive.config import Settings
 from meshive.database import Base
 from meshive.models.catalog import (
@@ -436,9 +437,12 @@ def test_scan_controls_pause_resume_and_cancel_running_scan(tmp_path) -> None:
         scan.status = "running"
         session.commit()
 
-        assert pause_scan(scan.id, session).pause_requested is True
-        assert resume_scan(scan.id, session).pause_requested is False
-        cancelled = cancel_scan(scan.id, session)
+        administrator = SimpleNamespace(
+            role_definition=SimpleNamespace(is_superuser=True), all_sources=True
+        )
+        assert pause_scan(scan.id, administrator, session).pause_requested is True
+        assert resume_scan(scan.id, administrator, session).pause_requested is False
+        cancelled = cancel_scan(scan.id, administrator, session)
 
         assert cancelled.cancel_requested is True
         assert cancelled.pause_requested is False
@@ -459,7 +463,10 @@ def test_cancel_pending_scan_sets_its_terminal_status(tmp_path) -> None:
         session.flush()
         scan = make_scan(session, source.id)
 
-        cancelled = cancel_scan(scan.id, session)
+        administrator = SimpleNamespace(
+            role_definition=SimpleNamespace(is_superuser=True), all_sources=True
+        )
+        cancelled = cancel_scan(scan.id, administrator, session)
 
         assert cancelled.status == "cancelled"
         assert cancelled.finished_at is not None
