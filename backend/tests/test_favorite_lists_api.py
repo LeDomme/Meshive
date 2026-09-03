@@ -9,11 +9,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, create_database_engine, get_session
 from meshive.main import app
+from meshive.models.authorization import UserLibrarySource
 from meshive.models.catalog import LibraryModel, ModelImage
 from meshive.models.library_source import LibrarySource
 from meshive.models.metadata import MetadataArtwork
 from meshive.models.tag import Tag
 from meshive.models.user import User
+from meshive.repositories.roles import get_system_role_for_legacy_role
 
 
 @contextmanager
@@ -52,7 +54,10 @@ def favorite_client(tmp_path):
 
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-        id=current_user["id"]
+        id=current_user["id"],
+        role_id=None,
+        role_definition=SimpleNamespace(is_superuser=True),
+        all_sources=True,
     )
     try:
         with TestClient(app) as client:
@@ -257,3 +262,54 @@ def test_favorite_item_payload_requires_matching_reference(tmp_path) -> None:
             json={"entity_type": "model", "model_id": 1, "value": "Psylocke"},
         )
         assert mixed_reference.status_code == 422
+
+
+def test_model_favorites_hide_revoked_sources_without_deleting_them(tmp_path) -> None:
+    with favorite_client(tmp_path) as (client, sessions, _current_user):
+        with sessions() as session:
+            source_a = LibrarySource(name="A", root_path="/models/a", directory_pattern="{model}")
+            source_b = LibrarySource(name="B", root_path="/models/b", directory_pattern="{model}")
+            session.add_all([source_a, source_b])
+            session.flush()
+            model_a = LibraryModel(library_source_id=source_a.id, relative_path="A", name="A", status="available")
+            model_b = LibraryModel(library_source_id=source_b.id, relative_path="B", name="B", status="available")
+            a_only = User(username="A only", normalized_username="a only", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
+            all_sources = User(username="All", normalized_username="all", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=True, is_active=True)
+            no_grant = User(username="None", normalized_username="none", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
+            session.add_all([model_a, model_b, a_only, all_sources, no_grant])
+            session.flush()
+            session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_a.id))
+            session.commit()
+
+        app.dependency_overrides[get_current_user] = lambda: a_only
+        favorite_id = client.post("/api/favorite-lists", json={"name": "Models"}).json()["id"]
+        assert client.post(f"/api/favorite-lists/{favorite_id}/items", json={"entity_type": "model", "model_id": model_a.id}).status_code == 201
+        assert client.post(f"/api/favorite-lists/{favorite_id}/items", json={"entity_type": "model", "model_id": model_b.id}).status_code == 404
+        assert client.get(f"/api/favorite-lists/{favorite_id}").json()["item_count"] == 1
+        with sessions() as session:
+            session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_b.id))
+            session.commit()
+        added_b = client.post(f"/api/favorite-lists/{favorite_id}/items", json={"entity_type": "model", "model_id": model_b.id})
+        assert added_b.status_code == 201
+        b_item_id = added_b.json()["id"]
+        memberships = client.get("/api/favorite-lists/model-memberships", params=[("model_ids", model_a.id), ("model_ids", model_b.id)]).json()
+        assert [entry["model_id"] for entry in memberships] == [model_a.id, model_b.id]
+        with sessions() as session:
+            session.delete(session.get(UserLibrarySource, (a_only.id, source_b.id)))
+            session.commit()
+        assert client.get(f"/api/favorite-lists/{favorite_id}").json()["item_count"] == 1
+        assert client.get("/api/favorite-lists/model-memberships", params=[("model_ids", model_a.id), ("model_ids", model_b.id)]).json() == [memberships[0]]
+        assert client.delete(f"/api/favorite-lists/{favorite_id}/items/{b_item_id}").status_code == 404
+        app.dependency_overrides[get_current_user] = lambda: no_grant
+        no_grant_list = client.post("/api/favorite-lists", json={"name": "Empty"}).json()["id"]
+        assert client.get(f"/api/favorite-lists/{no_grant_list}").json()["items"] == []
+        app.dependency_overrides[get_current_user] = lambda: all_sources
+        all_list = client.post("/api/favorite-lists", json={"name": "All models"}).json()["id"]
+        for model in (model_a, model_b):
+            assert client.post(f"/api/favorite-lists/{all_list}/items", json={"entity_type": "model", "model_id": model.id}).status_code == 201
+        assert client.get(f"/api/favorite-lists/{all_list}").json()["item_count"] == 2
+        app.dependency_overrides[get_current_user] = lambda: a_only
+        with sessions() as session:
+            session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_b.id))
+            session.commit()
+        assert client.get(f"/api/favorite-lists/{favorite_id}").json()["item_count"] == 2

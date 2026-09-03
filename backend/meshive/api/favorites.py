@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from meshive.auth.access import get_access_context, get_visible_model_or_404, visible_model_scope
 from meshive.auth.dependencies import get_current_user
 from meshive.auth.sessions import utc_now
 from meshive.database import get_session
@@ -39,17 +40,16 @@ def list_favorite_lists(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> list[FavoriteListSummary]:
-    rows = session.execute(
-        select(FavoriteList, func.count(FavoriteListItem.id))
-        .outerjoin(
-            FavoriteListItem,
-            FavoriteListItem.favorite_list_id == FavoriteList.id,
-        )
+    access = get_access_context(session, user)
+    favorites = session.scalars(
+        select(FavoriteList)
         .where(FavoriteList.user_id == user.id)
-        .group_by(FavoriteList.id)
         .order_by(FavoriteList.updated_at.desc(), FavoriteList.name.collate("NOCASE"))
-    )
-    return [_summary(favorite, count) for favorite, count in rows]
+    ).all()
+    return [
+        _summary(favorite, len(_visible_items(session, access, favorite.id)))
+        for favorite in favorites
+    ]
 
 
 @router.post("", response_model=FavoriteListSummary, status_code=status.HTTP_201_CREATED)
@@ -82,6 +82,8 @@ def model_favorite_memberships(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> list[FavoriteModelMembership]:
+    access = get_access_context(session, user)
+    scope = visible_model_scope(access)
     unique_ids = list(dict.fromkeys(model_ids))
     if any(model_id < 1 for model_id in unique_ids):
         raise HTTPException(
@@ -104,10 +106,12 @@ def model_favorite_memberships(
             FavoriteListItem.id,
         )
         .join(FavoriteList, FavoriteList.id == FavoriteListItem.favorite_list_id)
+        .join(LibraryModel, LibraryModel.id == FavoriteListItem.model_id)
         .where(
             FavoriteList.user_id == user.id,
             FavoriteListItem.entity_type == "model",
             FavoriteListItem.model_id.in_(unique_ids),
+            *([scope] if scope is not None else []),
         )
         .order_by(FavoriteList.name.collate("NOCASE"), FavoriteList.id)
     )
@@ -128,14 +132,9 @@ def get_favorite_list(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> FavoriteListDetail:
+    access = get_access_context(session, user)
     favorite = _owned_list(session, user.id, favorite_list_id)
-    items = list(
-        session.scalars(
-            select(FavoriteListItem)
-            .where(FavoriteListItem.favorite_list_id == favorite.id)
-            .order_by(FavoriteListItem.created_at, FavoriteListItem.id)
-        )
-    )
+    items = _visible_items(session, access, favorite.id)
     return FavoriteListDetail(
         **_summary(favorite, len(items)).model_dump(),
         items=_item_reads(session, items),
@@ -195,7 +194,7 @@ def add_favorite_list_item(
     session: Session = Depends(get_session),
 ) -> FavoriteListItemRead:
     favorite = _owned_list(session, user.id, favorite_list_id)
-    item = _new_item(session, favorite.id, payload)
+    item = _new_item(session, favorite.id, payload, get_access_context(session, user))
     favorite.updated_at = utc_now()
     session.add(item)
     try:
@@ -229,6 +228,8 @@ def delete_favorite_list_item(
     )
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+    if item.entity_type == "model" and item.model_id is not None:
+        get_visible_model_or_404(session, get_access_context(session, user), item.model_id)
     session.delete(item)
     favorite.updated_at = utc_now()
     session.commit()
@@ -250,13 +251,26 @@ def _owned_list(session: Session, user_id: int, favorite_list_id: int) -> Favori
     return favorite
 
 
+def _visible_items(session: Session, access, favorite_list_id: int) -> list[FavoriteListItem]:
+    scope = visible_model_scope(access)
+    statement = (
+        select(FavoriteListItem)
+        .outerjoin(LibraryModel, LibraryModel.id == FavoriteListItem.model_id)
+        .where(FavoriteListItem.favorite_list_id == favorite_list_id)
+        .order_by(FavoriteListItem.created_at, FavoriteListItem.id)
+    )
+    if scope is not None:
+        statement = statement.where(
+            (FavoriteListItem.entity_type != "model") | scope
+        )
+    return list(session.scalars(statement))
+
+
 def _new_item(
-    session: Session, favorite_list_id: int, payload: FavoriteListItemCreate
+    session: Session, favorite_list_id: int, payload: FavoriteListItemCreate, access
 ) -> FavoriteListItem:
     if payload.entity_type == "model":
-        model = session.get(LibraryModel, payload.model_id)
-        if model is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
+        model = get_visible_model_or_404(session, access, payload.model_id)
         return FavoriteListItem(
             favorite_list_id=favorite_list_id,
             entity_type="model",
