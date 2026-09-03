@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from meshive.auth.dependencies import require_admin
+from meshive.auth.access import require_global_permission
+from meshive.auth.permissions import SOURCES_MANAGE
 from meshive.config import get_settings
 from meshive.database import get_session
 from meshive.repositories import library_sources as repository
@@ -24,7 +25,7 @@ from meshive.services.thumbnails import remove_cached_file
 router = APIRouter(
     prefix="/admin/library-sources",
     tags=["library sources"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_global_permission(SOURCES_MANAGE))],
 )
 
 

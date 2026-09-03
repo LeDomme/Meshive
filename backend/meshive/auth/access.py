@@ -137,6 +137,27 @@ def require_access_permission(access: AccessContext, permission_key: str) -> Non
         )
 
 
+def require_global_permission(permission_key: str):
+    """Require a permission plus effective access to every library source."""
+    if permission_key not in ALL_PERMISSION_KEYS:
+        raise ValueError(f"Unknown permission key: {permission_key}")
+
+    def dependency(
+        user: User = CURRENT_USER_DEPENDENCY,
+        session: Session = SESSION_DEPENDENCY,
+    ) -> AccessContext:
+        access = get_access_context(session, user)
+        require_access_permission(access, permission_key)
+        if not access.all_sources:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="All sources access is required",
+            )
+        return access
+
+    return dependency
+
+
 def require_permission(permission_key: str):
     if permission_key not in ALL_PERMISSION_KEYS:
         raise ValueError(f"Unknown permission key: {permission_key}")

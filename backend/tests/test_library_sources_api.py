@@ -1,19 +1,19 @@
 from collections.abc import Generator
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from meshive.auth.dependencies import require_admin
+from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, get_session
 from meshive.main import app
+from meshive.models.authorization import Role, RolePermission
 from meshive.models.catalog import LibraryModel
-
-
-def allow_admin() -> None:
-    return None
+from meshive.models.library_source import LibrarySource
+from meshive.models.user import User
 
 
 @contextmanager
@@ -30,8 +30,13 @@ def build_client() -> Generator[tuple[TestClient, sessionmaker], None, None]:
         with test_session() as session:
             yield session
 
-    app.dependency_overrides[require_admin] = allow_admin
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=1,
+        role_id=None,
+        role_definition=SimpleNamespace(is_superuser=True),
+        all_sources=True,
+    )
     try:
         with TestClient(app) as client:
             yield client, test_session
@@ -130,3 +135,93 @@ def test_preview_endpoint_returns_variant_and_ambiguity_warning() -> None:
             "creator": "Example",
         }
         assert len(response.json()["warnings"]) == 1
+
+
+def test_source_configuration_requires_manage_permission_and_all_sources(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    current_user: list[User] = []
+
+    def override_session() -> Generator[Session, None, None]:
+        with sessions() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_current_user] = lambda: current_user[0]
+    try:
+        with sessions() as session:
+            manager = Role(name="Source manager", normalized_name="source manager")
+            no_manager = Role(name="No manager", normalized_name="no manager")
+            source = LibrarySource(name="Existing", root_path="/existing", directory_pattern="{model}")
+            session.add_all([manager, no_manager, source])
+            session.flush()
+            session.add(RolePermission(role_id=manager.id, permission_key="sources.manage"))
+            managed_without_all_sources = User(
+                username="Limited manager",
+                normalized_username="limited manager",
+                password_hash="unused",
+                role="user",
+                role_definition=manager,
+                all_sources=False,
+            )
+            without_manage = User(
+                username="No manager",
+                normalized_username="no manager",
+                password_hash="unused",
+                role="user",
+                role_definition=no_manager,
+                all_sources=True,
+            )
+            session.add_all([managed_without_all_sources, without_manage])
+            session.commit()
+            source_id = source.id
+
+        called: list[str] = []
+        monkeypatch.setattr(
+            "meshive.api.library_sources.validate_library_root",
+            lambda *_args: called.append("validate") or "/unexpected",
+        )
+        monkeypatch.setattr(
+            "meshive.api.library_sources.parse_library_path",
+            lambda **_kwargs: called.append("parse") or ("unexpected", {}),
+        )
+        monkeypatch.setattr(
+            "meshive.api.library_sources.remove_cached_file",
+            lambda *_args: called.append("cache"),
+        )
+
+        with TestClient(app) as client:
+            for user in (managed_without_all_sources, without_manage):
+                current_user[:] = [user]
+                assert client.get("/api/admin/library-sources").status_code == 403
+                assert client.post(
+                    "/api/admin/library-sources",
+                    json={**source_payload(), "root_path": "/invalid"},
+                ).status_code == 403
+                assert client.put(
+                    f"/api/admin/library-sources/{source_id}",
+                    json={**source_payload(), "root_path": "/invalid"},
+                ).status_code == 403
+                assert client.delete(f"/api/admin/library-sources/{source_id}").status_code == 403
+                assert client.post(
+                    "/api/admin/library-sources/preview",
+                    json={
+                        "directory_pattern": "{unknown}",
+                        "model_pattern": "{unknown}",
+                        "relative_path": "invalid",
+                    },
+                ).status_code == 403
+
+        assert called == []
+        with sessions() as session:
+            source = session.get(LibrarySource, source_id)
+            assert source is not None
+            assert source.name == "Existing"
+            assert source.root_path == "/existing"
+    finally:
+        app.dependency_overrides.clear()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
