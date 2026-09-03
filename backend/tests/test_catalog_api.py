@@ -45,7 +45,13 @@ def catalog_client() -> Generator[tuple[TestClient, sessionmaker], None, None]:
             yield session
 
     app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="admin")
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=1,
+        role="admin",
+        role_id=None,
+        role_definition=SimpleNamespace(is_superuser=True),
+        all_sources=True,
+    )
     try:
         with TestClient(app) as client:
             yield client, sessions
@@ -960,7 +966,13 @@ def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:
         assert mismatch_models.json()["total"] == 1
         assert mismatch_models.json()["items"][0]["id"] == model_id
 
-        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="user")
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            id=2,
+            role="user",
+            role_id=None,
+            role_definition=None,
+            all_sources=True,
+        )
         standard_user_response = client.get(f"/api/models/{model_id}")
 
         assert standard_user_response.status_code == 200
@@ -1030,13 +1042,25 @@ def test_model_detail_includes_recent_scan_issues(tmp_path) -> None:
         ]
         assert all(issue["created_at"] for issue in issues)
 
-        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="user")
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            id=2,
+            role="user",
+            role_id=None,
+            role_definition=None,
+            all_sources=True,
+        )
         standard_user_response = client.get(f"/api/models/{model_id}")
 
         assert standard_user_response.status_code == 200
         assert standard_user_response.json()["recent_scan_issues"] == []
 
-        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="admin")
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            id=1,
+            role="admin",
+            role_id=None,
+            role_definition=SimpleNamespace(is_superuser=True),
+            all_sources=True,
+        )
         cleared = client.delete(f"/api/admin/models/{model_id}/scan-issues")
 
         assert cleared.status_code == 200

@@ -9,6 +9,7 @@ from sqlalchemy import and_, column, delete, func, or_, select, table, text, upd
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
+from meshive.auth.access import get_access_context, visible_model_scope
 from meshive.auth.dependencies import get_current_user, require_admin
 from meshive.config import get_settings
 from meshive.database import get_session
@@ -93,6 +94,7 @@ def list_models(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> ModelPage:
+    access = get_access_context(session, user)
     if model_status is not None and user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     filters = _model_filters(
@@ -106,6 +108,8 @@ def list_models(
         source_id=source_id,
         model_status=model_status,
     )
+    if scope := visible_model_scope(access):
+        filters.append(scope)
     total = int(
         session.scalar(
             select(func.count()).select_from(LibraryModel).where(*filters)
@@ -210,6 +214,7 @@ def model_navigation(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> ModelNavigation:
+    access = get_access_context(session, user)
     if model_status is not None and user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 
@@ -224,6 +229,8 @@ def model_navigation(
         source_id=source_id,
         model_status=model_status,
     )
+    if scope := visible_model_scope(access):
+        filters.append(scope)
     models = list(
         session.execute(
             select(LibraryModel.id, LibraryModel.name, LibraryModel.variant)
@@ -243,7 +250,7 @@ def model_navigation(
         return ModelNavigationItem(id=row.id, name=row.name, variant=row.variant)
 
     if current_index is None:
-        return ModelNavigation(previous=None, next=None)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
     return ModelNavigation(
         previous=item_at(current_index - 1),
         next=item_at(current_index + 1),
@@ -264,6 +271,7 @@ def catalogue_filters(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> CatalogueFilters:
+    access = get_access_context(session, user)
     if model_status is not None and user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     values = {
@@ -279,9 +287,12 @@ def catalogue_filters(
     }
 
     def facet_filters(exclude: str) -> list:
-        return _model_filters(
+        filters = _model_filters(
             **{key: None if key == exclude else value for key, value in values.items()}
         )
+        if scope := visible_model_scope(access):
+            filters.append(scope)
+        return filters
 
     status_filters = facet_filters("model_status")
     statuses = _text_filter_options(session, LibraryModel.status, status_filters)
@@ -357,10 +368,15 @@ def model_detail(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> ModelDetail:
+    access = get_access_context(session, current_user)
+    scope = visible_model_scope(access)
     row = session.execute(
         select(LibraryModel, LibrarySource.name)
         .join(LibrarySource, LibrarySource.id == LibraryModel.library_source_id)
-        .where(LibraryModel.id == model_id)
+        .where(
+            LibraryModel.id == model_id,
+            *([scope] if scope is not None else []),
+        )
     ).one_or_none()
     if row is None:
         raise HTTPException(
