@@ -1,7 +1,14 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 class LoginRequest(BaseModel):
@@ -13,7 +20,10 @@ class UserCreate(BaseModel):
     username: str = Field(min_length=1, max_length=120)
     email: EmailStr | None = None
     password: str = Field(min_length=12, max_length=1024)
-    role: Literal["admin", "user"] = "user"
+    role: Literal["admin", "user"] | None = None
+    role_id: int | None = Field(default=None, ge=1)
+    all_sources: bool = True
+    source_ids: list[int] = Field(default_factory=list, max_length=500)
     is_active: bool = True
     must_change_password: bool = True
 
@@ -25,12 +35,21 @@ class UserCreate(BaseModel):
             raise ValueError("Username cannot be blank")
         return stripped
 
+    @model_validator(mode="after")
+    def validate_role_selection(self) -> "UserCreate":
+        if (self.role is None) == (self.role_id is None):
+            raise ValueError("Provide exactly one of role or role_id")
+        return self
+
 
 class UserUpdate(BaseModel):
     username: str = Field(min_length=1, max_length=120)
     email: EmailStr | None = None
     password: str | None = Field(default=None, min_length=12, max_length=1024)
-    role: Literal["admin", "user"]
+    role: Literal["admin", "user"] | None = None
+    role_id: int | None = Field(default=None, ge=1)
+    all_sources: bool = True
+    source_ids: list[int] = Field(default_factory=list, max_length=500)
     is_active: bool
     must_change_password: bool = False
 
@@ -41,6 +60,12 @@ class UserUpdate(BaseModel):
         if not stripped:
             raise ValueError("Username cannot be blank")
         return stripped
+
+    @model_validator(mode="after")
+    def validate_role_selection(self) -> "UserUpdate":
+        if (self.role is None) == (self.role_id is None):
+            raise ValueError("Provide exactly one of role or role_id")
+        return self
 
 
 class RoleDefinitionRead(BaseModel):
@@ -53,6 +78,37 @@ class RoleDefinitionRead(BaseModel):
 class SourceAccessRead(BaseModel):
     all_sources: bool
     source_ids: list[int]
+
+
+class RoleRead(BaseModel):
+    id: int
+    name: str
+    description: str | None
+    is_system: bool
+    is_superuser: bool
+    permission_keys: list[str]
+    user_count: int
+
+
+class RoleWrite(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=2000)
+    permission_keys: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Role name cannot be blank")
+        return stripped
+
+    @field_validator("permission_keys")
+    @classmethod
+    def unique_permission_keys(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("Permission keys must be unique")
+        return value
 
 
 class UserRead(BaseModel):
@@ -68,6 +124,12 @@ class UserRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_login_at: datetime | None
+
+
+class UserManagementRead(UserRead):
+    role_definition: RoleDefinitionRead | None
+    all_sources: bool
+    source_ids: list[int]
 
 
 class CurrentUserRead(UserRead):

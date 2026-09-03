@@ -1,26 +1,33 @@
 from datetime import timedelta
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from meshive.auth.access import require_global_permission
 from meshive.auth.action_tokens import (
     EMAIL_VERIFICATION,
     delete_user_action_tokens,
     issue_action_token,
 )
-from meshive.auth.dependencies import require_admin
+from meshive.auth.dependencies import get_current_user
 from meshive.auth.passwords import hash_password
+from meshive.auth.permissions import USERS_MANAGE
 from meshive.config import Settings, get_settings
 from meshive.database import get_session
+from meshive.models.authorization import Role, UserLibrarySource
+from meshive.models.library_source import LibrarySource
 from meshive.models.user import User
 from meshive.repositories import users as repository
 from meshive.repositories.roles import get_system_role_for_legacy_role
 from meshive.schemas.user import (
     ActionMessage,
     AdminEmailVerification,
+    RoleDefinitionRead,
     UserCreate,
-    UserRead,
+    UserManagementRead,
     UserUpdate,
 )
 from meshive.services.mailer import EmailDeliveryError, send_email_verification
@@ -28,19 +35,96 @@ from meshive.services.mailer import EmailDeliveryError, send_email_verification
 router = APIRouter(
     prefix="/admin/users",
     tags=["users"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_global_permission(USERS_MANAGE))],
 )
 
+SessionDependency = Annotated[Session, Depends(get_session)]
+CurrentUserDependency = Annotated[User, Depends(get_current_user)]
+SettingsDependency = Annotated[Settings, Depends(get_settings)]
 
-@router.get("", response_model=list[UserRead])
-def list_users(session: Session = Depends(get_session)) -> list[User]:
-    return repository.list_users(session)
+
+def _role_definition(role: Role | None) -> RoleDefinitionRead | None:
+    if role is None:
+        return None
+    return RoleDefinitionRead(
+        id=role.id,
+        name=role.name,
+        is_system=role.is_system,
+        is_superuser=role.is_superuser,
+    )
 
 
-@router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-def create_user(
-    payload: UserCreate, session: Session = Depends(get_session)
-) -> User:
+def _user_read(user: User) -> UserManagementRead:
+    all_sources = bool(user.all_sources) or bool(
+        user.role_definition and user.role_definition.is_superuser
+    )
+    return UserManagementRead(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        email_verified=user.email_verified,
+        role=user.role,
+        is_active=user.is_active,
+        must_change_password=user.must_change_password,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+        last_login_at=user.last_login_at,
+        role_definition=_role_definition(user.role_definition),
+        all_sources=all_sources,
+        source_ids=[]
+        if all_sources
+        else sorted(grant.library_source_id for grant in user.library_source_grants),
+    )
+
+
+def _resolve_role(session: Session, payload: UserCreate | UserUpdate) -> Role:
+    if payload.role_id is not None:
+        role = session.get(Role, payload.role_id)
+        if role is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
+        return role
+    if payload.role is None:
+        raise RuntimeError("Validated payload is missing a role selection")
+    return get_system_role_for_legacy_role(session, payload.role)
+
+
+def _resolve_source_ids(session: Session, source_ids: list[int]) -> list[int]:
+    if len(source_ids) != len(set(source_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Source IDs must be unique",
+        )
+    if not source_ids:
+        return []
+    found_ids = set(
+        session.scalars(select(LibrarySource.id).where(LibrarySource.id.in_(source_ids)))
+    )
+    if set(source_ids) - found_ids:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+    return source_ids
+
+
+def _apply_access(user: User, role: Role, all_sources: bool, source_ids: list[int]) -> None:
+    effective_all_sources = all_sources or role.is_superuser
+    user.role_definition = role
+    user.role = "admin" if role.is_superuser else "user"
+    user.all_sources = effective_all_sources
+    user.library_source_grants.clear()
+    if not effective_all_sources:
+        user.library_source_grants.extend(
+            UserLibrarySource(library_source_id=source_id) for source_id in source_ids
+        )
+
+
+@router.get("", response_model=list[UserManagementRead])
+def list_users(session: SessionDependency) -> list[UserManagementRead]:
+    return [_user_read(user) for user in repository.list_users(session)]
+
+
+@router.post("", response_model=UserManagementRead, status_code=status.HTTP_201_CREATED)
+def create_user(payload: UserCreate, session: SessionDependency) -> UserManagementRead:
+    role = _resolve_role(session, payload)
+    source_ids = _resolve_source_ids(session, payload.source_ids)
     user = User(
         username=payload.username,
         normalized_username=repository.normalize_username(payload.username),
@@ -49,12 +133,10 @@ def create_user(
             repository.normalize_email(str(payload.email)) if payload.email else None
         ),
         password_hash=hash_password(payload.password),
-        role=payload.role,
-        role_definition=get_system_role_for_legacy_role(session, payload.role),
-        all_sources=True,
         is_active=payload.is_active,
         must_change_password=payload.must_change_password,
     )
+    _apply_access(user, role, payload.all_sources, source_ids)
     session.add(user)
     try:
         session.commit()
@@ -65,32 +147,39 @@ def create_user(
             detail="This username or email address already exists",
         ) from error
     session.refresh(user)
-    return user
+    return _user_read(user)
 
 
-@router.put("/{user_id}", response_model=UserRead)
+@router.put("/{user_id}", response_model=UserManagementRead)
 def update_user(
     user_id: int,
     payload: UserUpdate,
-    current_admin: User = Depends(require_admin),
-    session: Session = Depends(get_session),
-) -> User:
+    current_user: CurrentUserDependency,
+    session: SessionDependency,
+) -> UserManagementRead:
     user = repository.get_user(session, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    removes_active_admin = (
-        user.role == "admin"
-        and user.is_active
-        and (payload.role != "admin" or not payload.is_active)
+    role = _resolve_role(session, payload)
+    source_ids = _resolve_source_ids(session, payload.source_ids)
+    removes_active_superuser = (
+        user.is_active
+        and user.role_definition is not None
+        and user.role_definition.is_system
+        and user.role_definition.is_superuser
+        and (not role.is_system or not role.is_superuser or not payload.is_active)
     )
-    if removes_active_admin and repository.count_active_admins(session) <= 1:
+    if (
+        removes_active_superuser
+        and repository.count_active_system_superusers(session) <= 1
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The last active administrator cannot be disabled or demoted",
         )
 
-    if user.id == current_admin.id and not payload.is_active:
+    if user.id == current_user.id and not payload.is_active:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="You cannot disable your own account",
@@ -105,15 +194,13 @@ def update_user(
         user.email_verified_at = None
     user.email = new_email
     user.normalized_email = normalized_email
-    user.role = payload.role
-    user.role_definition = get_system_role_for_legacy_role(session, payload.role)
-    user.all_sources = True
+    _apply_access(user, role, payload.all_sources, source_ids)
     user.is_active = payload.is_active
     user.must_change_password = payload.must_change_password
     if payload.password:
         user.password_hash = hash_password(payload.password)
         delete_user_action_tokens(session, user.id)
-    if user.id != current_admin.id and (payload.password or not payload.is_active):
+    if user.id != current_user.id and (payload.password or not payload.is_active):
         user.sessions.clear()
 
     try:
@@ -125,15 +212,15 @@ def update_user(
             detail="This username or email address already exists",
         ) from error
     session.refresh(user)
-    return user
+    return _user_read(user)
 
 
 @router.post("/{user_id}/email-verification", response_model=ActionMessage)
 def send_user_email_verification(
     user_id: int,
     payload: AdminEmailVerification,
-    session: Session = Depends(get_session),
-    settings: Settings = Depends(get_settings),
+    session: SessionDependency,
+    settings: SettingsDependency,
 ) -> ActionMessage:
     user = repository.get_user(session, user_id)
     if user is None:
@@ -188,18 +275,24 @@ def send_user_email_verification(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     user_id: int,
-    current_admin: User = Depends(require_admin),
-    session: Session = Depends(get_session),
+    current_user: CurrentUserDependency,
+    session: SessionDependency,
 ) -> None:
     user = repository.get_user(session, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if user.id == current_admin.id:
+    if user.id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="You cannot delete your own account",
         )
-    if user.role == "admin" and user.is_active and repository.count_active_admins(session) <= 1:
+    if (
+        user.is_active
+        and user.role_definition is not None
+        and user.role_definition.is_system
+        and user.role_definition.is_superuser
+        and repository.count_active_system_superusers(session) <= 1
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The last active administrator cannot be deleted",

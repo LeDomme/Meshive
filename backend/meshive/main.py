@@ -19,6 +19,8 @@ from meshive.api.library_sources import router as library_sources_router
 from meshive.api.metadata import admin_router as metadata_admin_router
 from meshive.api.metadata import router as metadata_router
 from meshive.api.recovery import router as recovery_router
+from meshive.api.roles import permissions_router
+from meshive.api.roles import router as roles_router
 from meshive.api.scans import router as scans_router
 from meshive.api.setup import router as setup_router
 from meshive.api.system import router as system_router
@@ -107,6 +109,8 @@ app.include_router(recovery_router, prefix="/api")
 app.include_router(setup_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
+app.include_router(roles_router, prefix="/api")
+app.include_router(permissions_router, prefix="/api")
 app.include_router(tags_router, prefix="/api")
 app.include_router(model_tag_router, prefix="/api")
 app.include_router(tags_admin_router, prefix="/api")
