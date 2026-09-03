@@ -5,13 +5,14 @@ from sqlalchemy.orm import Session
 from meshive.auth.access import (
     AccessContext,
     get_access_context,
+    get_operable_source_or_404,
     get_visible_scan_or_404,
     require_access_permission,
     require_permission,
     scope_scan_runs,
 )
-from meshive.auth.dependencies import get_current_user, require_admin
-from meshive.auth.permissions import SCANS_VIEW
+from meshive.auth.dependencies import get_current_user
+from meshive.auth.permissions import SCANS_CONTROL, SCANS_START, SCANS_VIEW
 from meshive.auth.sessions import utc_now
 from meshive.database import get_session
 from meshive.models.catalog import ScanIssue, ScanRun
@@ -41,16 +42,16 @@ SCANS_VIEW_DEPENDENCY = Depends(require_permission(SCANS_VIEW))
     "/library-sources/{source_id}/scan",
     response_model=ScanRunRead,
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_admin)],
 )
 def start_source_scan(
     source_id: int,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
     payload: ScanStartRequest | None = None,
 ) -> ScanRun:
-    source = session.get(LibrarySource, source_id)
-    if source is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+    access = get_access_context(session, current_user)
+    source = get_operable_source_or_404(session, access, source_id)
+    require_access_permission(access, SCANS_START)
     if not source.is_active or not source.scan_enabled:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -138,11 +139,15 @@ def scan_queue(
     return result
 
 
-@router.post("/scans/{scan_id}/cancel", response_model=ScanRunRead, dependencies=[Depends(require_admin)])
-def cancel_scan(scan_id: int, session: Session = Depends(get_session)) -> ScanRun:
-    scan = session.get(ScanRun, scan_id)
-    if scan is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+@router.post("/scans/{scan_id}/cancel", response_model=ScanRunRead)
+def cancel_scan(
+    scan_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ScanRun:
+    access = get_access_context(session, current_user)
+    scan = get_visible_scan_or_404(session, access, scan_id)
+    require_access_permission(access, SCANS_CONTROL)
     if scan.status not in ("pending", "running"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Scan is not active")
     scan.cancel_requested = True
@@ -153,11 +158,15 @@ def cancel_scan(scan_id: int, session: Session = Depends(get_session)) -> ScanRu
     session.commit()
     return scan
 
-@router.post("/scans/{scan_id}/pause", response_model=ScanRunRead, dependencies=[Depends(require_admin)])
-def pause_scan(scan_id: int, session: Session = Depends(get_session)) -> ScanRun:
-    scan = session.get(ScanRun, scan_id)
-    if scan is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+@router.post("/scans/{scan_id}/pause", response_model=ScanRunRead)
+def pause_scan(
+    scan_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ScanRun:
+    access = get_access_context(session, current_user)
+    scan = get_visible_scan_or_404(session, access, scan_id)
+    require_access_permission(access, SCANS_CONTROL)
     if scan.status not in ("pending", "running"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Scan is not active")
     scan.pause_requested = True
@@ -165,11 +174,15 @@ def pause_scan(scan_id: int, session: Session = Depends(get_session)) -> ScanRun
     return scan
 
 
-@router.post("/scans/{scan_id}/resume", response_model=ScanRunRead, dependencies=[Depends(require_admin)])
-def resume_scan(scan_id: int, session: Session = Depends(get_session)) -> ScanRun:
-    scan = session.get(ScanRun, scan_id)
-    if scan is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+@router.post("/scans/{scan_id}/resume", response_model=ScanRunRead)
+def resume_scan(
+    scan_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ScanRun:
+    access = get_access_context(session, current_user)
+    scan = get_visible_scan_or_404(session, access, scan_id)
+    require_access_permission(access, SCANS_CONTROL)
     if scan.status not in ("pending", "running"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Scan is not active")
     scan.pause_requested = False
