@@ -18,7 +18,7 @@ const auth = useAuthStore()
       </div>
     </div>
     <nav class="admin-nav" aria-label="Administration">
-      <RouterLink class="text-link" to="/">Back to Meshive</RouterLink>
+      <RouterLink v-if="auth.can('catalogue.view')" class="text-link" to="/">Back to Meshive</RouterLink>
       <RouterLink v-if="auth.can('sources.manage') && auth.user?.source_access?.all_sources" class="text-link" to="/admin/sources">Library sources</RouterLink>
       <RouterLink class="text-link" to="/admin/metadata">Metadata</RouterLink>
       <RouterLink class="text-link" to="/admin/tags">Tags</RouterLink>

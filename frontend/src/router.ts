@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router"
 
 import { useAuthStore } from "./stores/auth"
+import AccessDeniedView from "./views/AccessDeniedView.vue"
 import HomeView from "./views/HomeView.vue"
 import ForgotPasswordView from "./views/ForgotPasswordView.vue"
 import FavoriteListsView from "./views/FavoriteListsView.vue"
@@ -26,6 +27,12 @@ export const router = createRouter({
       path: "/",
       name: "home",
       component: HomeView,
+      meta: { requiresAuth: true, requiredPermission: "catalogue.view" },
+    },
+    {
+      path: "/access-denied",
+      name: "access-denied",
+      component: AccessDeniedView,
       meta: { requiresAuth: true },
     },
     {
@@ -45,7 +52,7 @@ export const router = createRouter({
       path: "/models/:id",
       name: "model-detail",
       component: ModelDetailView,
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiredPermission: "catalogue.view" },
     },
     {
       path: "/login",
@@ -161,6 +168,9 @@ router.beforeEach(async (to) => {
     return { name: "home" }
   }
   if (typeof to.meta.requiredPermission === "string" && !auth.can(to.meta.requiredPermission)) {
+    if (to.meta.requiredPermission === "catalogue.view") {
+      return { name: "access-denied" }
+    }
     return { name: "home" }
   }
   if (to.meta.requiresAllSources && !auth.user?.source_access?.all_sources) {

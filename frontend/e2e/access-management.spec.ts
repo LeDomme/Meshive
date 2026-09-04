@@ -14,7 +14,7 @@ const admin = {
     is_system: true,
     is_superuser: true,
   },
-  permissions: ["users.manage", "roles.manage"],
+  permissions: ["catalogue.view", "users.manage", "roles.manage"],
   source_access: { all_sources: true, source_ids: [] },
 };
 const limited = {
@@ -29,6 +29,13 @@ const limited = {
     is_superuser: false,
   },
   permissions: ["catalogue.view"],
+  source_access: { all_sources: true, source_ids: [] },
+};
+const noCatalogue = {
+  ...limited,
+  id: 3,
+  username: "No catalogue",
+  permissions: [],
   source_access: { all_sources: true, source_ids: [] },
 };
 const roles = [
@@ -197,6 +204,26 @@ test("users without management permissions cannot open management URLs", async (
   await expect(page).toHaveURL(/\/\?(?:.*)?$|\/$/);
 });
 
+test("users without catalogue access receive a stable access-denied view", async ({
+  page,
+}) => {
+  await mockApi(page, noCatalogue);
+  await page.goto("/models/12");
+
+  await expect(page).toHaveURL(/\/access-denied$/);
+  await expect(page.getByRole("heading", { name: "Access denied" })).toBeVisible();
+  await page.locator(".account-menu-trigger").click();
+  await expect(page.getByRole("link", { name: "Account settings" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+});
+
+test("users with catalogue access can open the catalogue", async ({ page }) => {
+  await mockApi(page, { ...limited, permissions: ["catalogue.view"] });
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "Meshive" })).toBeVisible();
+});
+
 test("switching users without edits does not ask to discard changes", async ({
   page,
 }) => {
@@ -281,7 +308,7 @@ test("a user manager can select sources without source configuration access", as
     0,
   );
   await page.goto("/admin/sources");
-  await expect(page).toHaveURL(/\/\?(?:.*)?$|\/$/);
+  await expect(page).toHaveURL(/\/access-denied$/);
 });
 
 test("custom roles can be edited and deleted", async ({ page }) => {

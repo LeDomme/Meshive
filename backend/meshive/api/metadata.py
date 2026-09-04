@@ -16,8 +16,13 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from meshive.auth.access import get_access_context, visible_model_scope
+from meshive.auth.access import (
+    get_access_context,
+    require_access_permission,
+    visible_model_scope,
+)
 from meshive.auth.dependencies import get_current_user, require_admin
+from meshive.auth.permissions import CATALOGUE_VIEW
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
 from meshive.models.metadata import MetadataArtwork
@@ -198,6 +203,7 @@ def metadata_artwork(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Custom artwork not found",
         )
+    require_access_permission(access, CATALOGUE_VIEW)
     return Response(
         content=artwork.content,
         media_type=artwork.content_type,

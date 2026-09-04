@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 
-const admin = { id: 1, username: "Admin", email: null, email_verified: false, role: "admin", is_active: true, must_change_password: false }
+const admin = { id: 1, username: "Admin", email: null, email_verified: false, role: "admin", is_active: true, must_change_password: false, permissions: ["catalogue.view"], source_access: { all_sources: true, source_ids: [] } }
 const user = { ...admin, id: 2, username: "User", role: "user" }
 const emptyFilters = { models: [], creators: [], franchises: [], series: [], collections: [], sources: [], statuses: [], tags: [] }
 

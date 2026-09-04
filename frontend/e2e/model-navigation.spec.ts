@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 
-const user = { id: 1, username: "Admin", email: null, email_verified: false, role: "admin", is_active: true, must_change_password: false }
+const user = { id: 1, username: "Admin", email: null, email_verified: false, role: "admin", is_active: true, must_change_password: false, permissions: ["catalogue.view"], source_access: { all_sources: true, source_ids: [] } }
 const detail = (id: number) => ({ id, name: `Model ${id}`, variant: null, creator: null, creator_links: [], franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", relative_path: `Model ${id}`, images: [], archives: [], archive_bundle_download_url: null, recent_scan_issues: [], archive_statistics: null, tags: [] })
 
 test("next model preserves catalogue context for navigation and back link", async ({ page }) => {

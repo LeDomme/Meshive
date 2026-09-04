@@ -12,7 +12,7 @@ from meshive.auth.access import (
     visible_model_scope,
 )
 from meshive.auth.dependencies import get_current_user, require_admin
-from meshive.auth.permissions import MODELS_TAGS
+from meshive.auth.permissions import CATALOGUE_VIEW, MODELS_TAGS
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
 from meshive.models.library_source import LibrarySource
@@ -54,7 +54,9 @@ def list_tags(
     current_user: CurrentUser,
     session: Session = Depends(get_session),
 ) -> list[Tag]:
-    scope = visible_model_scope(get_access_context(session, current_user))
+    access = get_access_context(session, current_user)
+    require_access_permission(access, CATALOGUE_VIEW)
+    scope = visible_model_scope(access)
     statement = (
         select(Tag)
         .join(ModelTag, ModelTag.tag_id == Tag.id)

@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import (
+    CATALOGUE_VIEW,
     CATALOGUE_VIEW_MAINTENANCE,
     MODELS_DELETE_MISSING,
     MODELS_PRIMARY_IMAGE,
@@ -390,12 +391,19 @@ def test_media_and_download_routes_are_source_scoped(tmp_path, monkeypatch) -> N
             image_b = ModelImage(model_id=model_b.id, filename="b.jpg", relative_path="B/b.jpg", storage_kind="source", format="jpg", size_bytes=1, modified_ns=1, is_available=True)
             session.add_all([image_a, image_b])
             member = User(username="Member", normalized_username="member", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=True, is_active=True)
-            viewer = User(username="Viewer", normalized_username="viewer", password_hash="unused", role="user", role_definition=Role(name="Viewer test", normalized_name="viewer test"), all_sources=True, is_active=True)
+            viewer_role = Role(name="Viewer test", normalized_name="viewer test")
+            viewer = User(username="Viewer", normalized_username="viewer", password_hash="unused", role="user", role_definition=viewer_role, all_sources=True, is_active=True)
+            no_catalogue_role = Role(name="No catalogue", normalized_name="no catalogue")
+            no_catalogue = User(username="No catalogue", normalized_username="no catalogue", password_hash="unused", role="user", role_definition=no_catalogue_role, all_sources=False, is_active=True)
             a_only = User(username="A only media", normalized_username="a only media", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
             no_grant = User(username="No grant media", normalized_username="no grant media", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
-            session.add_all([member, viewer, a_only, no_grant])
+            session.add_all([member, viewer, a_only, no_grant, no_catalogue])
             session.flush()
-            session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_a.id))
+            session.add_all([
+                RolePermission(role_id=viewer_role.id, permission_key=CATALOGUE_VIEW),
+                UserLibrarySource(user_id=a_only.id, library_source_id=source_a.id),
+                UserLibrarySource(user_id=no_catalogue.id, library_source_id=source_a.id),
+            ])
             session.commit()
         (tmp_path / "a" / "A").mkdir(parents=True)
         (tmp_path / "b" / "B").mkdir(parents=True)
@@ -421,6 +429,16 @@ def test_media_and_download_routes_are_source_scoped(tmp_path, monkeypatch) -> N
         assert client.get(f"/api/models/{model_a.id}/archives/{archive_b.id}/download").status_code == 404
         app.dependency_overrides[get_current_user] = lambda: no_grant
         assert client.get(f"/api/models/{model_b.id}/archives/download-all").status_code == 404
+        app.dependency_overrides[get_current_user] = lambda: no_catalogue
+        assert client.get("/api/models").status_code == 403
+        assert client.get("/api/models/filters").status_code == 403
+        assert client.get(f"/api/models/{model_a.id}").status_code == 403
+        assert client.get(f"/api/models/{model_a.id}/navigation").status_code == 403
+        assert client.get(f"/api/models/{model_a.id}/images/{image_a.id}").status_code == 403
+        assert client.get(f"/api/models/{model_a.id}/thumbnail").status_code == 403
+        assert client.get(f"/api/models/{model_b.id}").status_code == 404
+        assert client.get(f"/api/models/{model_b.id}/navigation").status_code == 404
+        assert client.get(f"/api/models/{model_b.id}/images/{image_b.id}").status_code == 404
 
 
 def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:
@@ -1155,6 +1173,16 @@ def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:
                     compressed_size_bytes=256,
                 )
             )
+            standard_user = User(
+                username="Standard user",
+                normalized_username="standard user",
+                password_hash="unused",
+                role="user",
+                role_definition=get_system_role_for_legacy_role(session, "user"),
+                all_sources=True,
+                is_active=True,
+            )
+            session.add(standard_user)
             session.commit()
             model_id = model.id
 
@@ -1186,13 +1214,7 @@ def test_model_detail_includes_admin_archive_statistics(tmp_path) -> None:
         assert mismatch_models.json()["total"] == 1
         assert mismatch_models.json()["items"][0]["id"] == model_id
 
-        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-            id=2,
-            role="user",
-            role_id=None,
-            role_definition=None,
-            all_sources=True,
-        )
+        app.dependency_overrides[get_current_user] = lambda: standard_user
         standard_user_response = client.get(f"/api/models/{model_id}")
 
         assert standard_user_response.status_code == 200
@@ -1245,6 +1267,16 @@ def test_model_detail_includes_recent_scan_issues(tmp_path) -> None:
                     ),
                 ]
             )
+            standard_user = User(
+                username="Standard user",
+                normalized_username="standard user",
+                password_hash="unused",
+                role="user",
+                role_definition=get_system_role_for_legacy_role(session, "user"),
+                all_sources=True,
+                is_active=True,
+            )
+            session.add(standard_user)
             session.commit()
             model_id = model.id
 
@@ -1262,13 +1294,7 @@ def test_model_detail_includes_recent_scan_issues(tmp_path) -> None:
         ]
         assert all(issue["created_at"] for issue in issues)
 
-        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-            id=2,
-            role="user",
-            role_id=None,
-            role_definition=None,
-            all_sources=True,
-        )
+        app.dependency_overrides[get_current_user] = lambda: standard_user
         standard_user_response = client.get(f"/api/models/{model_id}")
 
         assert standard_user_response.status_code == 200
@@ -1293,6 +1319,7 @@ def test_admin_model_actions_are_scoped_by_source_and_permission(monkeypatch) ->
     with catalog_client() as (client, sessions):
         with sessions() as session:
             permissions = {
+                CATALOGUE_VIEW,
                 CATALOGUE_VIEW_MAINTENANCE,
                 MODELS_DELETE_MISSING,
                 MODELS_PRIMARY_IMAGE,
