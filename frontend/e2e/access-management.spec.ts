@@ -224,6 +224,37 @@ test("users with catalogue access can open the catalogue", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Meshive" })).toBeVisible();
 });
 
+test("users without favorite access do not see favorite UI or trigger memberships", async ({
+  page,
+}) => {
+  await mockApi(page, limited);
+  let membershipRequests = 0;
+  await page.route("**/api/favorite-lists/model-memberships**", (route) => {
+    membershipRequests += 1;
+    return route.fulfill({ json: [] });
+  });
+  await page.route("**/api/models?**", (route) =>
+    route.fulfill({
+      json: {
+        items: [{ id: 1, name: "Visible model", variant: null, creator: null, franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Source A", archive_format: null, archive_size_bytes: null, archive_count: 0, thumbnail_url: null, tags: [] }],
+        total: 1,
+        page: 1,
+        page_size: 24,
+      },
+    }),
+  );
+  await page.goto("/");
+
+  await expect(page.getByRole("button", { name: /Save to favorites|Save$/ })).toHaveCount(0);
+  await page.locator(".account-menu-trigger").click();
+  await expect(page.getByRole("link", { name: "Favorite lists" })).toHaveCount(0);
+  expect(membershipRequests).toBe(0);
+
+  await page.goto("/favorites");
+  await expect(page).toHaveURL(/\/\?(?:.*)?$/);
+  expect(membershipRequests).toBe(0);
+});
+
 test("switching users without edits does not ask to discard changes", async ({
   page,
 }) => {

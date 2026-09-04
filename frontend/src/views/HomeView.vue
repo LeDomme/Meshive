@@ -392,7 +392,11 @@ async function loadCatalogue(targetPage = 1) {
   void router.replace({ query: locationQuery })
   try {
     page.value = await apiRequest<ModelPage>(`/api/models?${parameters}`)
-    await loadFavoriteMemberships(page.value.items.map((model) => model.id))
+    if (auth.can("favorites.manage")) {
+      await loadFavoriteMemberships(page.value.items.map((model) => model.id))
+    } else {
+      favoriteMemberships.value = {}
+    }
   } catch (error) {
     errorMessage.value =
       error instanceof ApiError ? error.message : "Unable to load the catalogue"
@@ -1032,6 +1036,7 @@ onMounted(async () => {
             </span>
           </p>
           <button
+            v-if="auth.can('favorites.manage')"
             class="secondary-button model-favorite-button"
             :class="{
               'favorite-add-ready': !favoriteMemberships[model.id]?.length,
@@ -1161,6 +1166,7 @@ onMounted(async () => {
     </nav>
 
     <FavoriteSaveDialog
+      v-if="auth.can('favorites.manage')"
       :open="Boolean(favoriteModel)"
       :targets="favoriteDialogTargets"
       :existing-model-lists="favoriteModel ? favoriteMemberships[favoriteModel.id] : []"

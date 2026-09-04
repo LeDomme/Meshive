@@ -6,8 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from meshive.auth.access import get_access_context, get_visible_model_or_404, visible_model_scope
+from meshive.auth.access import (
+    get_access_context,
+    get_visible_model_or_404,
+    require_permission,
+    visible_model_scope,
+)
 from meshive.auth.dependencies import get_current_user
+from meshive.auth.permissions import FAVORITES_MANAGE
 from meshive.auth.sessions import utc_now
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel, ModelImage
@@ -25,7 +31,11 @@ from meshive.schemas.favorite import (
     FavoriteModelMembership,
 )
 
-router = APIRouter(prefix="/favorite-lists", tags=["favorite lists"])
+router = APIRouter(
+    prefix="/favorite-lists",
+    tags=["favorite lists"],
+    dependencies=[Depends(require_permission(FAVORITES_MANAGE))],
+)
 
 _TEXT_COLUMNS = {
     "creator": LibraryModel.creator,

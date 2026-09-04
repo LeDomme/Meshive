@@ -46,7 +46,7 @@ export const router = createRouter({
       path: "/favorites",
       name: "favorite-lists",
       component: FavoriteListsView,
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiredPermission: "favorites.manage" },
     },
     {
       path: "/models/:id",

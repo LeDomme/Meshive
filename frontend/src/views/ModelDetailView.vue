@@ -607,7 +607,7 @@ async function loadModel() {
     availableTags.value = tags
     selectedImage.value = model.value.images[0] ?? null
     await Promise.all([
-      loadFavoriteMemberships(model.value.id),
+      ...(auth.can("favorites.manage") ? [loadFavoriteMemberships(model.value.id)] : []),
       loadNavigation(model.value.id),
     ])
   } catch (error) {
@@ -687,6 +687,7 @@ onBeforeUnmount(() => {
             {{ model.status }}
           </span>
           <button
+            v-if="auth.can('favorites.manage')"
             class="secondary-button detail-favorite-button"
             :class="{
               'favorite-add-ready': !favoriteMemberships.length,
@@ -990,7 +991,7 @@ onBeforeUnmount(() => {
           </p>
         </div>
 
-        <div v-if="currentArchive" class="archive-downloads">
+        <div v-if="currentArchive && auth.can('archives.download')" class="archive-downloads">
           <a
             class="primary-link archive-download"
             :href="currentArchive.download_url"
@@ -1010,7 +1011,7 @@ onBeforeUnmount(() => {
         <p v-if="currentArchive?.error_message" class="form-error">
           {{ currentArchive.error_message }}
         </p>
-        <template v-if="currentArchive?.entries.length">
+        <template v-if="auth.can('archives.view_entries') && currentArchive?.entries.length">
           <label class="archive-search">
             <span class="sr-only">Filter archive contents</span>
             <input v-model="archiveFilter" type="search" placeholder="Filter archive contents…">
@@ -1054,6 +1055,9 @@ onBeforeUnmount(() => {
             </table>
           </div>
         </template>
+        <p v-else-if="currentArchive && !auth.can('archives.view_entries')" class="panel-copy">
+          Archive contents are not available for your role.
+        </p>
       </section>
 
       <div
@@ -1139,6 +1143,7 @@ onBeforeUnmount(() => {
       </div>
 
       <FavoriteSaveDialog
+        v-if="auth.can('favorites.manage')"
         :open="favoriteDialogOpen"
         :targets="favoriteDialogTargets"
         :existing-model-lists="favoriteMemberships"

@@ -51,7 +51,7 @@ async function logout() {
       <RouterLink class="account-menu-item" to="/account" @click="closeMenu">
         Account settings
       </RouterLink>
-      <RouterLink class="account-menu-item" to="/favorites" @click="closeMenu">
+      <RouterLink v-if="auth.can('favorites.manage')" class="account-menu-item" to="/favorites" @click="closeMenu">
         Favorite lists
       </RouterLink>
       <button class="account-menu-item" type="button" @click="logout">Sign out</button>
