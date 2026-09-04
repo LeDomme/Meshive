@@ -509,24 +509,26 @@ function handleModelCardKeydown(event: KeyboardEvent, modelId: number) {
 }
 
 function toggleBatchSelectionMode() {
+  if (!canRunBatchActions.value) return
   if (batchSelectionMode.value) clearModelSelection()
   batchSelectionMode.value = !batchSelectionMode.value
 }
 
-type SelectedModelAction = "rescan" | "rebuild-images" | "reset-images"
+const canRunBatchActions = computed(
+  () => auth.can("models.rescan") || auth.can("models.rebuild_images"),
+)
+
+type SelectedModelAction = "rescan" | "rebuild-images"
 
 async function runSelectedModelAction(action: SelectedModelAction) {
+  const permission = action === "rescan" ? "models.rescan" : "models.rebuild_images"
+  if (!auth.can(permission)) return
   const modelIds = [...selectedModelIds.value]
   if (!modelIds.length || batchActionInProgress.value) return
-  const isPictureReset = action === "reset-images"
   const actionLabel = action === "rescan"
     ? "rescan"
-    : action === "rebuild-images"
-      ? "rebuild archive images"
-      : "reset picture records"
-  const confirmation = isPictureReset
-    ? `Reset all Meshive picture records for ${modelIds.length} selected model${modelIds.length === 1 ? "" : "s"}? Their cached images will be removed; the source library remains read-only.`
-    : `${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} for ${modelIds.length} selected model${modelIds.length === 1 ? "" : "s"}? The source library remains read-only.`
+    : "rebuild archive images"
+  const confirmation = `${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} for ${modelIds.length} selected model${modelIds.length === 1 ? "" : "s"}? The source library remains read-only.`
   if (!window.confirm(confirmation)) return
 
   batchActionInProgress.value = true
@@ -534,10 +536,7 @@ async function runSelectedModelAction(action: SelectedModelAction) {
   try {
     // Process one model at a time to keep SQLite and archive extraction bounded.
     for (const modelId of modelIds) {
-      const path = action === "reset-images"
-        ? `/api/admin/models/${modelId}/images`
-        : `/api/admin/models/${modelId}/${action}`
-      await apiRequest(path, { method: action === "reset-images" ? "DELETE" : "POST" })
+      await apiRequest(`/api/admin/models/${modelId}/${action}`, { method: "POST" })
     }
     await loadCatalogue(page.value.page)
   } catch (error) {
@@ -549,6 +548,9 @@ async function runSelectedModelAction(action: SelectedModelAction) {
   }
 }
 async function deleteMissingModel(model: ModelSummary) {
+  if (!auth.can("catalogue.view_maintenance") || !auth.can("models.delete_missing")) {
+    return
+  }
   if (
     !window.confirm(
       `Delete "${model.name}" from the Meshive database? No files will be deleted.`,
@@ -572,6 +574,9 @@ async function deleteMissingModel(model: ModelSummary) {
 }
 
 async function deleteAllMissingModels() {
+  if (!auth.can("catalogue.view_maintenance") || !auth.can("models.delete_missing")) {
+    return
+  }
   if (
     !window.confirm(
       `Permanently delete all ${missingCount.value} missing models from the Meshive database? No source files will be deleted.`,
@@ -884,7 +889,7 @@ onMounted(async () => {
       />
 
       <SearchableFilter
-        v-if="auth.user?.role === 'admin'"
+        v-if="auth.can('catalogue.view_maintenance')"
         data-filter-key="status"
         :style="{ order: filterPosition('status') }"
         draggable="true"
@@ -930,19 +935,16 @@ onMounted(async () => {
       </div>
       <div class="catalogue-meta-actions">
         <template v-if="batchSelectionMode">
-          <button v-if="selectedModelCount" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('rescan')">
+          <button v-if="selectedModelCount && auth.can('models.rescan')" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('rescan')">
             Rescan selected
           </button>
-          <button v-if="selectedModelCount" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('rebuild-images')">
+          <button v-if="selectedModelCount && auth.can('models.rebuild_images')" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('rebuild-images')">
             Rebuild selected images
-          </button>
-          <button v-if="selectedModelCount" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('reset-images')">
-            Reset selected pictures
           </button>
           <button v-if="selectedModelCount" class="text-button" type="button" :disabled="batchActionInProgress" @click="clearModelSelection">Clear selection</button>
         </template>
         <button
-          v-if="auth.user?.role === 'admin' && page.items.length"
+          v-if="canRunBatchActions && page.items.length"
           class="secondary-button compact-button"
           type="button"
           :class="{ active: batchSelectionMode }"
@@ -951,7 +953,7 @@ onMounted(async () => {
           {{ batchSelectionMode ? "Done selecting" : "Select models" }}
         </button>
         <button
-          v-if="auth.user?.role === 'admin' && missingCount > 0"
+          v-if="auth.can('catalogue.view_maintenance') && auth.can('models.delete_missing') && missingCount > 0"
           class="danger-button"
           type="button"
           @click="deleteAllMissingModels"
@@ -994,7 +996,7 @@ onMounted(async () => {
             :alt="model.thumbnail_url ? model.name : `${model.name} fallback preview`"
             loading="lazy"
           >
-          <span v-if="model.status !== 'available'" class="model-status">
+          <span v-if="auth.can('catalogue.view_maintenance') && model.status !== 'available'" class="model-status">
             {{ model.status }}
           </span>
         </RouterLink>
@@ -1061,7 +1063,7 @@ onMounted(async () => {
             >Remove from list</span>
           </button>
           <button
-            v-if="auth.user?.role === 'admin' && model.status === 'missing'"
+            v-if="auth.can('catalogue.view_maintenance') && auth.can('models.delete_missing') && model.status === 'missing'"
             class="danger-button model-delete-button"
             type="button"
             @click="deleteMissingModel(model)"
