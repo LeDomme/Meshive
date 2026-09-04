@@ -121,6 +121,21 @@ def test_reading_scans_is_scoped_by_source_and_permission() -> None:
             assert client.get(f"/api/admin/scans/{b_pending_id}").status_code == 200
 
             current_user[:] = [a_only]
+            active = client.get("/api/admin/scans/active")
+            assert active.status_code == 200
+            assert active.json() == [
+                {
+                    "id": a_pending_id,
+                    "library_source_id": source_a.id,
+                    "source_name": "Source A",
+                    "status": "pending",
+                    "position": 1,
+                    "current_model_name": None,
+                    "models_total": 0,
+                    "models_found": 0,
+                    "models_skipped": 0,
+                }
+            ]
             a_history = client.get(f"/api/admin/library-sources/{source_a.id}/scans")
             assert {scan["id"] for scan in a_history.json()} == a_scan_ids
             assert client.get(f"/api/admin/library-sources/{source_b.id}/scans").status_code == 404
@@ -134,12 +149,14 @@ def test_reading_scans_is_scoped_by_source_and_permission() -> None:
             assert client.get(f"/api/admin/scans/{b_pending_id}").status_code == 404
 
             current_user[:] = [no_grant]
+            assert client.get("/api/admin/scans/active").json() == []
             assert client.get(f"/api/admin/library-sources/{source_a.id}/scans").status_code == 404
             assert client.get(f"/api/admin/library-sources/{source_b.id}/scans").status_code == 404
             assert client.get("/api/admin/scans/queue").json() == []
             assert client.get(f"/api/admin/scans/{b_pending_id}").status_code == 404
 
             current_user[:] = [viewer]
+            assert client.get("/api/admin/scans/active").status_code == 403
             assert client.get(f"/api/admin/library-sources/{source_a.id}/scans").status_code == 403
             assert client.get(f"/api/admin/library-sources/{source_b.id}/scans").status_code == 404
             assert client.get("/api/admin/scans/queue").status_code == 403
