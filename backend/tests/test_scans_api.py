@@ -85,6 +85,9 @@ def test_reading_scans_is_scoped_by_source_and_permission() -> None:
                     ScanRun(library_source_id=source_a.id, status="completed", mode="smart"),
                     ScanRun(library_source_id=source_b.id, status="pending", mode="smart"),
                     ScanRun(library_source_id=source_b.id, status="completed", mode="smart"),
+                    ScanRun(library_source_id=source_a.id, status="running", mode="smart", pause_requested=True),
+                    ScanRun(library_source_id=source_b.id, status="cancelled", mode="smart"),
+                    ScanRun(library_source_id=source_b.id, status="failed", mode="smart"),
                 ]
             )
             session.commit()
@@ -101,6 +104,11 @@ def test_reading_scans_is_scoped_by_source_and_permission() -> None:
                 for scan in scans
                 if scan.library_source_id == source_a.id and scan.status == "pending"
             )
+            a_paused_id = next(
+                scan.id
+                for scan in scans
+                if scan.library_source_id == source_a.id and scan.status == "running"
+            )
 
         with TestClient(app) as client:
             current_user[:] = [admin]
@@ -108,14 +116,24 @@ def test_reading_scans_is_scoped_by_source_and_permission() -> None:
             assert {scan["id"] for scan in client.get(f"/api/admin/library-sources/{source_b.id}/scans").json()} == b_scan_ids
             assert client.get("/api/admin/library-sources/999999/scans").status_code == 404
             assert {scan["id"] for scan in client.get("/api/admin/scans/queue").json()} == {
-                a_pending_id,
-                b_pending_id,
+                    a_pending_id,
+                    b_pending_id,
+                    a_paused_id,
             }
             assert client.get(f"/api/admin/scans/{b_pending_id}").status_code == 200
 
             current_user[:] = [all_sources]
+            all_active = client.get("/api/admin/scans/active")
+            assert all_active.status_code == 200
+            assert {scan["library_source_id"] for scan in all_active.json()} == {
+                source_a.id,
+                source_b.id,
+            }
+            assert {scan["status"] for scan in all_active.json()} == {"pending", "paused"}
+            assert all(scan["status"] not in {"completed", "cancelled", "failed"} for scan in all_active.json())
             assert {scan["id"] for scan in client.get("/api/admin/scans/queue").json()} == {
                 a_pending_id,
+                a_paused_id,
                 b_pending_id,
             }
             assert client.get(f"/api/admin/scans/{b_pending_id}").status_code == 200
@@ -123,27 +141,20 @@ def test_reading_scans_is_scoped_by_source_and_permission() -> None:
             current_user[:] = [a_only]
             active = client.get("/api/admin/scans/active")
             assert active.status_code == 200
-            assert active.json() == [
-                {
-                    "id": a_pending_id,
-                    "library_source_id": source_a.id,
-                    "source_name": "Source A",
-                    "status": "pending",
-                    "position": 1,
-                    "current_model_name": None,
-                    "models_total": 0,
-                    "models_found": 0,
-                    "models_skipped": 0,
-                }
-            ]
+            assert all(scan["library_source_id"] == source_a.id for scan in active.json())
+            assert {scan["status"] for scan in active.json()} == {"pending", "paused"}
+            pending = next(scan for scan in active.json() if scan["id"] == a_pending_id)
+            assert set(pending) == {"id", "library_source_id", "source_name", "status", "position", "current_model_name", "models_total", "models_found", "models_skipped"}
+            assert pending["position"] == 1
             a_history = client.get(f"/api/admin/library-sources/{source_a.id}/scans")
             assert {scan["id"] for scan in a_history.json()} == a_scan_ids
             assert client.get(f"/api/admin/library-sources/{source_b.id}/scans").status_code == 404
             queue = client.get("/api/admin/scans/queue")
             assert {scan["id"] for scan in queue.json()} == {
-                a_pending_id
+                a_pending_id,
+                a_paused_id,
             }
-            assert all(scan["position"] == 1 for scan in queue.json())
+            assert next(scan for scan in queue.json() if scan["id"] == a_pending_id)["position"] == 1
             assert all(scan["library_source_id"] == source_a.id for scan in queue.json())
             assert client.get(f"/api/admin/scans/{a_pending_id}").status_code == 200
             assert client.get(f"/api/admin/scans/{b_pending_id}").status_code == 404

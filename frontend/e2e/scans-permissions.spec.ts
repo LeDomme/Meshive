@@ -59,6 +59,10 @@ test("control-only operator sees active scans and uses state-specific controls",
   expect(queueRequested).toBe(false)
   await page.getByRole("button", { name: "Pause" }).click()
   await expect.poll(() => actions).toEqual(["pause"])
+  await page.getByRole("button", { name: "Resume" }).click()
+  await expect.poll(() => actions).toEqual(["pause", "resume"])
+  await page.getByRole("button", { name: "Cancel" }).first().click()
+  await expect.poll(() => actions).toEqual(["pause", "resume", "cancel"])
 })
 
 test("show all expands only the selected source history", async ({ page }) => {
