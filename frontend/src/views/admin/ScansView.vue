@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 
 import { ApiError, apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
@@ -31,6 +31,9 @@ const loading = ref(true)
 const startingSourceId = ref<number | null>(null)
 const errorMessage = ref("")
 const notice = ref("")
+const canViewActive = computed(() => auth.can("scans.view") || auth.can("scans.control"))
+let activityTimer: number | undefined
+let activityRefreshing = false
 const expandedHistories = ref<Set<number>>(new Set())
 const visibleHistories = computed(() => Object.fromEntries(
   sources.value.map((source) => {
@@ -70,7 +73,13 @@ async function loadScanData() {
   errorMessage.value = ""
   try {
     sources.value = await apiRequest<ScanSource[]>("/api/admin/scans/library-sources")
-    if (auth.can("scans.control")) activeScans.value = await apiRequest<ActiveScan[]>("/api/admin/scans/active")
+    if (canViewActive.value) {
+      try {
+        activeScans.value = await apiRequest<ActiveScan[]>("/api/admin/scans/active")
+      } catch {
+        activeScans.value = []
+      }
+    }
     if (!auth.can("scans.view")) return
     const historiesBySource = await Promise.all(
       sources.value.map(async (source) => [
@@ -84,6 +93,26 @@ async function loadScanData() {
     showError(error, "Unable to load scan data")
   } finally {
     loading.value = false
+  }
+}
+
+async function refreshActivity() {
+  if (activityRefreshing || document.hidden) return
+  activityRefreshing = true
+  try {
+    const previousIds = new Set(activeScans.value.map((scan) => scan.id))
+    if (canViewActive.value) activeScans.value = await apiRequest<ActiveScan[]>("/api/admin/scans/active")
+    if (auth.can("scans.view")) {
+      queue.value = await apiRequest<ScanQueueItem[]>("/api/admin/scans/queue")
+      if ([...previousIds].some((id) => !activeScans.value.some((scan) => scan.id === id))) {
+        const historiesBySource = await Promise.all(sources.value.map(async (source) => [source.id, await apiRequest<ScanRun[]>(`/api/admin/library-sources/${source.id}/scans`)] as const))
+        histories.value = Object.fromEntries(historiesBySource)
+      }
+    }
+  } catch {
+    // Background refresh failures should not interrupt scan management.
+  } finally {
+    activityRefreshing = false
   }
 }
 
@@ -125,7 +154,14 @@ async function startScan(source: ScanSource) {
   }
 }
 
-onMounted(() => void loadScanData())
+onMounted(() => {
+  void loadScanData()
+  activityTimer = window.setInterval(() => void refreshActivity(), 5000)
+})
+
+onBeforeUnmount(() => {
+  if (activityTimer !== undefined) window.clearInterval(activityTimer)
+})
 </script>
 
 <template>
@@ -142,14 +178,14 @@ onMounted(() => void loadScanData())
       <p v-if="notice" class="form-success" role="status">{{ notice }}</p>
       <p v-if="loading">Loading scan sources…</p>
       <p v-else-if="!sources.length" class="empty-state">No library sources are available for your access scope.</p>
-      <section v-if="!loading && auth.can('scans.control')" class="panel active-scans-panel">
+      <section v-if="!loading && canViewActive" class="panel active-scans-panel">
         <div class="scan-section-heading"><h2>Active scans</h2><p v-if="!activeScans.length">No scans are currently active.</p></div>
         <div v-if="activeScans.length" class="scan-rows">
           <div v-for="scan in activeScans" :key="scan.id" class="active-scan-row">
             <div><strong>{{ scan.source_name }}</strong><p v-if="scan.current_model_name">{{ scan.current_model_name }}</p></div>
             <span class="scan-status" :class="statusClass(scan.status)">{{ statusLabel(scan.status) }}</span>
             <span v-if="scan.position">Queue position {{ scan.position }}</span>
-            <div class="scan-controls">
+            <div v-if="auth.can('scans.control')" class="scan-controls">
               <button v-if="scan.status === 'running'" class="secondary-button compact-button" type="button" :disabled="controllingScanId !== null" @click="controlScan(scan, 'pause')">{{ controlLabel('pause', scan.id) }}</button>
               <button v-if="scan.status === 'paused'" class="secondary-button compact-button" type="button" :disabled="controllingScanId !== null" @click="controlScan(scan, 'resume')">{{ controlLabel('resume', scan.id) }}</button>
               <button class="danger-button compact-button" type="button" :disabled="controllingScanId !== null" @click="controlScan(scan, 'cancel')">{{ controlLabel('cancel', scan.id) }}</button>

@@ -44,6 +44,10 @@ router = APIRouter(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 SessionDependency = Annotated[Session, Depends(get_session)]
 ScansViewAccess = Annotated[AccessContext, Depends(require_permission(SCANS_VIEW))]
+ScansActiveAccess = Annotated[
+    AccessContext,
+    Depends(require_any_permission({SCANS_VIEW, SCANS_CONTROL})),
+]
 ScansAccess = Annotated[
     AccessContext,
     Depends(require_any_permission({SCANS_VIEW, SCANS_START, SCANS_CONTROL})),
@@ -168,11 +172,9 @@ def scan_queue(
 
 @router.get("/scans/active", response_model=list[ActiveScanRead])
 def active_scans(
-    current_user: CurrentUser,
+    access: ScansActiveAccess,
     session: SessionDependency,
 ) -> list[ActiveScanRead]:
-    access = get_access_context(session, current_user)
-    require_access_permission(access, SCANS_CONTROL)
     statement = (
         select(ScanRun, LibrarySource.name)
         .join(LibrarySource, LibrarySource.id == ScanRun.library_source_id)
