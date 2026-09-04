@@ -9,6 +9,11 @@ class ScanStartRequest(BaseModel):
 
     mode: Literal["full", "missing_images", "incremental", "reconcile_images", "smart"] = "smart"
 
+
+class ScanSourcePickerRead(BaseModel):
+    id: int
+    name: str
+
 class ScanRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

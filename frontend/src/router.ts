@@ -19,6 +19,7 @@ import BackupsView from "./views/admin/BackupsView.vue"
 import CreatorsView from "./views/admin/CreatorsView.vue"
 import DiagnosticsView from "./views/admin/DiagnosticsView.vue"
 import RolesView from "./views/admin/RolesView.vue"
+import ScansView from "./views/admin/ScansView.vue"
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -100,6 +101,15 @@ export const router = createRouter({
       meta: { requiresAuth: true, requiredPermission: "roles.manage", requiresAllSources: true },
     },
     {
+      path: "/admin/scans",
+      name: "scans",
+      component: ScansView,
+      meta: {
+        requiresAuth: true,
+        requiredAnyPermission: ["scans.view", "scans.start", "scans.control"],
+      },
+    },
+    {
       path: "/admin/metadata",
       name: "metadata",
       component: CreatorsView,
@@ -171,6 +181,12 @@ router.beforeEach(async (to) => {
     if (to.meta.requiredPermission === "catalogue.view") {
       return { name: "access-denied" }
     }
+    return { name: "home" }
+  }
+  if (
+    Array.isArray(to.meta.requiredAnyPermission)
+    && !to.meta.requiredAnyPermission.some((permission) => auth.can(permission))
+  ) {
     return { name: "home" }
   }
   if (to.meta.requiresAllSources && !auth.user?.source_access?.all_sources) {

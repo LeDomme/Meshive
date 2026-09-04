@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, get_session
 from meshive.main import app
-from meshive.models.authorization import Role, UserLibrarySource
+from meshive.models.authorization import Role, RolePermission, UserLibrarySource
 from meshive.models.catalog import ScanRun
 from meshive.models.library_source import LibrarySource
 from meshive.models.user import User
@@ -145,6 +145,85 @@ def test_reading_scans_is_scoped_by_source_and_permission() -> None:
             assert client.get("/api/admin/scans/queue").status_code == 403
             assert client.get(f"/api/admin/scans/{next(iter(a_scan_ids))}").status_code == 403
             assert client.get(f"/api/admin/scans/{b_pending_id}").status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_scan_source_picker_is_minimal_permission_scoped_and_source_scoped() -> None:
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    current_user: list[User] = []
+
+    def override_session() -> Generator[Session, None, None]:
+        with sessions() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_current_user] = lambda: current_user[0]
+    try:
+        with sessions() as session:
+            source_a = LibrarySource(name="Source A", root_path="/a", directory_pattern="{model}")
+            source_b = LibrarySource(name="Source B", root_path="/b", directory_pattern="{model}")
+            roles = {
+                key: Role(
+                    name=f"{key} role",
+                    normalized_name=f"{key} role",
+                    permissions=[RolePermission(permission_key=key)],
+                )
+                for key in ("scans.view", "scans.start", "scans.control")
+            }
+            no_permission_role = Role(name="No scans", normalized_name="no scans")
+            users = {
+                key: User(
+                    username=key,
+                    normalized_username=key,
+                    password_hash="unused",
+                    role="user",
+                    role_definition=role,
+                    all_sources=False,
+                )
+                for key, role in roles.items()
+            }
+            no_grant = User(
+                username="No grant",
+                normalized_username="no grant",
+                password_hash="unused",
+                role="user",
+                role_definition=roles["scans.view"],
+                all_sources=False,
+            )
+            no_permission = User(
+                username="No permission",
+                normalized_username="no permission",
+                password_hash="unused",
+                role="user",
+                role_definition=no_permission_role,
+                all_sources=True,
+            )
+            session.add_all([source_a, source_b, *roles.values(), no_permission_role, *users.values(), no_grant, no_permission])
+            session.flush()
+            session.add_all(
+                UserLibrarySource(user_id=user.id, library_source_id=source_a.id)
+                for user in users.values()
+            )
+            session.commit()
+
+        with TestClient(app) as client:
+            for user in users.values():
+                current_user[:] = [user]
+                response = client.get("/api/admin/scans/library-sources")
+                assert response.status_code == 200
+                assert response.json() == [{"id": source_a.id, "name": "Source A"}]
+                assert client.get("/api/admin/library-sources").status_code == 403
+            current_user[:] = [no_grant]
+            assert client.get("/api/admin/scans/library-sources").json() == []
+            current_user[:] = [no_permission]
+            assert client.get("/api/admin/scans/library-sources").status_code == 403
     finally:
         app.dependency_overrides.clear()
         Base.metadata.drop_all(engine)

@@ -171,3 +171,22 @@ def require_permission(permission_key: str):
         return access
 
     return dependency
+
+
+def require_any_permission(permission_keys: set[str]):
+    if not permission_keys or not permission_keys <= ALL_PERMISSION_KEYS:
+        raise ValueError("Permission keys must be registered")
+
+    def dependency(
+        user: User = CURRENT_USER_DEPENDENCY,
+        session: Session = SESSION_DEPENDENCY,
+    ) -> AccessContext:
+        access = get_access_context(session, user)
+        if not access.permission_keys.intersection(permission_keys):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permission denied",
+            )
+        return access
+
+    return dependency

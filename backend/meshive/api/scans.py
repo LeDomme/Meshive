@@ -9,7 +9,9 @@ from meshive.auth.access import (
     get_access_context,
     get_operable_source_or_404,
     get_visible_scan_or_404,
+    get_visible_source_ids,
     require_access_permission,
+    require_any_permission,
     require_permission,
     scope_scan_runs,
 )
@@ -25,6 +27,7 @@ from meshive.schemas.scan import (
     ScanIssueRead,
     ScanQueueItem,
     ScanRunRead,
+    ScanSourcePickerRead,
     ScanStartRequest,
 )
 from meshive.services.scanner import (
@@ -38,7 +41,24 @@ router = APIRouter(
     tags=["scans"],
 )
 CurrentUser = Annotated[User, Depends(get_current_user)]
+SessionDependency = Annotated[Session, Depends(get_session)]
 ScansViewAccess = Annotated[AccessContext, Depends(require_permission(SCANS_VIEW))]
+ScansAccess = Annotated[
+    AccessContext,
+    Depends(require_any_permission({SCANS_VIEW, SCANS_START, SCANS_CONTROL})),
+]
+
+
+@router.get("/scans/library-sources", response_model=list[ScanSourcePickerRead])
+def list_scan_sources(
+    access: ScansAccess,
+    session: SessionDependency,
+) -> list[ScanSourcePickerRead]:
+    statement = select(LibrarySource.id, LibrarySource.name).order_by(LibrarySource.name)
+    source_ids = get_visible_source_ids(access)
+    if source_ids is not None:
+        statement = statement.where(LibrarySource.id.in_(source_ids))
+    return [ScanSourcePickerRead(id=source_id, name=name) for source_id, name in session.execute(statement)]
 
 
 @router.post(
@@ -49,7 +69,7 @@ ScansViewAccess = Annotated[AccessContext, Depends(require_permission(SCANS_VIEW
 def start_source_scan(
     source_id: int,
     current_user: CurrentUser,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
     payload: ScanStartRequest | None = None,
 ) -> ScanRun:
     access = get_access_context(session, current_user)
@@ -82,7 +102,7 @@ def start_source_scan(
 def list_source_scans(
     source_id: int,
     current_user: CurrentUser,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> list[ScanRun]:
     access = get_access_context(session, current_user)
     get_operable_source_or_404(session, access, source_id)
@@ -99,7 +119,7 @@ def list_source_scans(
 @router.get("/scans/queue", response_model=list[ScanQueueItem])
 def scan_queue(
     access: ScansViewAccess,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> list[ScanQueueItem]:
     statement = (
         select(ScanRun, LibrarySource.name)
@@ -149,7 +169,7 @@ def scan_queue(
 def cancel_scan(
     scan_id: int,
     current_user: CurrentUser,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> ScanRun:
     access = get_access_context(session, current_user)
     scan = get_visible_scan_or_404(session, access, scan_id)
@@ -168,7 +188,7 @@ def cancel_scan(
 def pause_scan(
     scan_id: int,
     current_user: CurrentUser,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> ScanRun:
     access = get_access_context(session, current_user)
     scan = get_visible_scan_or_404(session, access, scan_id)
@@ -184,7 +204,7 @@ def pause_scan(
 def resume_scan(
     scan_id: int,
     current_user: CurrentUser,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> ScanRun:
     access = get_access_context(session, current_user)
     scan = get_visible_scan_or_404(session, access, scan_id)
@@ -199,7 +219,7 @@ def resume_scan(
 def get_scan(
     scan_id: int,
     current_user: CurrentUser,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> ScanDetail:
     access = get_access_context(session, current_user)
     scan = get_visible_scan_or_404(session, access, scan_id)
