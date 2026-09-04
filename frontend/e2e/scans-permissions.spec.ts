@@ -31,7 +31,7 @@ test("start-only operator starts a smart scan without history requests", async (
   await page.route("**/api/admin/library-sources/1/scan", async route => { started = route.request().postDataJSON().mode === "smart"; await route.fulfill({ json: {} }) })
   await page.goto("/admin/scans")
   await expect(page.getByRole("heading", { name: "Source A" })).toBeVisible()
-  await page.getByRole("button", { name: "Start scan" }).click()
+  await page.getByRole("button", { name: "Start smart scan" }).click()
   await expect.poll(() => started).toBe(true)
   expect(historyRequested).toBe(false)
   expect(queueRequested).toBe(false)
