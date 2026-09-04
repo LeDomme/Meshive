@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import (
+    ARCHIVES_DOWNLOAD,
     CATALOGUE_VIEW,
     CATALOGUE_VIEW_MAINTENANCE,
     MODELS_DELETE_MISSING,
@@ -401,6 +402,7 @@ def test_media_and_download_routes_are_source_scoped(tmp_path, monkeypatch) -> N
             session.flush()
             session.add_all([
                 RolePermission(role_id=viewer_role.id, permission_key=CATALOGUE_VIEW),
+                RolePermission(role_id=no_catalogue_role.id, permission_key=ARCHIVES_DOWNLOAD),
                 UserLibrarySource(user_id=a_only.id, library_source_id=source_a.id),
                 UserLibrarySource(user_id=no_catalogue.id, library_source_id=source_a.id),
             ])
@@ -420,6 +422,7 @@ def test_media_and_download_routes_are_source_scoped(tmp_path, monkeypatch) -> N
         assert client.get(f"/api/models/{model_a.id}").json()["archives"][0]["entries"]
         app.dependency_overrides[get_current_user] = lambda: viewer
         assert client.get(f"/api/models/{model_a.id}/archives/{archive_a.id}/download").status_code == 403
+        assert client.get(f"/api/models/{model_b.id}/archives/download-all").status_code == 403
         assert client.get(f"/api/models/{model_a.id}").json()["archives"][0]["entries"] == []
         app.dependency_overrides[get_current_user] = lambda: a_only
         assert client.get(f"/api/models/{model_b.id}/images/{image_b.id}").status_code == 404
@@ -436,6 +439,20 @@ def test_media_and_download_routes_are_source_scoped(tmp_path, monkeypatch) -> N
         assert client.get(f"/api/models/{model_a.id}/navigation").status_code == 403
         assert client.get(f"/api/models/{model_a.id}/images/{image_a.id}").status_code == 403
         assert client.get(f"/api/models/{model_a.id}/thumbnail").status_code == 403
+        archive_response = client.get(
+            f"/api/models/{model_a.id}/archives/{archive_a.id}/download",
+            headers={"Range": "bytes=1-3"},
+        )
+        assert archive_response.status_code == 403
+        assert archive_response.content != b"bcd"
+        bundle_response = client.get(f"/api/models/{model_b.id}/archives/download-all")
+        assert bundle_response.status_code == 404
+        assert client.get(
+            f"/api/models/{model_b.id}/archives/{archive_b.id}/download"
+        ).status_code == 404
+        bundle_response = client.get(f"/api/models/{model_a.id}/archives/download-all")
+        assert bundle_response.status_code == 403
+        assert bundle_response.content != b"abcdef"
         assert client.get(f"/api/models/{model_b.id}").status_code == 404
         assert client.get(f"/api/models/{model_b.id}/navigation").status_code == 404
         assert client.get(f"/api/models/{model_b.id}/images/{image_b.id}").status_code == 404

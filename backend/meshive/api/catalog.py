@@ -580,6 +580,7 @@ def download_all_archives(
 ) -> StreamingResponse:
     access = get_access_context(session, current_user)
     model = get_visible_model_or_404(session, access, model_id)
+    require_access_permission(access, CATALOGUE_VIEW)
     if ARCHIVES_DOWNLOAD not in access.permission_keys:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
     rows = session.execute(
@@ -654,6 +655,7 @@ def download_archive(
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
+    require_access_permission(access, CATALOGUE_VIEW)
     if ARCHIVES_DOWNLOAD not in access.permission_keys:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
     row = session.execute(
