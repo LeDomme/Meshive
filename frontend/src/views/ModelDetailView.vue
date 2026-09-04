@@ -337,7 +337,7 @@ function endThumbnailDrag(event: PointerEvent) {
   window.setTimeout(() => { thumbnailDragMoved = false }, 0)
 }
 async function setPrimaryImage(image: ModelImage) {
-  if (!model.value || image.is_primary) return
+  if (!auth.can("models.primary_image") || !model.value || image.is_primary) return
   errorMessage.value = ""
   pictureNotice.value = ""
   try {
@@ -355,7 +355,7 @@ async function setPrimaryImage(image: ModelImage) {
 }
 
 async function clearScanIssueHistory() {
-  if (!model.value || !model.value.recent_scan_issues.length) return
+  if (!auth.can("catalogue.view_maintenance") || !model.value || !model.value.recent_scan_issues.length) return
   if (!window.confirm("Clear the saved scan issue history for this model?")) return
   errorMessage.value = ""
   try {
@@ -371,7 +371,7 @@ async function clearScanIssueHistory() {
 }
 
 async function resetPictures() {
-  if (!model.value) return
+  if (!auth.can("models.reset_images") || !model.value) return
   if (!window.confirm("Reset all Meshive picture records for this model? Re-scan the source to rebuild them.")) {
     return
   }
@@ -391,7 +391,11 @@ async function resetPictures() {
 }
 
 async function rescanCurrentModel(forceImageRebuild = false) {
-  if (!model.value || rescanInProgress.value) return
+  if (
+    !auth.can(forceImageRebuild ? "models.rebuild_images" : "models.rescan")
+    || !model.value
+    || rescanInProgress.value
+  ) return
   if (
     forceImageRebuild
     && !window.confirm(
@@ -576,7 +580,7 @@ async function handleFavoriteClick() {
 }
 
 async function addTag() {
-  if (!model.value || !selectedTagId.value) return
+  if (!auth.can("models.tags") || !model.value || !selectedTagId.value) return
   await apiRequest<void>(
     `/api/admin/models/${model.value.id}/tags/${selectedTagId.value}`,
     { method: "PUT" },
@@ -586,7 +590,7 @@ async function addTag() {
 }
 
 async function removeTag(tag: Tag) {
-  if (!model.value) return
+  if (!auth.can("models.tags") || !model.value) return
   await apiRequest<void>(`/api/admin/models/${model.value.id}/tags/${tag.id}`, {
     method: "DELETE",
   })
@@ -681,7 +685,7 @@ onBeforeUnmount(() => {
             >&#8250;</button>
           </nav>
           <span
-            v-if="auth.user?.role === 'admin' && model.status !== 'available'"
+            v-if="auth.can('catalogue.view_maintenance') && model.status !== 'available'"
             class="detail-status"
           >
             {{ model.status }}
@@ -748,9 +752,10 @@ onBeforeUnmount(() => {
             </button>
             <div v-else class="thumbnail-placeholder">Fallback preview</div>
           </div>
-          <div v-if="auth.user?.role === 'admin'" class="image-admin-controls">
+          <div v-if="auth.can('models.primary_image') || auth.can('models.rescan') || auth.can('models.rebuild_images') || auth.can('models.reset_images')" class="image-admin-controls">
             <p v-if="pictureNotice" class="form-success" role="status">{{ pictureNotice }}</p>
             <button
+              v-if="auth.can('models.primary_image')"
               class="secondary-button"
               type="button"
               :disabled="!selectedImage || selectedImage.is_primary"
@@ -759,6 +764,7 @@ onBeforeUnmount(() => {
               {{ selectedImage?.is_primary ? "Primary picture" : "Use as primary" }}
             </button>
             <button
+              v-if="auth.can('models.rescan')"
               class="secondary-button"
               type="button"
               :disabled="rescanInProgress"
@@ -767,6 +773,7 @@ onBeforeUnmount(() => {
               {{ rescanInProgress ? "Rescanning…" : "Rescan model" }}
             </button>
             <button
+              v-if="auth.can('models.rebuild_images')"
               class="danger-button"
               type="button"
               :disabled="rescanInProgress"
@@ -774,7 +781,7 @@ onBeforeUnmount(() => {
             >
               Rebuild archive images
             </button>
-            <button class="danger-button" type="button" @click="resetPictures">Reset pictures</button>
+            <button v-if="auth.can('models.reset_images')" class="danger-button" type="button" @click="resetPictures">Reset pictures</button>
           </div>
           <div v-if="model.images.length > 1" class="thumbnail-carousel">
             <button class="thumbnail-carousel-nav thumbnail-carousel-nav-previous" type="button" aria-label="Show earlier pictures" @click="scrollThumbnailStrip(-1)">‹</button>
@@ -888,7 +895,7 @@ onBeforeUnmount(() => {
                 {{ model.source_name }}
               </RouterLink>
             </dd>
-            <template v-if="auth.user?.role === 'admin' && model.archive_statistics">
+            <template v-if="auth.can('catalogue.view_maintenance') && model.archive_statistics">
               <dt class="model-facts-section-label">Archive statistics</dt>
               <dd></dd>
               <dt>Exportable archive images</dt>
@@ -919,7 +926,7 @@ onBeforeUnmount(() => {
                     {{ tag.name }}
                   </RouterLink>
                   <button
-                    v-if="auth.user?.role === 'admin'"
+                    v-if="auth.can('models.tags')"
                     type="button"
                     :aria-label="`Remove ${tag.name} tag`"
                     @click="removeTag(tag)"
@@ -931,7 +938,7 @@ onBeforeUnmount(() => {
             <dt>Folder</dt><dd class="path-value">{{ model.relative_path }}</dd>
           </dl>
           <form
-            v-if="auth.user?.role === 'admin' && availableTags.length"
+            v-if="auth.can('models.tags') && availableTags.length"
             class="tag-assignment model-fact-tag-assignment"
             @submit.prevent="addTag"
           >
@@ -946,7 +953,7 @@ onBeforeUnmount(() => {
         </aside>
       </section>
 
-      <details v-if="auth.user?.role === 'admin' && model.recent_scan_issues.length" class="panel model-scan-issues">
+      <details v-if="auth.can('catalogue.view_maintenance') && model.recent_scan_issues.length" class="panel model-scan-issues">
         <summary>
           <span class="eyebrow">Image scan issues</span>
           <span>Recent scan issues ({{ model.recent_scan_issues.length }})</span>
