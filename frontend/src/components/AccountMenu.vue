@@ -54,14 +54,16 @@ async function logout() {
       <RouterLink v-if="auth.can('favorites.manage')" class="account-menu-item" to="/favorites" @click="closeMenu">
         Favorite lists
       </RouterLink>
-      <div v-if="auth.can('sources.manage') || auth.can('scans.view') || auth.can('scans.start') || auth.can('scans.control') || (auth.can('users.manage') && auth.user?.source_access?.all_sources) || (auth.can('roles.manage') && auth.user?.source_access?.all_sources) || (auth.can('backups.manage') && auth.user?.source_access?.all_sources) || (auth.can('diagnostics.view') && auth.user?.source_access?.all_sources)" class="account-menu-section">Administration</div>
+      <div v-if="auth.can('sources.manage') || auth.can('scans.view') || auth.can('scans.start') || auth.can('scans.control') || (auth.can('users.manage') && auth.user?.source_access?.all_sources) || (auth.can('roles.manage') && auth.user?.source_access?.all_sources) || (auth.can('backups.manage') && auth.user?.source_access?.all_sources) || (auth.can('diagnostics.view') && auth.user?.source_access?.all_sources)" class="account-menu-section">
+        <span>Administration</span>
+      </div>
       <RouterLink v-if="auth.can('sources.manage')" class="account-menu-item" to="/admin/sources" @click="closeMenu">Library sources</RouterLink>
       <RouterLink v-if="auth.can('scans.view') || auth.can('scans.start') || auth.can('scans.control')" class="account-menu-item" to="/admin/scans" @click="closeMenu">Scans</RouterLink>
       <RouterLink v-if="auth.can('users.manage') && auth.user?.source_access?.all_sources" class="account-menu-item" to="/admin/users" @click="closeMenu">Users</RouterLink>
       <RouterLink v-if="auth.can('roles.manage') && auth.user?.source_access?.all_sources" class="account-menu-item" to="/admin/roles" @click="closeMenu">Roles</RouterLink>
       <RouterLink v-if="auth.can('backups.manage') && auth.user?.source_access?.all_sources" class="account-menu-item" to="/admin/backups" @click="closeMenu">Backups</RouterLink>
       <RouterLink v-if="auth.can('diagnostics.view') && auth.user?.source_access?.all_sources" class="account-menu-item" to="/admin/diagnostics" @click="closeMenu">Diagnostics</RouterLink>
-      <button class="account-menu-item" type="button" @click="logout">Sign out</button>
+      <div class="account-menu-signout"><button class="account-menu-item" type="button" @click="logout">Sign out</button></div>
     </div>
   </details>
 </template>

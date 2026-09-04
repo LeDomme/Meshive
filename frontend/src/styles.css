@@ -1525,6 +1525,23 @@ summary {
   background: rgb(25 183 255 / 12%);
 }
 
+.account-menu-section {
+  margin-top: 0.35rem;
+  padding: 0.8rem 1rem 0.45rem;
+  border-top: 1px solid var(--meshive-border);
+  color: #7dd3fc;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.account-menu-signout {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--meshive-border);
+}
+
 .account-shell {
   width: min(100% - 2rem, 54rem);
   margin: 0 auto;
