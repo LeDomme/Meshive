@@ -3881,7 +3881,20 @@ code {
 }
 
 .users-management-layout {
-  align-items: stretch;
+  align-items: start;
+}
+
+.users-management-layout .role-list-panel {
+  align-content: start;
+  align-self: start;
+}
+
+.users-management-layout .new-role-button {
+  align-self: start;
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 0;
+  margin: 0.25rem 0 0.5rem;
 }
 
 .user-master-list {
@@ -3890,6 +3903,23 @@ code {
   max-height: 44rem;
   overflow-y: auto;
   padding-right: 0.25rem;
+}
+
+.user-master-list .role-card {
+  align-items: start;
+}
+
+.user-master-list .role-card-meta {
+  align-self: start;
+  flex: 0 0 auto;
+}
+
+.user-master-list .status-badge {
+  align-self: start;
+  flex: 0 0 auto;
+  min-height: 0;
+  height: auto;
+  white-space: nowrap;
 }
 
 .user-detail-panel {

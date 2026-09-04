@@ -52,6 +52,13 @@ const roles = [
   },
 ];
 const users = [{ ...admin, source_ids: [] }];
+const secondUser = {
+  ...limited,
+  id: 3,
+  username: "Second user",
+  email: "second@example.test",
+  source_ids: [],
+};
 
 async function mockApi(page: import("@playwright/test").Page, user = admin) {
   await page.route("**/api/setup/status", (route) =>
@@ -188,6 +195,64 @@ test("users without management permissions cannot open management URLs", async (
   await expect(page).toHaveURL(/\/\?(?:.*)?$|\/$/);
   await page.goto("/admin/roles");
   await expect(page).toHaveURL(/\/\?(?:.*)?$|\/$/);
+});
+
+test("switching users without edits does not ask to discard changes", async ({
+  page,
+}) => {
+  await mockApi(page);
+  await page.route("**/api/admin/users", (route) =>
+    route.fulfill({ json: [...users, secondUser] }),
+  );
+  let dialogCount = 0;
+  page.on("dialog", async (dialog) => {
+    dialogCount += 1;
+    await dialog.accept();
+  });
+
+  await page.goto("/admin/users");
+  await page.locator(".user-master-list .role-card").nth(1).click();
+
+  await expect(page.getByLabel("Username")).toHaveValue("Second user");
+  expect(dialogCount).toBe(0);
+});
+
+test("switching a changed user asks before discarding changes", async ({ page }) => {
+  await mockApi(page);
+  await page.route("**/api/admin/users", (route) =>
+    route.fulfill({ json: [...users, secondUser] }),
+  );
+  await page.goto("/admin/users");
+  await page.getByLabel("Username").fill("Changed admin");
+
+  let dialogMessage = "";
+  page.once("dialog", async (dialog) => {
+    dialogMessage = dialog.message();
+    await dialog.accept();
+  });
+  await page.locator(".user-master-list .role-card").nth(1).click();
+  expect(dialogMessage).toBe("Discard unsaved user changes?");
+
+  await expect(page.getByLabel("Username")).toHaveValue("Second user");
+});
+
+test("cancelling a changed-user switch retains the current selection", async ({
+  page,
+}) => {
+  await mockApi(page);
+  await page.route("**/api/admin/users", (route) =>
+    route.fulfill({ json: [...users, secondUser] }),
+  );
+  await page.goto("/admin/users");
+  await page.getByLabel("Username").fill("Changed admin");
+
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.locator(".user-master-list .role-card").nth(1).click();
+
+  await expect(page.getByLabel("Username")).toHaveValue("Changed admin");
+  await expect(page.locator(".user-master-list .role-card").first()).toHaveClass(
+    /selected/,
+  );
 });
 
 test("a user manager can select sources without source configuration access", async ({

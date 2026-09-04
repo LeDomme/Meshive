@@ -38,6 +38,8 @@ const successMessage = ref("");
 const busyUserId = ref<number | null>(null);
 const selectedUserId = ref<number | null>(null);
 const createMode = ref(false);
+const selectedSnapshot = ref("");
+const createSnapshot = ref("");
 const selectedUser = computed(
   () => users.value.find((user) => user.id === selectedUserId.value) ?? null,
 );
@@ -51,6 +53,52 @@ const form = reactive({
   is_active: true,
   must_change_password: true,
 });
+
+function stableSnapshot(value: {
+  username: string;
+  email: string | null;
+  role_id: number | null;
+  all_sources: boolean;
+  source_ids: number[];
+  is_active: boolean;
+  must_change_password: boolean;
+  password?: string;
+}) {
+  return JSON.stringify({
+    ...value,
+    email: value.email?.trim() || null,
+    source_ids: [...value.source_ids].sort((left, right) => left - right),
+    password: value.password || "",
+  });
+}
+
+function userSnapshot(user: User) {
+  return stableSnapshot({
+    username: user.username,
+    email: user.email,
+    role_id: user.role_definition?.id ?? null,
+    all_sources: user.all_sources,
+    source_ids: user.source_ids,
+    is_active: user.is_active,
+    must_change_password: user.must_change_password,
+    password: passwords[user.id],
+  });
+}
+
+function formSnapshot() {
+  return stableSnapshot({ ...form, role_id: form.role_id });
+}
+
+function resetSnapshots() {
+  selectedSnapshot.value = selectedUser.value ? userSnapshot(selectedUser.value) : "";
+  createSnapshot.value = formSnapshot();
+}
+
+function isDirty() {
+  return createMode.value
+    ? formSnapshot() !== createSnapshot.value
+    : Boolean(selectedUser.value && userSnapshot(selectedUser.value) !== selectedSnapshot.value);
+}
 function sourceSummary(user: User) {
   return user.all_sources
     ? "All sources"
@@ -83,22 +131,26 @@ async function load() {
   if (!createMode.value && selectedUserId.value === null) {
     selectedUserId.value = users.value[0]?.id ?? null;
   }
+  resetSnapshots();
 }
 
 function selectUser(userId: number) {
   if (
-    (createMode.value || selectedUserId.value !== userId) &&
+    selectedUserId.value !== userId &&
+    isDirty() &&
     !window.confirm("Discard unsaved user changes?")
   )
     return;
   createMode.value = false;
   selectedUserId.value = userId;
+  resetSnapshots();
 }
 
 function startCreate() {
-  if (selectedUser.value && !window.confirm("Discard unsaved user changes?")) return;
+  if (isDirty() && !window.confirm("Discard unsaved user changes?")) return;
   createMode.value = true;
   selectedUserId.value = null;
+  resetSnapshots();
 }
 async function createUser() {
   errorMessage.value = "";
@@ -127,6 +179,7 @@ async function createUser() {
     await load();
     createMode.value = false;
     selectedUserId.value = created.id;
+    resetSnapshots();
     successMessage.value = "User created successfully.";
   } catch (error) {
     showError(error);
@@ -155,12 +208,14 @@ async function saveUser(user: User) {
     passwords[user.id] = "";
     await load();
     selectedUserId.value = user.id;
+    resetSnapshots();
     if (user.id === auth.user?.id) await auth.refreshUser();
     successMessage.value = `User "${saved.username}" updated successfully.`;
   } catch (error) {
     showError(error);
     await load();
     selectedUserId.value = users.value[0]?.id ?? null;
+    resetSnapshots();
   } finally {
     busyUserId.value = null;
   }
@@ -174,6 +229,7 @@ async function sendVerification(user: User) {
     );
     successMessage.value = result.message;
     await load();
+    resetSnapshots();
   } catch (error) {
     showError(error);
   } finally {
@@ -187,6 +243,8 @@ async function deleteUser(user: User) {
     await apiRequest(`/api/admin/users/${user.id}`, { method: "DELETE" });
     await load();
     successMessage.value = `User "${user.username}" deleted successfully.`;
+    selectedUserId.value = users.value[0]?.id ?? null;
+    resetSnapshots();
   } catch (error) {
     showError(error);
   } finally {
