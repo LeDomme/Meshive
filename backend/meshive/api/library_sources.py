@@ -1,11 +1,19 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from meshive.auth.access import require_global_permission
+from meshive.auth.access import (
+    get_access_context,
+    get_operable_source_or_404,
+    require_access_permission,
+)
+from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import SOURCES_MANAGE
 from meshive.config import get_settings
 from meshive.database import get_session
+from meshive.models.user import User
 from meshive.repositories import library_sources as repository
 from meshive.schemas.library_source import (
     LibrarySourceCreate,
@@ -25,19 +33,29 @@ from meshive.services.thumbnails import remove_cached_file
 router = APIRouter(
     prefix="/admin/library-sources",
     tags=["library sources"],
-    dependencies=[Depends(require_global_permission(SOURCES_MANAGE))],
 )
+CurrentUser = Annotated[User, Depends(get_current_user)]
+SessionDependency = Annotated[Session, Depends(get_session)]
 
 
 @router.get("", response_model=list[LibrarySourceRead])
-def list_library_sources(session: Session = Depends(get_session)) -> list:
-    return repository.list_sources(session)
+def list_library_sources(current_user: CurrentUser, session: SessionDependency) -> list:
+    access = get_access_context(session, current_user)
+    require_access_permission(access, SOURCES_MANAGE)
+    sources = repository.list_sources(session)
+    return sources if access.all_sources or access.is_superuser else [source for source in sources if source.id in access.source_ids]
 
 
 @router.post("", response_model=LibrarySourceRead, status_code=status.HTTP_201_CREATED)
 def create_library_source(
-    payload: LibrarySourceCreate, session: Session = Depends(get_session)
+    payload: LibrarySourceCreate,
+    current_user: CurrentUser,
+    session: SessionDependency,
 ):
+    access = get_access_context(session, current_user)
+    require_access_permission(access, SOURCES_MANAGE)
+    if not (access.all_sources or access.is_superuser):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="All sources access required")
     payload.root_path = validate_library_root(
         payload.root_path, get_settings().allowed_library_root.as_posix()
     )
@@ -55,9 +73,18 @@ def create_library_source(
 def update_library_source(
     source_id: int,
     payload: LibrarySourceUpdate,
-    session: Session = Depends(get_session),
+    current_user: CurrentUser,
+    session: SessionDependency,
 ):
-    source = _get_source_or_404(session, source_id)
+    access = get_access_context(session, current_user)
+    source = get_operable_source_or_404(session, access, source_id)
+    require_access_permission(access, SOURCES_MANAGE)
+    if not (access.all_sources or access.is_superuser):
+        if payload.root_path != source.root_path:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Root path cannot be changed")
+        for field in ("directory_pattern", "model_pattern", "archive_formats", "image_formats", "is_active", "scan_enabled"):
+            if getattr(payload, field) != getattr(source, field):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Global source configuration requires all sources access")
     payload.root_path = validate_library_root(
         payload.root_path, get_settings().allowed_library_root.as_posix()
     )
@@ -73,10 +100,15 @@ def update_library_source(
 
 @router.delete("/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_library_source(
-    source_id: int, session: Session = Depends(get_session)
+    source_id: int, current_user: CurrentUser, session: SessionDependency
 ) -> Response:
+    access = get_access_context(session, current_user)
+    source = get_operable_source_or_404(session, access, source_id)
+    require_access_permission(access, SOURCES_MANAGE)
+    if not (access.all_sources or access.is_superuser):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="All sources access required")
     cache_keys = repository.delete_source(
-        session, _get_source_or_404(session, source_id)
+        session, source
     )
     for key in cache_keys:
         remove_cached_file(get_settings().cache_dir, key)
@@ -84,7 +116,15 @@ def delete_library_source(
 
 
 @router.post("/preview", response_model=PathPreviewResponse)
-def preview_library_path(payload: PathPreviewRequest) -> PathPreviewResponse:
+def preview_library_path(
+    payload: PathPreviewRequest,
+    current_user: CurrentUser,
+    session: SessionDependency,
+) -> PathPreviewResponse:
+    access = get_access_context(session, current_user)
+    require_access_permission(access, SOURCES_MANAGE)
+    if not (access.all_sources or access.is_superuser):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="All sources access required")
     try:
         normalized_path, values = parse_library_path(
             directory_pattern=payload.directory_pattern,
