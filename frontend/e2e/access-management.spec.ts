@@ -15,7 +15,7 @@ async function mockApi(page: import("@playwright/test").Page, user = admin) {
   await page.route("**/api/admin/permissions", route => route.fulfill({ json: ["catalogue.view", "roles.manage", "users.manage"] }))
   await page.route("**/api/admin/roles", route => route.fulfill({ json: roles }))
   await page.route("**/api/admin/users", route => route.fulfill({ json: users }))
-  await page.route("**/api/admin/library-sources", route => route.fulfill({ json: [{ id: 1, name: "Source A" }, { id: 2, name: "Source B" }] }))
+  await page.route("**/api/admin/users/library-sources", route => route.fulfill({ json: [{ id: 1, name: "Source A" }, { id: 2, name: "Source B" }] }))
   await page.route("**/api/models/filters**", route => route.fulfill({ json: { models: [], creators: [], franchises: [], series: [], collections: [], sources: [], statuses: [], tags: [] } }))
   await page.route("**/api/models?**", route => route.fulfill({ json: { items: [], total: 0, page: 1, page_size: 24 } }))
 }
@@ -60,6 +60,18 @@ test("users without management permissions cannot open management URLs", async (
   await page.goto("/admin/users")
   await expect(page).toHaveURL(/\/\?(?:.*)?$|\/$/)
   await page.goto("/admin/roles")
+  await expect(page).toHaveURL(/\/\?(?:.*)?$|\/$/)
+})
+
+test("a user manager can select sources without source configuration access", async ({ page }) => {
+  const userManager = { ...admin, username: "User manager", role: "user", permissions: ["users.manage"], role_definition: { id: 9, name: "User manager", is_system: false, is_superuser: false } }
+  await mockApi(page, userManager)
+  await page.goto("/admin/users")
+  await expect(page.getByRole("heading", { name: "Users", level: 1 })).toBeVisible()
+  await page.getByLabel("All current and future sources").first().uncheck()
+  await expect(page.getByLabel("Source A").first()).toBeVisible()
+  await expect(page.getByRole("link", { name: "Library sources" })).toHaveCount(0)
+  await page.goto("/admin/sources")
   await expect(page).toHaveURL(/\/\?(?:.*)?$|\/$/)
 })
 

@@ -90,6 +90,11 @@ class RoleRead(BaseModel):
     user_count: int
 
 
+class UserSourcePickerRead(BaseModel):
+    id: int
+    name: str
+
+
 class RoleWrite(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=2000)

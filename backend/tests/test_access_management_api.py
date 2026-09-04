@@ -166,6 +166,9 @@ def test_management_requires_permission_and_all_sources_and_rejects_assigned_rol
     with _admin_client() as (client, sessions):
         _add_admin(sessions)
         with sessions() as session:
+            session.add(
+                LibrarySource(name="Picker source", root_path="/picker", directory_pattern="{model}")
+            )
             roles_manager = Role(
                 name="Roles manager",
                 normalized_name="roles manager",
@@ -194,7 +197,18 @@ def test_management_requires_permission_and_all_sources_and_rejects_assigned_rol
                 all_sources=True,
                 is_active=True,
             )
-            session.add_all([roles_manager, users_manager, restricted, manager])
+            restricted_user_manager = User(
+                username="Restricted user manager",
+                normalized_username="restricted user manager",
+                password_hash=hash_password("correct horse battery staple"),
+                role="user",
+                role_definition=users_manager,
+                all_sources=False,
+                is_active=True,
+            )
+            session.add_all(
+                [roles_manager, users_manager, restricted, manager, restricted_user_manager]
+            )
             session.commit()
             users_manager_id = users_manager.id
 
@@ -203,6 +217,16 @@ def test_management_requires_permission_and_all_sources_and_rejects_assigned_rol
             json={"username": "restricted", "password": "correct horse battery staple"},
         ).status_code == 200
         assert client.get("/api/admin/roles").status_code == 403
+        assert client.get("/api/admin/users/library-sources").status_code == 403
+        client.post("/api/auth/logout")
+        assert client.post(
+            "/api/auth/login",
+            json={
+                "username": "restricted user manager",
+                "password": "correct horse battery staple",
+            },
+        ).status_code == 200
+        assert client.get("/api/admin/users/library-sources").status_code == 403
         client.post("/api/auth/logout")
         assert client.post(
             "/api/auth/login",
@@ -210,6 +234,10 @@ def test_management_requires_permission_and_all_sources_and_rejects_assigned_rol
         ).status_code == 200
         assert client.get("/api/admin/roles").status_code == 403
         assert client.get("/api/admin/users").status_code == 200
+        picker = client.get("/api/admin/users/library-sources")
+        assert picker.status_code == 200
+        assert picker.json() == [{"id": 1, "name": "Picker source"}]
+        assert client.get("/api/admin/library-sources").status_code == 403
         assert client.post(
             "/api/admin/users",
             json={
@@ -231,3 +259,4 @@ def test_management_requires_permission_and_all_sources_and_rejects_assigned_rol
             json={"username": "admin", "password": "correct horse battery staple"},
         ).status_code == 200
         assert client.delete(f"/api/admin/roles/{users_manager_id}").status_code == 409
+        assert client.get("/api/admin/users/library-sources").status_code == 200

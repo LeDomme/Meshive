@@ -28,6 +28,7 @@ from meshive.schemas.user import (
     RoleDefinitionRead,
     UserCreate,
     UserManagementRead,
+    UserSourcePickerRead,
     UserUpdate,
 )
 from meshive.services.mailer import EmailDeliveryError, send_email_verification
@@ -119,6 +120,15 @@ def _apply_access(user: User, role: Role, all_sources: bool, source_ids: list[in
 @router.get("", response_model=list[UserManagementRead])
 def list_users(session: SessionDependency) -> list[UserManagementRead]:
     return [_user_read(user) for user in repository.list_users(session)]
+
+
+@router.get("/library-sources", response_model=list[UserSourcePickerRead])
+def list_user_source_picker(session: SessionDependency) -> list[UserSourcePickerRead]:
+    """Expose only source labels needed when managing user grants."""
+    return [
+        UserSourcePickerRead(id=source.id, name=source.name)
+        for source in session.scalars(select(LibrarySource).order_by(LibrarySource.name))
+    ]
 
 
 @router.post("", response_model=UserManagementRead, status_code=status.HTTP_201_CREATED)
