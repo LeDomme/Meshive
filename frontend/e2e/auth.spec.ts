@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test"
 
-const admin = { id: 1, username: "Admin", email: null, email_verified: false, role: "admin", is_active: true, must_change_password: false, permissions: ["catalogue.view"], source_access: { all_sources: true, source_ids: [] } }
-const user = { ...admin, id: 2, username: "User", role: "user" }
+const admin = { id: 1, username: "Admin", email: null, email_verified: false, role: "admin", is_active: true, must_change_password: false, permissions: ["catalogue.view", "diagnostics.view"], source_access: { all_sources: true, source_ids: [] } }
+const user = { ...admin, id: 2, username: "User", role: "user", permissions: [] }
 const emptyFilters = { models: [], creators: [], franchises: [], series: [], collections: [], sources: [], statuses: [], tags: [] }
 
 test("login submits credentials and opens the catalogue", async ({ page }) => {
@@ -31,7 +31,7 @@ test("regular users are redirected away from administration", async ({ page }) =
   await page.route("**/api/models?**", route => route.fulfill({ json: { items: [], total: 0, page: 1, page_size: 24 } }))
 
   await page.goto("/admin/diagnostics")
-  await expect(page).toHaveURL(/\/(?:\?.*)?$/)
+  await expect(page).toHaveURL(/\/access-denied$/)
   await expect(page.getByRole("link", { name: "Diagnostics" })).toHaveCount(0)
 })
 

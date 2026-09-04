@@ -25,8 +25,8 @@ const auth = useAuthStore()
       <RouterLink class="text-link" to="/admin/tags">Tags</RouterLink>
       <RouterLink v-if="auth.can('users.manage') && auth.user?.source_access?.all_sources !== false" class="text-link" to="/admin/users">Users</RouterLink>
       <RouterLink v-if="auth.can('roles.manage') && auth.user?.source_access?.all_sources !== false" class="text-link" to="/admin/roles">Roles</RouterLink>
-      <RouterLink class="text-link" to="/admin/backups">Backups</RouterLink>
-      <RouterLink class="text-link" to="/admin/diagnostics">Diagnostics</RouterLink>
+      <RouterLink v-if="auth.can('backups.manage') && auth.user?.source_access?.all_sources" class="text-link" to="/admin/backups">Backups</RouterLink>
+      <RouterLink v-if="auth.can('diagnostics.view') && auth.user?.source_access?.all_sources" class="text-link" to="/admin/diagnostics">Diagnostics</RouterLink>
       <AccountMenu />
     </nav>
   </header>

@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from meshive.auth.dependencies import require_admin
+from meshive.auth.access import require_global_permission
+from meshive.auth.permissions import BACKUPS_MANAGE
 from meshive.backup import delete_backup_files, validate_backup
 from meshive.config import get_settings
 from meshive.database import get_session
@@ -30,7 +31,7 @@ from meshive.services.backup_scheduler import (
 router = APIRouter(
     prefix="/admin/backups",
     tags=["backup administration"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_global_permission(BACKUPS_MANAGE))],
 )
 
 

@@ -86,7 +86,7 @@ export const router = createRouter({
       path: "/admin/backups",
       name: "backups",
       component: BackupsView,
-      meta: { requiresAuth: true, requiresAdmin: true },
+      meta: { requiresAuth: true, requiredPermission: "backups.manage", requiresAllSources: true },
     },
     {
       path: "/admin/users",
@@ -129,13 +129,13 @@ export const router = createRouter({
       path: "/admin/sources",
       name: "sources",
       component: SourcesView,
-      meta: { requiresAuth: true, requiresAdmin: true },
+      meta: { requiresAuth: true, requiredPermission: "sources.manage", requiresAllSources: true },
     },
     {
       path: "/admin/diagnostics",
       name: "diagnostics",
       component: DiagnosticsView,
-      meta: { requiresAuth: true, requiresAdmin: true },
+      meta: { requiresAuth: true, requiredPermission: "diagnostics.view", requiresAllSources: true },
     },
     {
       path: "/:pathMatch(.*)*",
