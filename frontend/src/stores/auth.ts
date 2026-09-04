@@ -10,6 +10,21 @@ export interface CurrentUser {
   role: "admin" | "user"
   is_active: boolean
   must_change_password: boolean
+  role_definition: RoleDefinition | null
+  permissions: string[]
+  source_access: SourceAccess
+}
+
+export interface RoleDefinition {
+  id: number
+  name: string
+  is_system: boolean
+  is_superuser: boolean
+}
+
+export interface SourceAccess {
+  all_sources: boolean
+  source_ids: number[]
 }
 
 interface SetupStatus {
@@ -26,6 +41,15 @@ export const useAuthStore = defineStore("auth", {
   }),
 
   actions: {
+    can(permission: string): boolean {
+      return this.user?.permissions?.includes(permission) ?? false
+    },
+
+    canForSource(permission: string, sourceId: number): boolean {
+      return this.can(permission) && Boolean(
+        this.user?.source_access?.all_sources || this.user?.source_access?.source_ids.includes(sourceId),
+      )
+    },
     async initialize() {
       if (this.initialized) return
       try {

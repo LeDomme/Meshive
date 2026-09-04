@@ -17,6 +17,7 @@ import UsersView from "./views/admin/UsersView.vue"
 import BackupsView from "./views/admin/BackupsView.vue"
 import CreatorsView from "./views/admin/CreatorsView.vue"
 import DiagnosticsView from "./views/admin/DiagnosticsView.vue"
+import RolesView from "./views/admin/RolesView.vue"
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -83,7 +84,13 @@ export const router = createRouter({
       path: "/admin/users",
       name: "users",
       component: UsersView,
-      meta: { requiresAuth: true, requiresAdmin: true },
+      meta: { requiresAuth: true, requiredPermission: "users.manage", requiresAllSources: true },
+    },
+    {
+      path: "/admin/roles",
+      name: "roles",
+      component: RolesView,
+      meta: { requiresAuth: true, requiredPermission: "roles.manage", requiresAllSources: true },
     },
     {
       path: "/admin/metadata",
@@ -151,6 +158,12 @@ router.beforeEach(async (to) => {
     return { name: "home" }
   }
   if (to.meta.requiresAdmin && auth.user?.role !== "admin") {
+    return { name: "home" }
+  }
+  if (typeof to.meta.requiredPermission === "string" && !auth.can(to.meta.requiredPermission)) {
+    return { name: "home" }
+  }
+  if (to.meta.requiresAllSources && !auth.user?.source_access?.all_sources) {
     return { name: "home" }
   }
   if (to.name === "login" && auth.user) {
