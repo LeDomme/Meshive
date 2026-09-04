@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 
-const user = { id: 1, username: "Admin", email: null, email_verified: false, role: "admin", is_active: true, must_change_password: false }
+const user = { id: 1, username: "Admin", email: null, email_verified: false, role: "admin", is_active: true, must_change_password: false, permissions: ["sources.manage", "scans.view", "scans.start", "scans.control"], source_access: { all_sources: true, source_ids: [] } }
 const source = { id: 1, name: "Test library", root_path: "/models", directory_pattern: "{model}", model_pattern: "{model}", archive_formats: ["7z"], image_formats: ["jpg"], is_active: true, scan_enabled: true, auto_scan_enabled: false, auto_scan_frequency: "daily", auto_scan_time: "02:00", auto_scan_weekday: 0, auto_scan_timezone: "Europe/Berlin" }
 
 test("Smart Scan is the default and Incremental remains selectable", async ({ page }) => {
