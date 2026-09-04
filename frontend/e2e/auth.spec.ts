@@ -46,7 +46,7 @@ test("administrators can open diagnostics from administration navigation", async
   } }))
 
   await page.goto("/admin/diagnostics")
-  await page.locator(".administration-menu summary").click()
+  await page.locator(".account-menu summary").click()
   await expect(page.getByRole("link", { name: "Diagnostics" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Diagnostics", level: 1 })).toBeVisible()
 })
