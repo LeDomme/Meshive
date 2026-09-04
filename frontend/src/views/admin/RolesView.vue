@@ -138,7 +138,7 @@ onMounted(() => {
             <p class="panel-copy">Select a role to inspect its permissions.</p>
           </div>
           <button
-            class="secondary-button"
+            class="secondary-button new-role-button"
             type="button"
             @click="selectRole(null)"
           >

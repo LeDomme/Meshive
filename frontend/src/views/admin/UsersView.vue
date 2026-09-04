@@ -217,7 +217,7 @@ onMounted(() => {
                 {{ role.name }}
               </option>
             </select></label
-          ><label class="inline-check"
+          ><label class="checkbox-row"
             ><input v-model="form.all_sources" type="checkbox" /> All current
             and future sources</label
           >
@@ -229,7 +229,7 @@ onMounted(() => {
             <label
               v-for="source in sources"
               :key="source.id"
-              class="inline-check"
+              class="checkbox-row"
               ><input
                 v-model="form.source_ids"
                 type="checkbox"
@@ -241,9 +241,9 @@ onMounted(() => {
         </fieldset>
         <fieldset>
           <legend>Security</legend>
-          <label class="inline-check"
+          <label class="checkbox-row"
             ><input v-model="form.is_active" type="checkbox" /> Active</label
-          ><label class="inline-check"
+          ><label class="checkbox-row"
             ><input v-model="form.must_change_password" type="checkbox" />
             Require password change</label
           >
@@ -306,7 +306,7 @@ onMounted(() => {
                     {{ role.name }}
                   </option>
                 </select></label
-              ><label class="inline-check"
+              ><label class="checkbox-row"
                 ><input v-model="user.all_sources" type="checkbox" /> All
                 current and future sources</label
               >
@@ -318,7 +318,7 @@ onMounted(() => {
                 <label
                   v-for="source in sources"
                   :key="source.id"
-                  class="inline-check"
+                  class="checkbox-row"
                   ><input
                     v-model="user.source_ids"
                     type="checkbox"
@@ -338,14 +338,14 @@ onMounted(() => {
                   type="password"
                   minlength="12"
                   placeholder="Leave unchanged" /></label
-              ><label class="inline-check"
+              ><label class="checkbox-row"
                 ><input
                   v-model="user.is_active"
                   type="checkbox"
                   :disabled="user.id === auth.user?.id"
                 />
                 Active</label
-              ><label class="inline-check"
+              ><label class="checkbox-row"
                 ><input v-model="user.must_change_password" type="checkbox" />
                 Require password change</label
               >
