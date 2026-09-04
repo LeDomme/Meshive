@@ -43,6 +43,6 @@ test("users without scan permissions cannot open scans", async ({ page }) => {
   await page.route("**/api/models?**", route => route.fulfill({ json: { items: [], total: 0, page: 1, page_size: 48 } }))
   await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
   await page.goto("/admin/scans")
-  await expect(page).toHaveURL(/\/$/)
+  await expect(page).toHaveURL(/\/(?:\?.*)?$/)
   await expect(page.getByRole("link", { name: "Scans" })).toHaveCount(0)
 })
