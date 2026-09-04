@@ -168,13 +168,15 @@ test("custom roles and selected-source users submit the management API", async (
   await page.getByRole("button", { name: "Save role" }).click();
   await expect(page.getByText("Role saved successfully.")).toBeVisible();
   await page.goto("/admin/users");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Create user" }).first().click();
   await page.getByLabel("Username").first().fill("Selected");
   await page
     .getByRole("textbox", { name: "Password", exact: true })
     .fill("a sufficiently long password");
   await page.getByLabel("All current and future sources").first().uncheck();
   await page.getByLabel("Source A").first().check();
-  await page.getByRole("button", { name: "Create user" }).click();
+  await page.locator("form").getByRole("button", { name: "Create user" }).click();
   await expect(page.getByText("User created successfully.")).toBeVisible();
 });
 

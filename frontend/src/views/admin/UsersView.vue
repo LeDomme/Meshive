@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ApiError, apiRequest } from "../../api";
 import AdminHeader from "../../components/AdminHeader.vue";
 import { useAuthStore } from "../../stores/auth";
@@ -36,6 +36,11 @@ const passwords = reactive<Record<number, string>>({});
 const errorMessage = ref("");
 const successMessage = ref("");
 const busyUserId = ref<number | null>(null);
+const selectedUserId = ref<number | null>(null);
+const createMode = ref(false);
+const selectedUser = computed(
+  () => users.value.find((user) => user.id === selectedUserId.value) ?? null,
+);
 const form = reactive({
   username: "",
   email: "",
@@ -75,11 +80,30 @@ async function load() {
     roles.value.find((role) => role.name === "Member")?.id ??
     roles.value[0]?.id ??
     0;
+  if (!createMode.value && selectedUserId.value === null) {
+    selectedUserId.value = users.value[0]?.id ?? null;
+  }
+}
+
+function selectUser(userId: number) {
+  if (
+    (createMode.value || selectedUserId.value !== userId) &&
+    !window.confirm("Discard unsaved user changes?")
+  )
+    return;
+  createMode.value = false;
+  selectedUserId.value = userId;
+}
+
+function startCreate() {
+  if (selectedUser.value && !window.confirm("Discard unsaved user changes?")) return;
+  createMode.value = true;
+  selectedUserId.value = null;
 }
 async function createUser() {
   errorMessage.value = "";
   try {
-    await apiRequest<User>("/api/admin/users", {
+    const created = await apiRequest<User>("/api/admin/users", {
       method: "POST",
       body: JSON.stringify({
         username: form.username,
@@ -101,6 +125,8 @@ async function createUser() {
       must_change_password: true,
     });
     await load();
+    createMode.value = false;
+    selectedUserId.value = created.id;
     successMessage.value = "User created successfully.";
   } catch (error) {
     showError(error);
@@ -128,11 +154,13 @@ async function saveUser(user: User) {
     });
     passwords[user.id] = "";
     await load();
+    selectedUserId.value = user.id;
     if (user.id === auth.user?.id) await auth.refreshUser();
     successMessage.value = `User "${saved.username}" updated successfully.`;
   } catch (error) {
     showError(error);
     await load();
+    selectedUserId.value = users.value[0]?.id ?? null;
   } finally {
     busyUserId.value = null;
   }
@@ -181,6 +209,31 @@ onMounted(() => {
     <p v-if="successMessage" class="success-panel" role="status">
       {{ successMessage }}
     </p>
+    <div class="management-layout users-management-layout">
+      <section class="panel role-list-panel">
+        <div class="panel-heading"><div><h2>Users</h2><p class="panel-copy">Select a user to view and edit their details.</p></div></div>
+        <button class="secondary-button new-role-button" type="button" @click="startCreate">Create user</button>
+        <div class="user-master-list">
+          <button v-for="user in users" :key="user.id" class="role-card" :class="{ selected: !createMode && selectedUserId === user.id }" type="button" @click="selectUser(user.id)"><span><strong>{{ user.username }}</strong><small>{{ user.role_definition?.name }} · {{ sourceSummary(user) }}</small><small v-if="user.email">{{ user.email }}</small></span><span class="role-card-meta"><span class="status-badge" :class="user.is_active ? 'active' : 'disabled'">{{ user.is_active ? "Active" : "Disabled" }}</span></span></button>
+        </div>
+      </section>
+      <section class="panel user-detail-panel">
+        <p v-if="!createMode && !selectedUser" class="panel-copy">Select a user to view and edit their details.</p>
+        <form v-else-if="createMode" class="user-management-form" @submit.prevent="createUser">
+          <div class="panel-heading"><div><h2>Create user</h2><p class="panel-copy">Create an account, then choose its role and library access.</p></div></div>
+          <fieldset><legend>Account details</legend><label><span>Username</span><input v-model="form.username" required></label><label><span>Recovery email</span><input v-model="form.email" type="email"></label><label><span>Password</span><input v-model="form.password" type="password" minlength="12" required></label></fieldset>
+          <fieldset><legend>Role & source access</legend><label><span>Role</span><select v-model.number="form.role_id"><option v-for="role in roles" :key="role.id" :value="role.id">{{ role.name }}</option></select></label><label class="checkbox-row"><input v-model="form.all_sources" type="checkbox"> All current and future sources</label><div v-if="!form.all_sources" class="source-picker"><strong>Selected sources</strong><p v-if="!form.source_ids.length" class="form-error">No library access</p><label v-for="source in sources" :key="source.id" class="checkbox-row"><input v-model="form.source_ids" type="checkbox" :value="source.id"> {{ source.name }}</label></div></fieldset>
+          <fieldset><legend>Security</legend><label class="checkbox-row"><input v-model="form.is_active" type="checkbox"> Active</label><label class="checkbox-row"><input v-model="form.must_change_password" type="checkbox"> Require password change</label></fieldset><div class="user-actions"><button class="primary-button" type="submit">Create user</button></div>
+        </form>
+        <form v-else-if="selectedUser" class="user-management-form" @submit.prevent="saveUser(selectedUser)">
+          <div class="panel-heading"><div><h2>Edit user</h2><p class="panel-copy">{{ selectedUser.username }}</p></div><span class="status-badge" :class="selectedUser.is_active ? 'active' : 'disabled'">{{ selectedUser.is_active ? "Active" : "Disabled" }}</span></div>
+          <fieldset><legend>Account details</legend><label><span>Username</span><input v-model="selectedUser.username"></label><label><span>Recovery email</span><input v-model="selectedUser.email" type="email"></label><p>{{ selectedUser.email_verified ? "Verified" : "Not verified" }} <button v-if="selectedUser.email && !selectedUser.email_verified" class="text-button" type="button" @click="sendVerification(selectedUser)">Send verification</button></p></fieldset>
+          <fieldset><legend>Role & source access</legend><label><span>Role</span><select v-model="selectedUser.role_definition!.id"><option v-for="role in roles" :key="role.id" :value="role.id">{{ role.name }}</option></select></label><label class="checkbox-row"><input v-model="selectedUser.all_sources" type="checkbox"> All current and future sources</label><div v-if="!selectedUser.all_sources" class="source-picker"><strong>Selected sources</strong><p v-if="!selectedUser.source_ids.length" class="form-error">No library access</p><label v-for="source in sources" :key="source.id" class="checkbox-row"><input v-model="selectedUser.source_ids" type="checkbox" :value="source.id"> {{ source.name }}</label></div><p><strong>Access:</strong> {{ sourceSummary(selectedUser) }}</p></fieldset>
+          <fieldset><legend>Security</legend><label><span>Temporary password</span><input v-model="passwords[selectedUser.id]" type="password" minlength="12" placeholder="Leave unchanged"></label><label class="checkbox-row"><input v-model="selectedUser.is_active" type="checkbox" :disabled="selectedUser.id === auth.user?.id"> Active</label><label class="checkbox-row"><input v-model="selectedUser.must_change_password" type="checkbox"> Require password change</label></fieldset><div class="user-actions"><button class="secondary-button" :disabled="busyUserId === selectedUser.id" type="submit">Save changes</button><button class="danger-button" :disabled="selectedUser.id === auth.user?.id || busyUserId === selectedUser.id" type="button" @click="deleteUser(selectedUser)">Delete</button></div>
+        </form>
+      </section>
+    </div>
+    <!--
     <section class="panel user-create-panel">
       <div class="panel-heading">
         <div>
@@ -371,5 +424,6 @@ onMounted(() => {
         </article>
       </div>
     </section>
+    -->
   </main>
 </template>

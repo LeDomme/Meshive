@@ -3868,4 +3868,30 @@ code {
   max-width: 100%;
   min-width: 0;
   resize: vertical;
+  min-height: 6rem;
+}
+
+.role-form-fields {
+  align-items: start;
+}
+
+.role-form-fields input {
+  height: auto;
+  align-self: start;
+}
+
+.users-management-layout {
+  align-items: stretch;
+}
+
+.user-master-list {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 44rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.user-detail-panel {
+  min-width: 0;
 }
