@@ -129,7 +129,7 @@ export const router = createRouter({
       path: "/admin/sources",
       name: "sources",
       component: SourcesView,
-      meta: { requiresAuth: true, requiredPermission: "sources.manage", requiresAllSources: true },
+      meta: { requiresAuth: true, requiredPermission: "sources.manage" },
     },
     {
       path: "/admin/diagnostics",

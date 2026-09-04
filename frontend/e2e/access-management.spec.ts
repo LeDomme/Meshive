@@ -116,6 +116,7 @@ test("administrator sees Users and Roles and system roles are read-only", async 
 }) => {
   await mockApi(page);
   await page.goto("/admin/roles");
+  await page.locator(".administration-menu summary").click();
   await expect(page.getByRole("link", { name: "Users" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Roles" })).toBeVisible();
   await page.getByRole("button", { name: "Administrator" }).click();
