@@ -66,6 +66,31 @@ test("batch rebuild is independently available and does not rescan", async ({ pa
   await expect(page.getByRole("button", { name: "Rescan selected" })).toHaveCount(0)
 })
 
+test("batch picture reset uses the image endpoint and needs only reset permission", async ({ page }) => {
+  const reset: number[] = []
+  let rescanCalled = false
+  let rebuildCalled = false
+  await mockCatalogue(page, ["catalogue.view", "models.reset_images"])
+  await page.route(/\/api\/admin\/models\/(\d+)\/images/, async route => {
+    reset.push(Number(route.request().url().match(/models\/(\d+)/)?.[1]))
+    expect(route.request().method()).toBe("DELETE")
+    await route.fulfill({ json: { deleted: 0 } })
+  })
+  await page.route("**/api/admin/models/*/rescan", route => { rescanCalled = true; return route.fulfill({ json: {} }) })
+  await page.route("**/api/admin/models/*/rebuild-images", route => { rebuildCalled = true; return route.fulfill({ json: {} }) })
+  page.on("dialog", dialog => dialog.accept())
+  await page.goto("/")
+  await page.getByRole("button", { name: "Select models" }).click()
+  await page.getByRole("checkbox", { name: /Model 1/ }).click()
+  await expect(page.getByRole("button", { name: "Reset selected pictures" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Rescan selected" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Rebuild selected images" })).toHaveCount(0)
+  await page.getByRole("button", { name: "Reset selected pictures" }).click()
+  await expect.poll(() => reset).toEqual([1])
+  expect(rescanCalled).toBe(false)
+  expect(rebuildCalled).toBe(false)
+})
+
 test("combined batch permissions expose both permitted actions", async ({ page }) => {
   await mockCatalogue(page, ["catalogue.view", "models.rescan", "models.rebuild_images"])
   await page.goto("/")

@@ -515,20 +515,29 @@ function toggleBatchSelectionMode() {
 }
 
 const canRunBatchActions = computed(
-  () => auth.can("models.rescan") || auth.can("models.rebuild_images"),
+  () => auth.can("models.rescan") || auth.can("models.rebuild_images") || auth.can("models.reset_images"),
 )
 
-type SelectedModelAction = "rescan" | "rebuild-images"
+type SelectedModelAction = "rescan" | "rebuild-images" | "reset-images"
 
 async function runSelectedModelAction(action: SelectedModelAction) {
-  const permission = action === "rescan" ? "models.rescan" : "models.rebuild_images"
+  const permission = action === "rescan"
+    ? "models.rescan"
+    : action === "rebuild-images"
+      ? "models.rebuild_images"
+      : "models.reset_images"
   if (!auth.can(permission)) return
   const modelIds = [...selectedModelIds.value]
   if (!modelIds.length || batchActionInProgress.value) return
+  const isPictureReset = action === "reset-images"
   const actionLabel = action === "rescan"
     ? "rescan"
-    : "rebuild archive images"
-  const confirmation = `${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} for ${modelIds.length} selected model${modelIds.length === 1 ? "" : "s"}? The source library remains read-only.`
+    : action === "rebuild-images"
+      ? "rebuild archive images"
+      : "reset picture records"
+  const confirmation = isPictureReset
+    ? `Reset all Meshive picture records for ${modelIds.length} selected model${modelIds.length === 1 ? "" : "s"}? Their cached images will be removed; the source library remains read-only.`
+    : `${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} for ${modelIds.length} selected model${modelIds.length === 1 ? "" : "s"}? The source library remains read-only.`
   if (!window.confirm(confirmation)) return
 
   batchActionInProgress.value = true
@@ -536,7 +545,10 @@ async function runSelectedModelAction(action: SelectedModelAction) {
   try {
     // Process one model at a time to keep SQLite and archive extraction bounded.
     for (const modelId of modelIds) {
-      await apiRequest(`/api/admin/models/${modelId}/${action}`, { method: "POST" })
+      const path = action === "reset-images"
+        ? `/api/admin/models/${modelId}/images`
+        : `/api/admin/models/${modelId}/${action}`
+      await apiRequest(path, { method: isPictureReset ? "DELETE" : "POST" })
     }
     await loadCatalogue(page.value.page)
   } catch (error) {
@@ -940,6 +952,9 @@ onMounted(async () => {
           </button>
           <button v-if="selectedModelCount && auth.can('models.rebuild_images')" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('rebuild-images')">
             Rebuild selected images
+          </button>
+          <button v-if="selectedModelCount && auth.can('models.reset_images')" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('reset-images')">
+            Reset selected pictures
           </button>
           <button v-if="selectedModelCount" class="text-button" type="button" :disabled="batchActionInProgress" @click="clearModelSelection">Clear selection</button>
         </template>
