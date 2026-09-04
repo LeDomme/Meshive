@@ -23,6 +23,7 @@ from meshive.models.catalog import ScanIssue, ScanRun
 from meshive.models.library_source import LibrarySource
 from meshive.models.user import User
 from meshive.schemas.scan import (
+    ActiveScanRead,
     ScanDetail,
     ScanIssueRead,
     ScanQueueItem,
@@ -160,6 +161,43 @@ def scan_queue(
                 position=position,
                 created_at=scan.created_at,
                 started_at=scan.started_at,
+            )
+        )
+    return result
+
+
+@router.get("/scans/active", response_model=list[ActiveScanRead])
+def active_scans(
+    current_user: CurrentUser,
+    session: SessionDependency,
+) -> list[ActiveScanRead]:
+    access = get_access_context(session, current_user)
+    require_access_permission(access, SCANS_CONTROL)
+    statement = (
+        select(ScanRun, LibrarySource.name)
+        .join(LibrarySource, LibrarySource.id == ScanRun.library_source_id)
+        .where(ScanRun.status.in_(("pending", "running")))
+        .order_by(ScanRun.started_at.is_(None), ScanRun.started_at, ScanRun.created_at, ScanRun.id)
+    )
+    rows = session.execute(scope_scan_runs(statement, access)).all()
+    queued_position = 0
+    result = []
+    for scan, source_name in rows:
+        position = None
+        if scan.status == "pending":
+            queued_position += 1
+            position = queued_position
+        result.append(
+            ActiveScanRead(
+                id=scan.id,
+                library_source_id=scan.library_source_id,
+                source_name=source_name,
+                status="paused" if scan.pause_requested else scan.status,
+                position=position,
+                current_model_name=scan.current_model_name,
+                models_total=scan.models_total,
+                models_found=scan.models_found,
+                models_skipped=scan.models_skipped,
             )
         )
     return result

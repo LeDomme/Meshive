@@ -14,6 +14,19 @@ class ScanSourcePickerRead(BaseModel):
     id: int
     name: str
 
+
+class ActiveScanRead(BaseModel):
+    id: int
+    library_source_id: int
+    source_name: str
+    status: str
+    position: int | None
+    current_model_name: str | None
+    models_total: int
+    models_found: int
+    models_skipped: int
+
+
 class ScanRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

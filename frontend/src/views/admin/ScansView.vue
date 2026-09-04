@@ -19,11 +19,14 @@ interface ScanRun {
   error_message: string | null
 }
 interface ScanQueueItem { id: number; library_source_id: number; source_name: string; status: string; mode: string; position: number | null }
+interface ActiveScan { id: number; library_source_id: number; source_name: string; status: string; position: number | null; current_model_name: string | null; models_total: number; models_found: number; models_skipped: number }
 
 const auth = useAuthStore()
 const sources = ref<ScanSource[]>([])
 const histories = ref<Record<number, ScanRun[]>>({})
 const queue = ref<ScanQueueItem[]>([])
+const activeScans = ref<ActiveScan[]>([])
+const controllingScanId = ref<number | null>(null)
 const loading = ref(true)
 const startingSourceId = ref<number | null>(null)
 const errorMessage = ref("")
@@ -67,6 +70,7 @@ async function loadScanData() {
   errorMessage.value = ""
   try {
     sources.value = await apiRequest<ScanSource[]>("/api/admin/scans/library-sources")
+    if (auth.can("scans.control")) activeScans.value = await apiRequest<ActiveScan[]>("/api/admin/scans/active")
     if (!auth.can("scans.view")) return
     const historiesBySource = await Promise.all(
       sources.value.map(async (source) => [
@@ -81,6 +85,25 @@ async function loadScanData() {
   } finally {
     loading.value = false
   }
+}
+
+async function controlScan(scan: ActiveScan, action: "pause" | "resume" | "cancel") {
+  if (!auth.can("scans.control") || controllingScanId.value !== null) return
+  controllingScanId.value = scan.id
+  errorMessage.value = ""
+  try {
+    await apiRequest(`/api/admin/scans/${scan.id}/${action}`, { method: "POST" })
+    await loadScanData()
+  } catch (error) {
+    showError(error, `Unable to ${action} scan`)
+  } finally {
+    controllingScanId.value = null
+  }
+}
+
+function controlLabel(action: "pause" | "resume" | "cancel", scanId: number) {
+  if (controllingScanId.value !== scanId) return action[0].toUpperCase() + action.slice(1)
+  return `${action[0].toUpperCase()}${action.slice(1)}ing…`
 }
 
 async function startScan(source: ScanSource) {
@@ -119,6 +142,21 @@ onMounted(() => void loadScanData())
       <p v-if="notice" class="form-success" role="status">{{ notice }}</p>
       <p v-if="loading">Loading scan sources…</p>
       <p v-else-if="!sources.length" class="empty-state">No library sources are available for your access scope.</p>
+      <section v-if="!loading && auth.can('scans.control')" class="panel active-scans-panel">
+        <div class="scan-section-heading"><h2>Active scans</h2><p v-if="!activeScans.length">No scans are currently active.</p></div>
+        <div v-if="activeScans.length" class="scan-rows">
+          <div v-for="scan in activeScans" :key="scan.id" class="active-scan-row">
+            <div><strong>{{ scan.source_name }}</strong><p v-if="scan.current_model_name">{{ scan.current_model_name }}</p></div>
+            <span class="scan-status" :class="statusClass(scan.status)">{{ statusLabel(scan.status) }}</span>
+            <span v-if="scan.position">Queue position {{ scan.position }}</span>
+            <div class="scan-controls">
+              <button v-if="scan.status === 'running'" class="secondary-button compact-button" type="button" :disabled="controllingScanId !== null" @click="controlScan(scan, 'pause')">{{ controlLabel('pause', scan.id) }}</button>
+              <button v-if="scan.status === 'paused'" class="secondary-button compact-button" type="button" :disabled="controllingScanId !== null" @click="controlScan(scan, 'resume')">{{ controlLabel('resume', scan.id) }}</button>
+              <button class="danger-button compact-button" type="button" :disabled="controllingScanId !== null" @click="controlScan(scan, 'cancel')">{{ controlLabel('cancel', scan.id) }}</button>
+            </div>
+          </div>
+        </div>
+      </section>
       <section v-if="!loading && sources.length && auth.can('scans.view')" class="panel scan-queue-panel">
         <div class="scan-section-heading"><h2>Queue</h2><p v-if="!queue.length">No scans are currently queued.</p></div>
         <div v-if="queue.length" class="scan-rows">
@@ -168,5 +206,6 @@ onMounted(() => void loadScanData())
 .scan-status { display: inline-flex; width: fit-content; padding: .15rem .45rem; border-radius: 999px; font-size: .8rem; font-weight: 600; }.scan-status.completed { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }.scan-status.issues { color: #a56200; background: #fff0c9; }.scan-status.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }.scan-status.failed { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .scan-section-heading { display: grid; gap: .25rem; }
 .scan-section-heading h2, .scan-section-heading p { margin: 0; }
-@media (max-width: 640px) { .scan-source-card { grid-template-columns: 1fr; }.scan-row { grid-template-columns: 1fr; gap: .3rem; } }
+.active-scans-panel { display: grid; gap: .85rem; }.active-scan-row { display: grid; grid-template-columns: minmax(10rem, 1fr) auto auto auto; gap: .75rem; align-items: center; padding: .65rem; border-radius: .45rem; background: color-mix(in srgb, var(--panel) 80%, var(--line)); }.active-scan-row p { margin: .2rem 0 0; color: var(--muted); font-size: .85rem; }.scan-controls { display: flex; flex-wrap: wrap; gap: .45rem; }
+@media (max-width: 640px) { .scan-source-card, .active-scan-row { grid-template-columns: 1fr; }.scan-row { grid-template-columns: 1fr; gap: .3rem; } }
 </style>
