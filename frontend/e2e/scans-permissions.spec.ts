@@ -37,6 +37,25 @@ test("start-only operator starts a smart scan without history requests", async (
   expect(queueRequested).toBe(false)
 })
 
+test("show all expands only the selected source history", async ({ page }) => {
+  await mockScans(page, ["scans.view"])
+  await page.route("**/api/admin/scans/library-sources", route => route.fulfill({ json: [{ id: 1, name: "Source A" }, { id: 2, name: "Source B" }] }))
+  await page.route("**/api/admin/library-sources/*/scans", route => {
+    const sourceId = Number(route.request().url().match(/library-sources\/(\d+)/)?.[1])
+    const scans = Array.from({ length: 6 }, (_, index) => ({ id: sourceId * 10 + index, library_source_id: sourceId, status: "completed_with_errors", mode: "reconcile_images", created_at: "2026-01-01", models_found: index, models_added: 0, models_updated: 0, models_missing: 0, error_message: null }))
+    return route.fulfill({ json: scans })
+  })
+  await page.route("**/api/admin/scans/queue", route => route.fulfill({ json: [] }))
+  await page.goto("/admin/scans")
+  await expect(page.getByText("Completed with issues")).toHaveCount(10)
+  await expect(page.getByText("Show all 6 scans")).toHaveCount(2)
+  await page.getByText("Show all 6 scans").first().click()
+  await expect(page.getByText("Completed with issues")).toHaveCount(11)
+  await expect(page.getByText("Show fewer scans")).toHaveCount(1)
+  await expect(page.getByText("Show all 6 scans")).toHaveCount(1)
+  await expect(page.getByText("Reconcile images")).toHaveCount(11)
+})
+
 test("users without scan permissions cannot open scans", async ({ page }) => {
   await mockScans(page, ["catalogue.view"])
   await page.route("**/api/models/filters**", route => route.fulfill({ json: { models: [], creators: [], franchises: [], series: [], collections: [], sources: [], statuses: [], tags: [] } }))

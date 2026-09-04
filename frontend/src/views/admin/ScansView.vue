@@ -119,15 +119,15 @@ onMounted(() => void loadScanData())
       <p v-if="notice" class="form-success" role="status">{{ notice }}</p>
       <p v-if="loading">Loading scan sources…</p>
       <p v-else-if="!sources.length" class="empty-state">No library sources are available for your access scope.</p>
-      <section v-if="!loading && sources.length && auth.can('scans.view')" class="scan-queue-panel">
+      <section v-if="!loading && sources.length && auth.can('scans.view')" class="panel scan-queue-panel">
         <div class="scan-section-heading"><h2>Queue</h2><p v-if="!queue.length">No scans are currently queued.</p></div>
         <div v-if="queue.length" class="scan-rows">
           <div v-for="item in queue" :key="item.id" class="scan-row"><strong>{{ item.source_name }}</strong><span class="scan-status" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span><span>{{ modeLabel(item.mode) }}</span></div>
         </div>
       </section>
       <div v-if="!loading && sources.length" class="scan-source-list">
-        <article v-for="source in sources" :key="source.id" class="scan-source-card">
-          <div>
+        <article v-for="source in sources" :key="source.id" class="panel scan-source-card">
+          <div class="scan-source-heading">
             <h3>{{ source.name }}</h3>
             <p v-if="auth.can('scans.view')">{{ histories[source.id]?.length ?? 0 }} recent scans</p>
             <p v-else>Scan history is not available for your role.</p>
@@ -152,14 +152,21 @@ onMounted(() => void loadScanData())
 
 <style scoped>
 .scans-panel { display: grid; gap: 1.25rem; }
-.panel-heading p { margin-bottom: .35rem; }.panel-note { color: var(--muted); font-size: .9rem; }
-.scan-source-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
-.scan-source-card, .scan-queue-panel { display: grid; gap: .85rem; padding: 1rem; border: 1px solid var(--line); border-radius: .75rem; background: var(--panel); }
+.panel-heading { display: block; }
+.panel-heading h2 { margin: 0 0 .35rem; }
+.panel-heading p { margin: 0 0 .35rem; }
+.panel-note { color: var(--muted); font-size: .9rem; }
+.scan-source-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+.scan-source-card, .scan-queue-panel { display: grid; gap: 1rem; margin: 0; }
 .scan-source-card { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.scan-source-heading { display: grid; gap: .3rem; }
 .scan-source-card h3, .scan-source-card p { margin: 0; }
-.scan-history { grid-column: 1 / -1; display: grid; gap: .45rem; }.scan-rows { display: grid; gap: .45rem; }
-.scan-row { display: flex; flex-wrap: wrap; gap: .45rem .75rem; align-items: center; padding: .5rem .65rem; border-radius: .45rem; background: color-mix(in srgb, var(--panel) 80%, var(--line)); font-size: .9rem; }.scan-row small { flex-basis: 100%; color: var(--danger); }
+.scan-history { grid-column: 1 / -1; display: grid; gap: .45rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.scan-rows { display: grid; gap: .45rem; }
+.scan-row { display: grid; grid-template-columns: minmax(8.5rem, auto) minmax(8rem, 1fr) minmax(8rem, 1fr); gap: .45rem .75rem; align-items: center; padding: .55rem .65rem; border-radius: .45rem; background: color-mix(in srgb, var(--panel) 80%, var(--line)); font-size: .9rem; }
+.scan-row small { grid-column: 1 / -1; color: var(--danger); }
 .scan-status { display: inline-flex; width: fit-content; padding: .15rem .45rem; border-radius: 999px; font-size: .8rem; font-weight: 600; }.scan-status.completed { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }.scan-status.issues { color: #a56200; background: #fff0c9; }.scan-status.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }.scan-status.failed { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.scan-section-heading { display: grid; gap: .25rem; }
 .scan-section-heading h2, .scan-section-heading p { margin: 0; }
-@media (max-width: 640px) { .scan-source-card { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .scan-source-card { grid-template-columns: 1fr; }.scan-row { grid-template-columns: 1fr; gap: .3rem; } }
 </style>
