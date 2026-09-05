@@ -11,6 +11,7 @@ from meshive.api.tags import (
     delete_assignment_rule,
     list_assignment_rules,
     preview_assignment_rule,
+    reevaluate_assignment_rule_endpoint,
     update_assignment_rule,
 )
 from meshive.database import Base
@@ -150,7 +151,7 @@ def test_assignment_rule_api_preview_permissions_scope_and_no_persistence() -> N
         _teardown_rule_test_database(engine, actor)
 
 
-def test_legacy_automatic_rule_is_listed_but_remains_read_only() -> None:
+def test_migrated_automatic_rule_is_managed_canonically_without_touching_legacy() -> None:
     engine, sessions, actor, tag_ids, model_ids = _rule_test_database()
     try:
         with sessions() as session:
@@ -165,6 +166,14 @@ def test_legacy_automatic_rule_is_listed_but_remains_read_only() -> None:
             )
             session.add(legacy)
             session.flush()
+            historical = AutomaticTagRule(
+                id=42,
+                tag_id=tag_ids["legacy"],
+                pattern="chitu",
+                pattern_key="chitu",
+                enabled=True,
+            )
+            session.add(historical)
             session.add(
                 TagAssignmentRuleTarget(
                     tag_assignment_rule_id=legacy.id,
@@ -177,28 +186,31 @@ def test_legacy_automatic_rule_is_listed_but_remains_read_only() -> None:
             listed = list_assignment_rules(tag_ids["legacy"], actor["value"], session)
             assert len(listed) == 1
             assert listed[0].legacy_kind == "automatic_tag_rule"
-            with pytest.raises(HTTPException) as update_error:
-                update_assignment_rule(
-                    legacy.id,
-                    TagAssignmentRuleWrite(
-                        match_mode="contains",
-                        pattern="other",
-                        targets=[{"target_type": "archive_entry_path"}],
-                    ),
-                    actor["value"],
-                    session,
-                )
-            assert update_error.value.status_code == 404
-            with pytest.raises(HTTPException) as delete_error:
-                delete_assignment_rule(legacy.id, actor["value"], session)
-            assert delete_error.value.status_code == 404
-            assignment = session.scalar(
-                select(ModelTag).where(
-                    ModelTag.model_id == model_ids["a2"],
-                    ModelTag.tag_id == tag_ids["legacy"],
-                )
+            updated = update_assignment_rule(
+                legacy.id,
+                TagAssignmentRuleWrite(
+                    match_mode="contains",
+                    pattern="A2_P2",
+                    enabled=False,
+                    targets=[{"target_type": "archive_entry_path"}],
+                ),
+                actor["value"],
+                session,
             )
-            assert assignment is not None and assignment.is_automatic
+            assert updated.enabled is False
+            assert updated.legacy_kind == "automatic_tag_rule"
+            assert session.get(AutomaticTagRule, 42).pattern == "chitu"
+            reevaluate_assignment_rule_endpoint(legacy.id, actor["value"], session)
+            direct = session.scalar(select(ModelTag).where(
+                ModelTag.model_id == model_ids["a2"], ModelTag.tag_id == tag_ids["direct"]
+            ))
+            assert direct is not None and direct.is_direct
+            assert delete_assignment_rule(legacy.id, actor["value"], session).status_code == 204
+            assert session.get(TagAssignmentRule, legacy.id) is None
+            assert session.get(AutomaticTagRule, 42).pattern == "chitu"
+            assert session.scalar(select(ModelTag).where(
+                ModelTag.model_id == model_ids["a2"], ModelTag.tag_id == tag_ids["direct"]
+            )) is not None
     finally:
         _teardown_rule_test_database(engine, actor)
 
