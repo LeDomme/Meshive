@@ -51,6 +51,7 @@ from meshive.services.tag_assignment_rules import (
     compile_case_insensitive_regex,
     evaluate_assignment_rule,
     find_assignment_rule_matches,
+    legacy_rule_preflight,
     reevaluate_canonical_rules,
     refresh_assignment_rule_tags,
 )
@@ -642,6 +643,14 @@ def create_assignment_rule(
         raise HTTPException(status_code=409, detail="Tag assignment rule already exists") from error
     session.refresh(rule)
     return _assignment_rule_read(session, rule, tag.name)
+
+
+@admin_router.get("/tag-assignment-rules/preflight")
+def preflight_assignment_rules(
+    current_user: CurrentUser, session: SessionDependency
+) -> dict[str, object]:
+    _require_assignment_rule_access(session, current_user)
+    return {"rules": legacy_rule_preflight(session)}
 
 
 @admin_router.post(

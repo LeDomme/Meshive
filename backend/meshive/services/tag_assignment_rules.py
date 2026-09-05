@@ -8,11 +8,64 @@ from sqlalchemy.orm import Session
 
 from meshive.models.catalog import Archive, ArchiveEntry, LibraryModel
 from meshive.models.tag import (
+    AutomaticTagMatch,
+    FolderTagRule,
     ModelTag,
     TagAssignmentRule,
     TagAssignmentRuleMatch,
     TagAssignmentRuleTarget,
 )
+
+
+def legacy_rule_preflight(session: Session, limit: int = 5) -> list[dict[str, object]]:
+    """Compare persisted legacy provenance with a read-only canonical calculation."""
+    results: list[dict[str, object]] = []
+    rules = session.scalars(
+        select(TagAssignmentRule).where(TagAssignmentRule.legacy_kind.is_not(None))
+    )
+    for rule in rules:
+        expected = _legacy_match_ids(session, rule)
+        _, calculated = find_assignment_rule_matches(session, rule)
+        only_legacy = expected - calculated
+        only_canonical = calculated - expected
+        results.append({
+            "rule_id": rule.id,
+            "tag_id": rule.tag_id,
+            "legacy_kind": rule.legacy_kind,
+            "legacy_matches": len(expected),
+            "canonical_matches": len(calculated),
+            "only_legacy": len(only_legacy),
+            "only_canonical": len(only_canonical),
+            "only_legacy_models": _diagnostic_models(session, only_legacy, limit),
+            "only_canonical_models": _diagnostic_models(session, only_canonical, limit),
+        })
+    return results
+
+
+def _legacy_match_ids(session: Session, rule: TagAssignmentRule) -> set[int]:
+    if rule.legacy_kind == "automatic_tag_rule":
+        return set(session.scalars(select(AutomaticTagMatch.model_id).where(
+            AutomaticTagMatch.automatic_tag_rule_id == rule.legacy_rule_id
+        )))
+    if rule.legacy_kind == "folder_tag_rule":
+        legacy = session.get(FolderTagRule, rule.legacy_rule_id)
+        if legacy is None:
+            return set()
+        return {model.id for model in session.scalars(select(LibraryModel).where(
+            LibraryModel.library_source_id == legacy.library_source_id
+        )) if matches_legacy_folder_path(model.relative_path, legacy.relative_path,
+                                         PATH_SELF_OR_DESCENDANT if legacy.recursive else PATH_DIRECT_CHILD)}
+    return set(session.scalars(select(TagAssignmentRuleMatch.model_id).where(
+        TagAssignmentRuleMatch.tag_assignment_rule_id == rule.id
+    )))
+
+
+def _diagnostic_models(session: Session, model_ids: set[int], limit: int) -> list[dict[str, object]]:
+    if not model_ids:
+        return []
+    return [{"id": model.id, "name": model.name} for model in session.scalars(
+        select(LibraryModel).where(LibraryModel.id.in_(model_ids)).order_by(LibraryModel.id).limit(limit)
+    )]
 
 MAX_PATTERN_LENGTH = 255
 MATCH_CONTAINS = "contains"

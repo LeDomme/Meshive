@@ -19,6 +19,8 @@ from meshive.models.authorization import Role, RolePermission
 from meshive.models.catalog import Archive, ArchiveEntry, LibraryModel
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import (
+    AutomaticTagMatch,
+    AutomaticTagRule,
     ModelTag,
     Tag,
     TagAssignmentRule,
@@ -27,6 +29,7 @@ from meshive.models.tag import (
 )
 from meshive.models.user import User
 from meshive.schemas.tag import TagAssignmentRulePreview, TagAssignmentRuleWrite
+from meshive.services.tag_assignment_rules import legacy_rule_preflight
 
 
 def test_assignment_rule_api_evaluates_targets_and_preserves_other_provenance() -> None:
@@ -195,6 +198,41 @@ def test_legacy_automatic_rule_is_listed_but_remains_read_only() -> None:
             assert assignment is not None and assignment.is_automatic
     finally:
         _teardown_rule_test_database(engine, actor)
+
+
+def test_legacy_preflight_is_read_only_and_limits_diagnostics() -> None:
+    engine, sessions, _, tag_ids, model_ids = _rule_test_database()
+    try:
+        with sessions() as session:
+            automatic = AutomaticTagRule(
+                tag_id=tag_ids["legacy"], pattern="chitu", pattern_key="chitu", enabled=True
+            )
+            session.add(automatic)
+            session.flush()
+            canonical = TagAssignmentRule(
+                tag_id=tag_ids["legacy"], match_mode="contains", pattern="chitu",
+                pattern_key="chitu", enabled=True, legacy_kind="automatic_tag_rule",
+                legacy_rule_id=automatic.id,
+            )
+            session.add(canonical)
+            session.flush()
+            session.add_all([
+                TagAssignmentRuleTarget(tag_assignment_rule_id=canonical.id, target_type="archive_entry_path"),
+                AutomaticTagMatch(automatic_tag_rule_id=automatic.id, model_id=model_ids["a2"], matched_path="safe"),
+            ])
+            before = (session.query(TagAssignmentRule).count(), session.query(TagAssignmentRuleMatch).count(), session.query(ModelTag).count())
+            result = legacy_rule_preflight(session, limit=1)
+            after = (session.query(TagAssignmentRule).count(), session.query(TagAssignmentRuleMatch).count(), session.query(ModelTag).count())
+            assert before == after
+            item = next(row for row in result if row["rule_id"] == canonical.id)
+            assert item["legacy_matches"] == 1
+            assert item["canonical_matches"] == 0
+            assert item["only_legacy"] == 1
+            assert item["only_canonical"] == 0
+            assert item["only_legacy_models"] == [{"id": model_ids["a2"], "name": "A2"}]
+            assert "pattern" not in item and "path" not in item
+    finally:
+        _teardown_rule_test_database(engine)
 
 
 def _rule_test_database() -> tuple[object, sessionmaker[Session], dict[str, object], dict[str, int], dict[str, int]]:
