@@ -82,7 +82,14 @@ def test_assignment_rule_migration_copies_legacy_rules_without_touching_tags(
             session.add_all([folder_rule, automatic_rule])
             session.flush()
             session.add(AutomaticTagMatch(automatic_tag_rule_id=automatic_rule.id, model_id=model.id, matched_path="private/path"))
-            session.add(ModelTag(model_id=model.id, tag_id=direct_tag.id, is_direct=True))
+            # This fixture intentionally exercises the pre-provenance schema.
+            session.execute(
+                text(
+                    "INSERT INTO model_tags (model_id, tag_id, is_direct, is_inherited, is_automatic) "
+                    "VALUES (:model_id, :tag_id, 1, 0, 0)"
+                ),
+                {"model_id": model.id, "tag_id": direct_tag.id},
+            )
             session.commit()
             legacy_ids = (folder_rule.id, automatic_rule.id, model.id, direct_tag.id)
             automatic_tag_id = automatic_tag.id
@@ -165,7 +172,10 @@ def test_assignment_rule_migration_copies_legacy_rules_without_touching_tags(
         with Session(engine) as session:
             assert session.get(FolderTagRule, legacy_ids[0]) is not None
             assert session.get(AutomaticTagRule, legacy_ids[1]) is not None
-            assert session.scalar(select(ModelTag).where(ModelTag.tag_id == legacy_ids[3])) is not None
+            assert session.scalar(
+                text("SELECT id FROM model_tags WHERE tag_id = :tag_id"),
+                {"tag_id": legacy_ids[3]},
+            ) is not None
 
         command.upgrade(config, "head")
         with Session(engine) as session:

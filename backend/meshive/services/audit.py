@@ -39,6 +39,10 @@ class AuditAction:
     AUTOMATIC_TAG_RULE_DELETED = "automatic_tag_rule.deleted"
     MODEL_TAG_ADDED = "model_tag.added"
     MODEL_TAG_REMOVED = "model_tag.removed"
+    TAG_ASSIGNMENT_RULE_CREATED = "tag_assignment_rule.created"
+    TAG_ASSIGNMENT_RULE_UPDATED = "tag_assignment_rule.updated"
+    TAG_ASSIGNMENT_RULE_DELETED = "tag_assignment_rule.deleted"
+    TAG_ASSIGNMENT_RULE_RE_EVALUATED = "tag_assignment_rule.re_evaluated"
 
 
 def log_event(
