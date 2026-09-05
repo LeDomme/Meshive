@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from meshive.auth.passwords import hash_password
 from meshive.auth.permissions import CATALOGUE_VIEW, ROLES_MANAGE, USERS_MANAGE
 from meshive.models.audit import AuditEvent
@@ -214,6 +216,30 @@ def test_audit_event_api_paginates_filters_and_exposes_safe_snapshots() -> None:
         assert client.get("/api/admin/audit-events?action=role.updated&actor=Alice").json()["total"] == 1
         item = client.get("/api/admin/audit-events?source_id=1").json()["items"][0]
         assert item["library_source_id"] == 1 and "/secret/path" not in str(item)
+
+
+def test_audit_event_api_uses_utc_time_filters_and_stable_pagination() -> None:
+    with _admin_client() as (client, sessions):
+        _add_admin(sessions)
+        with sessions() as session:
+            session.add_all([
+                AuditEvent(actor_username="A", action="user.updated", target_type="user", target_label="old", created_at=datetime(2026, 1, 1, tzinfo=UTC)),
+                AuditEvent(actor_username="A", action="user.updated", target_type="user", target_label="same one", created_at=datetime(2026, 1, 2, tzinfo=UTC)),
+                AuditEvent(actor_username="A", action="user.updated", target_type="user", target_label="same two", created_at=datetime(2026, 1, 2, tzinfo=UTC)),
+                AuditEvent(actor_username="A", action="user.updated", target_type="user", target_label="new", created_at=datetime(2026, 1, 3, tzinfo=UTC)),
+            ])
+            session.commit()
+        assert client.post("/api/auth/login", json={"username": "admin", "password": "correct horse battery staple"}).status_code == 200
+        window = client.get("/api/admin/audit-events?from_at=2026-01-02T00:00:00Z&to_at=2026-01-02T23:59:59%2B00:00")
+        assert window.status_code == 200 and window.json()["total"] == 2
+        assert [item["target_label"] for item in window.json()["items"]] == ["same two", "same one"]
+        older_excluded = client.get("/api/admin/audit-events?from_at=2026-01-02T00:00:00Z").json()
+        newer_excluded = client.get("/api/admin/audit-events?to_at=2026-01-02T23:59:59Z").json()
+        assert older_excluded["total"] == 3 and newer_excluded["total"] == 3
+        first = client.get("/api/admin/audit-events?page=1&page_size=2").json()["items"]
+        second = client.get("/api/admin/audit-events?page=2&page_size=2").json()["items"]
+        assert not {item["id"] for item in first} & {item["id"] for item in second}
+        assert [item["target_label"] for item in first] == ["new", "same two"]
 
 
 def test_last_system_superuser_cannot_be_demoted_or_deleted() -> None:
