@@ -91,9 +91,9 @@ def create_role(payload: RoleWrite, current_user: CurrentUserDependency, session
         for permission_key in sorted(payload.permission_keys)
     ]
     session.add(role)
-    session.flush()
-    log_event(session, current_user, AuditAction.ROLE_CREATED, "role", role.name, target_id=role.id, details={"permission_keys": sorted(payload.permission_keys)})
     try:
+        session.flush()
+        log_event(session, current_user, AuditAction.ROLE_CREATED, "role", role.name, target_id=role.id, details={"permission_keys": sorted(payload.permission_keys)})
         session.commit()
     except IntegrityError as error:
         session.rollback()
