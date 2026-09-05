@@ -25,6 +25,20 @@ class AuditAction:
     BACKUP_RESTORE_STARTED = "backup.restore_started"
     BACKUP_RESTORE_COMPLETED = "backup.restore_completed"
     BACKUP_RESTORE_FAILED = "backup.restore_failed"
+    METADATA_CREATED = "metadata.created"
+    METADATA_UPDATED = "metadata.updated"
+    METADATA_DELETED = "metadata.deleted"
+    TAG_CREATED = "tag.created"
+    TAG_UPDATED = "tag.updated"
+    TAG_DELETED = "tag.deleted"
+    FOLDER_TAG_RULE_CREATED = "folder_tag_rule.created"
+    FOLDER_TAG_RULE_UPDATED = "folder_tag_rule.updated"
+    FOLDER_TAG_RULE_DELETED = "folder_tag_rule.deleted"
+    AUTOMATIC_TAG_RULE_CREATED = "automatic_tag_rule.created"
+    AUTOMATIC_TAG_RULE_UPDATED = "automatic_tag_rule.updated"
+    AUTOMATIC_TAG_RULE_DELETED = "automatic_tag_rule.deleted"
+    MODEL_TAG_ADDED = "model_tag.added"
+    MODEL_TAG_REMOVED = "model_tag.removed"
 
 
 def log_event(

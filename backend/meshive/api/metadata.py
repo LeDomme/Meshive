@@ -34,6 +34,7 @@ from meshive.schemas.metadata import (
     MetadataEntityRead,
     MetadataEntityType,
 )
+from meshive.services.audit import AuditAction, log_event
 
 SessionDependency = Annotated[Session, Depends(get_session)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
@@ -120,6 +121,7 @@ async def upload_metadata_artwork(
     entity_type: EntityTypeForm,
     value: ValueForm,
     image: ImageFile,
+    current_user: CurrentUser,
     session: SessionDependency,
 ) -> MetadataArtworkRead:
     canonical_value = _canonical_value(session, entity_type, value)
@@ -143,6 +145,7 @@ async def upload_metadata_artwork(
         )
     )
     if artwork is None:
+        action = AuditAction.METADATA_CREATED
         artwork = MetadataArtwork(
             entity_type=entity_type,
             entity_value=canonical_value,
@@ -155,12 +158,22 @@ async def upload_metadata_artwork(
         )
         session.add(artwork)
     else:
+        action = AuditAction.METADATA_UPDATED
         artwork.entity_value = canonical_value
         artwork.content = content
         artwork.content_type = "image/webp"
         artwork.width = width
         artwork.height = height
         artwork.etag = sha256(content).hexdigest()
+    session.flush()
+    log_event(
+        session,
+        current_user,
+        action,
+        "metadata_artwork",
+        "Metadata artwork",
+        target_id=artwork.id,
+    )
     session.commit()
     session.refresh(artwork)
     return _artwork_read(artwork)
@@ -170,6 +183,7 @@ async def upload_metadata_artwork(
 def delete_metadata_artwork(
     entity_type: MetadataEntityType,
     value: str,
+    current_user: CurrentUser,
     session: SessionDependency,
 ) -> Response:
     artwork = session.scalar(
@@ -183,6 +197,14 @@ def delete_metadata_artwork(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Custom artwork not found",
         )
+    log_event(
+        session,
+        current_user,
+        AuditAction.METADATA_DELETED,
+        "metadata_artwork",
+        "Metadata artwork",
+        target_id=artwork.id,
+    )
     session.delete(artwork)
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
