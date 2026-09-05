@@ -395,6 +395,26 @@ h1 {
   outline-offset: 2px;
 }
 
+/* Shared select treatment for every administration form.  Keeping this in
+   the admin shell makes Sources, Users, Roles, Tags, Scans, Backups and Audit
+   controls match the dark, high-contrast Backup schedule picker. */
+.admin-shell select {
+  width: 100%;
+  min-height: 2.8rem;
+  padding: 0.65rem 2.25rem 0.65rem 0.8rem;
+  border: 1px solid #334155;
+  border-radius: 0.6rem;
+  outline: none;
+  color: #f8fafc;
+  background-color: #0b1220;
+  color-scheme: dark;
+  font: inherit;
+}
+
+.admin-shell select:hover:not(:disabled) { border-color: #475569; }
+.admin-shell select:focus { border-color: var(--meshive-cyan); box-shadow: 0 0 0 3px rgb(54 231 255 / 14%); }
+.admin-shell select:disabled { cursor: not-allowed; opacity: .55; }
+
 .diagnostics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
