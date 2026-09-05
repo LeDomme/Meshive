@@ -8,6 +8,7 @@ from meshive.database import Base
 from meshive.models import (  # noqa: F401
     Archive,
     ArchiveEntry,
+    AuditEvent,
     FavoriteList,
     FavoriteListItem,
     LibraryModel,
