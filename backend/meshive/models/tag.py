@@ -37,6 +37,7 @@ class ModelTag(Base):
     is_direct: Mapped[bool] = mapped_column(Boolean, default=False)
     is_inherited: Mapped[bool] = mapped_column(Boolean, default=False)
     is_automatic: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_assignment_rule: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class FolderTagRule(Base):

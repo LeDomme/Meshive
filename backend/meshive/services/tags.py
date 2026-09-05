@@ -75,6 +75,7 @@ def recompute_inherited_tags(session: Session, source_id: int) -> None:
             ModelTag.is_direct.is_(False),
             ModelTag.is_inherited.is_(False),
             ModelTag.is_automatic.is_(False),
+            ModelTag.is_assignment_rule.is_(False),
         )
     )
 
@@ -167,7 +168,11 @@ def recompute_automatic_tags(
             continue
         assignment.is_automatic = False
         removed += 1
-        if not assignment.is_direct and not assignment.is_inherited:
+        if (
+            not assignment.is_direct
+            and not assignment.is_inherited
+            and not assignment.is_assignment_rule
+        ):
             session.delete(assignment)
 
     session.flush()

@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,9 @@ from meshive.models.tag import (
     FolderTagRule,
     ModelTag,
     Tag,
+    TagAssignmentRule,
+    TagAssignmentRuleMatch,
+    TagAssignmentRuleTarget,
 )
 from meshive.models.user import User
 from meshive.schemas.tag import (
@@ -32,12 +35,25 @@ from meshive.schemas.tag import (
     AutomaticTagRuleRead,
     FolderRuleCreate,
     FolderRuleRead,
+    TagAssignmentRuleEvaluationRead,
+    TagAssignmentRulePreview,
+    TagAssignmentRulePreviewRead,
+    TagAssignmentRuleRead,
+    TagAssignmentRuleWrite,
     TagCreate,
     TagRead,
     TagUpdate,
 )
 from meshive.services.audit import AuditAction, log_event
 from meshive.services.library_paths import PathPatternError, normalize_relative_path
+from meshive.services.tag_assignment_rules import (
+    MATCH_REGEX,
+    compile_case_insensitive_regex,
+    evaluate_assignment_rule,
+    find_assignment_rule_matches,
+    reevaluate_canonical_rules,
+    refresh_assignment_rule_tags,
+)
 from meshive.services.tags import (
     normalize_automatic_pattern,
     recompute_automatic_tags,
@@ -246,7 +262,11 @@ def remove_model_tag(
             library_source_id=model.library_source_id if model is not None else None,
         )
         assignment.is_direct = False
-        if not assignment.is_inherited and not assignment.is_automatic:
+        if (
+            not assignment.is_inherited
+            and not assignment.is_automatic
+            and not assignment.is_assignment_rule
+        ):
             session.delete(assignment)
         session.commit()
     return Response(status_code=204)
@@ -565,6 +585,375 @@ def reevaluate_automatic_rules(
     result = recompute_automatic_tags(session)
     session.commit()
     return AutomaticTagEvaluationRead(**result.__dict__)
+
+
+@admin_router.get(
+    "/tags/{tag_id}/assignment-rules", response_model=list[TagAssignmentRuleRead]
+)
+def list_assignment_rules(
+    tag_id: int, current_user: CurrentUser, session: SessionDependency
+) -> list[TagAssignmentRuleRead]:
+    tag = _tag_or_404(session, tag_id)
+    _require_assignment_rule_access(session, current_user)
+    rules = list(
+        session.scalars(
+            select(TagAssignmentRule)
+            .where(
+                TagAssignmentRule.tag_id == tag.id,
+                TagAssignmentRule.legacy_kind.is_(None),
+            )
+            .order_by(TagAssignmentRule.id)
+        )
+    )
+    return [_assignment_rule_read(session, rule, tag.name) for rule in rules]
+
+
+@admin_router.post(
+    "/tags/{tag_id}/assignment-rules",
+    response_model=TagAssignmentRuleRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_assignment_rule(
+    tag_id: int,
+    payload: TagAssignmentRuleWrite,
+    current_user: CurrentUser,
+    session: SessionDependency,
+) -> TagAssignmentRuleRead:
+    tag = _tag_or_404(session, tag_id)
+    _require_assignment_rule_access(session, current_user)
+    values = _assignment_rule_values(session, payload)
+    rule = TagAssignmentRule(tag_id=tag.id, **values)
+    session.add(rule)
+    try:
+        session.flush()
+        _replace_assignment_rule_targets(session, rule, payload)
+        affected_model_ids = evaluate_assignment_rule(session, rule)
+        refresh_assignment_rule_tags(session, affected_model_ids)
+        log_event(
+            session,
+            current_user,
+            AuditAction.TAG_ASSIGNMENT_RULE_CREATED,
+            "tag_assignment_rule",
+            "Tag assignment rule",
+            target_id=rule.id,
+            library_source_id=rule.library_source_id,
+            details=_assignment_rule_audit_details(rule, payload.targets),
+        )
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Tag assignment rule already exists") from error
+    session.refresh(rule)
+    return _assignment_rule_read(session, rule, tag.name)
+
+
+@admin_router.post(
+    "/tag-assignment-rules/preview", response_model=list[TagAssignmentRulePreviewRead]
+)
+def preview_assignment_rule(
+    payload: TagAssignmentRulePreview,
+    current_user: CurrentUser,
+    session: SessionDependency,
+) -> list[TagAssignmentRulePreviewRead]:
+    _require_assignment_rule_access(session, current_user)
+    values = _assignment_rule_values(session, payload)
+    rule = TagAssignmentRule(tag_id=0, **values)
+    targets = [
+        TagAssignmentRuleTarget(
+            target_type=target.target_type, folder_segment=target.folder_segment
+        )
+        for target in payload.targets
+    ]
+    models, matched_model_ids = find_assignment_rule_matches(session, rule, targets)
+    return [
+        TagAssignmentRulePreviewRead(model_name=model.name, relative_path=model.relative_path)
+        for model in models
+        if model.id in matched_model_ids
+    ][: payload.limit]
+
+
+@admin_router.post(
+    "/tag-assignment-rules/re-evaluate", response_model=TagAssignmentRuleEvaluationRead
+)
+def reevaluate_all_assignment_rules(
+    current_user: CurrentUser, session: SessionDependency
+) -> TagAssignmentRuleEvaluationRead:
+    _require_assignment_rule_access(session, current_user)
+    models_evaluated, matches, added, removed = reevaluate_canonical_rules(session)
+    log_event(
+        session,
+        current_user,
+        AuditAction.TAG_ASSIGNMENT_RULE_RE_EVALUATED,
+        "tag_assignment_rule",
+        "Tag assignment rules",
+        details={"scope": "all", "models_evaluated": models_evaluated, "matches": matches},
+    )
+    session.commit()
+    return TagAssignmentRuleEvaluationRead(
+        models_evaluated=models_evaluated,
+        matches=matches,
+        assignments_added=added,
+        assignments_removed=removed,
+    )
+
+
+@admin_router.put(
+    "/tag-assignment-rules/{rule_id}", response_model=TagAssignmentRuleRead
+)
+def update_assignment_rule(
+    rule_id: int,
+    payload: TagAssignmentRuleWrite,
+    current_user: CurrentUser,
+    session: SessionDependency,
+) -> TagAssignmentRuleRead:
+    rule = _assignment_rule_or_404(session, rule_id)
+    _require_assignment_rule_access(session, current_user)
+    values = _assignment_rule_values(session, payload)
+    previous_model_ids = set(
+        session.scalars(
+            select(TagAssignmentRuleMatch.model_id).where(
+                TagAssignmentRuleMatch.tag_assignment_rule_id == rule.id
+            )
+        )
+    )
+    for name, value in values.items():
+        setattr(rule, name, value)
+    try:
+        _replace_assignment_rule_targets(session, rule, payload)
+        session.flush()
+        affected_model_ids = previous_model_ids | evaluate_assignment_rule(session, rule)
+        refresh_assignment_rule_tags(session, affected_model_ids)
+        log_event(
+            session,
+            current_user,
+            AuditAction.TAG_ASSIGNMENT_RULE_UPDATED,
+            "tag_assignment_rule",
+            "Tag assignment rule",
+            target_id=rule.id,
+            library_source_id=rule.library_source_id,
+            details=_assignment_rule_audit_details(rule, payload.targets),
+        )
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Tag assignment rule already exists") from error
+    session.refresh(rule)
+    return _assignment_rule_read(session, rule, _tag_or_404(session, rule.tag_id).name)
+
+
+@admin_router.delete("/tag-assignment-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_assignment_rule(
+    rule_id: int, current_user: CurrentUser, session: SessionDependency
+) -> Response:
+    rule = _assignment_rule_or_404(session, rule_id)
+    _require_assignment_rule_access(session, current_user)
+    affected_model_ids = set(
+        session.scalars(
+            select(TagAssignmentRuleMatch.model_id).where(
+                TagAssignmentRuleMatch.tag_assignment_rule_id == rule.id
+            )
+        )
+    )
+    source_id = rule.library_source_id
+    rule_id = rule.id
+    session.execute(
+        delete(TagAssignmentRuleMatch).where(
+            TagAssignmentRuleMatch.tag_assignment_rule_id == rule_id
+        )
+    )
+    session.execute(
+        delete(TagAssignmentRuleTarget).where(
+            TagAssignmentRuleTarget.tag_assignment_rule_id == rule_id
+        )
+    )
+    session.delete(rule)
+    session.flush()
+    refresh_assignment_rule_tags(session, affected_model_ids)
+    log_event(
+        session,
+        current_user,
+        AuditAction.TAG_ASSIGNMENT_RULE_DELETED,
+        "tag_assignment_rule",
+        "Tag assignment rule",
+        target_id=rule_id,
+        library_source_id=source_id,
+        details={"scope": "source" if source_id is not None else "all_sources"},
+    )
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@admin_router.post(
+    "/tag-assignment-rules/{rule_id}/re-evaluate",
+    response_model=TagAssignmentRuleEvaluationRead,
+)
+def reevaluate_assignment_rule_endpoint(
+    rule_id: int, current_user: CurrentUser, session: SessionDependency
+) -> TagAssignmentRuleEvaluationRead:
+    rule = _assignment_rule_or_404(session, rule_id)
+    _require_assignment_rule_access(session, current_user)
+    affected_model_ids = evaluate_assignment_rule(session, rule)
+    added, removed = refresh_assignment_rule_tags(session, affected_model_ids)
+    matches = session.scalar(
+        select(func.count(TagAssignmentRuleMatch.id)).where(
+            TagAssignmentRuleMatch.tag_assignment_rule_id == rule.id
+        )
+    ) or 0
+    log_event(
+        session,
+        current_user,
+        AuditAction.TAG_ASSIGNMENT_RULE_RE_EVALUATED,
+        "tag_assignment_rule",
+        "Tag assignment rule",
+        target_id=rule.id,
+        library_source_id=rule.library_source_id,
+        details={"models_evaluated": len(affected_model_ids), "matches": matches},
+    )
+    session.commit()
+    return TagAssignmentRuleEvaluationRead(
+        models_evaluated=len(affected_model_ids),
+        matches=matches,
+        assignments_added=added,
+        assignments_removed=removed,
+    )
+
+
+def _require_assignment_rule_access(session: Session, current_user: User) -> None:
+    access = get_access_context(session, current_user)
+    require_access_permission(access, TAG_RULES_MANAGE)
+    if not access.all_sources:
+        raise HTTPException(status_code=403, detail="All sources access is required")
+
+
+def _tag_or_404(session: Session, tag_id: int) -> Tag:
+    tag = session.get(Tag, tag_id)
+    if tag is None:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return tag
+
+
+def _assignment_rule_or_404(session: Session, rule_id: int) -> TagAssignmentRule:
+    rule = session.get(TagAssignmentRule, rule_id)
+    if rule is None or rule.legacy_kind is not None:
+        raise HTTPException(status_code=404, detail="Tag assignment rule not found")
+    return rule
+
+
+def _assignment_rule_values(
+    session: Session, payload: TagAssignmentRuleWrite
+) -> dict[str, object]:
+    if payload.library_source_id is not None and session.get(
+        LibrarySource, payload.library_source_id
+    ) is None:
+        raise HTTPException(status_code=404, detail="Library source not found")
+    if payload.match_mode == MATCH_REGEX:
+        try:
+            pattern, pattern_key, _ = compile_case_insensitive_regex(payload.pattern or "")
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return {
+            "library_source_id": payload.library_source_id,
+            "match_mode": payload.match_mode,
+            "pattern": pattern,
+            "pattern_key": pattern_key,
+            "path_value": None,
+            "path_relation": None,
+            "enabled": payload.enabled,
+            "legacy_kind": None,
+            "legacy_rule_id": None,
+        }
+    if payload.match_mode == "path_relation":
+        try:
+            path_value = normalize_relative_path(payload.path_value or "")
+        except PathPatternError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return {
+            "library_source_id": payload.library_source_id,
+            "match_mode": payload.match_mode,
+            "pattern": None,
+            "pattern_key": None,
+            "path_value": path_value,
+            "path_relation": payload.path_relation,
+            "enabled": payload.enabled,
+            "legacy_kind": None,
+            "legacy_rule_id": None,
+        }
+    pattern = (payload.pattern or "").strip()
+    if not pattern:
+        raise HTTPException(status_code=422, detail="Pattern cannot be empty")
+    return {
+        "library_source_id": payload.library_source_id,
+        "match_mode": payload.match_mode,
+        "pattern": pattern,
+        "pattern_key": pattern.casefold(),
+        "path_value": None,
+        "path_relation": None,
+        "enabled": payload.enabled,
+        "legacy_kind": None,
+        "legacy_rule_id": None,
+    }
+
+
+def _replace_assignment_rule_targets(
+    session: Session, rule: TagAssignmentRule, payload: TagAssignmentRuleWrite
+) -> None:
+    session.execute(
+        delete(TagAssignmentRuleTarget).where(
+            TagAssignmentRuleTarget.tag_assignment_rule_id == rule.id
+        )
+    )
+    session.add_all(
+        TagAssignmentRuleTarget(
+            tag_assignment_rule_id=rule.id,
+            target_type=target.target_type,
+            folder_segment=target.folder_segment,
+        )
+        for target in payload.targets
+    )
+    session.flush()
+
+
+def _assignment_rule_read(
+    session: Session, rule: TagAssignmentRule, tag_name: str
+) -> TagAssignmentRuleRead:
+    targets = list(
+        session.scalars(
+            select(TagAssignmentRuleTarget)
+            .where(TagAssignmentRuleTarget.tag_assignment_rule_id == rule.id)
+            .order_by(TagAssignmentRuleTarget.id)
+        )
+    )
+    match_count = session.scalar(
+        select(func.count(TagAssignmentRuleMatch.id)).where(
+            TagAssignmentRuleMatch.tag_assignment_rule_id == rule.id
+        )
+    ) or 0
+    return TagAssignmentRuleRead(
+        id=rule.id,
+        tag_id=rule.tag_id,
+        tag_name=tag_name,
+        library_source_id=rule.library_source_id,
+        match_mode=rule.match_mode,
+        pattern=rule.pattern,
+        path_value=rule.path_value,
+        path_relation=rule.path_relation,
+        enabled=rule.enabled,
+        targets=targets,
+        match_count=match_count,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at,
+    )
+
+
+def _assignment_rule_audit_details(
+    rule: TagAssignmentRule, targets: list[TagAssignmentRuleTarget]
+) -> dict[str, object]:
+    return {
+        "targets": [target.target_type for target in targets],
+        "match_mode": rule.match_mode,
+        "scope": "source" if rule.library_source_id is not None else "all_sources",
+        "enabled": rule.enabled,
+    }
 
 
 def _automatic_pattern(value: str) -> tuple[str, str]:
