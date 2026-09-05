@@ -1,6 +1,7 @@
 import unicodedata
 from hashlib import sha256
 from io import BytesIO
+from typing import Annotated
 
 from fastapi import (
     APIRouter,
@@ -19,10 +20,11 @@ from sqlalchemy.orm import Session
 from meshive.auth.access import (
     get_access_context,
     require_access_permission,
+    require_global_permission,
     visible_model_scope,
 )
-from meshive.auth.dependencies import get_current_user, require_admin
-from meshive.auth.permissions import CATALOGUE_VIEW
+from meshive.auth.dependencies import get_current_user
+from meshive.auth.permissions import CATALOGUE_VIEW, METADATA_MANAGE
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
 from meshive.models.metadata import MetadataArtwork
@@ -33,11 +35,17 @@ from meshive.schemas.metadata import (
     MetadataEntityType,
 )
 
+SessionDependency = Annotated[Session, Depends(get_session)]
+CurrentUser = Annotated[User, Depends(get_current_user)]
+EntityTypeForm = Annotated[MetadataEntityType, Form()]
+ValueForm = Annotated[str, Form(min_length=1, max_length=512)]
+ImageFile = Annotated[UploadFile, File()]
+
 router = APIRouter(prefix="/metadata", tags=["metadata"])
 admin_router = APIRouter(
     prefix="/admin/metadata",
     tags=["metadata administration"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_global_permission(METADATA_MANAGE))],
 )
 
 _MAX_UPLOAD_BYTES = 12 * 1024 * 1024
@@ -52,7 +60,7 @@ _ENTITY_COLUMNS = {
 
 @admin_router.get("", response_model=list[MetadataEntityRead])
 def list_metadata_entities(
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> list[MetadataEntityRead]:
     artwork = {
         (entity_type, entity_key): (artwork_id, etag, entity_value)
@@ -109,10 +117,10 @@ def list_metadata_entities(
 
 @admin_router.put("/artwork", response_model=MetadataArtworkRead)
 async def upload_metadata_artwork(
-    entity_type: MetadataEntityType = Form(),
-    value: str = Form(min_length=1, max_length=512),
-    image: UploadFile = File(),
-    session: Session = Depends(get_session),
+    entity_type: EntityTypeForm,
+    value: ValueForm,
+    image: ImageFile,
+    session: SessionDependency,
 ) -> MetadataArtworkRead:
     canonical_value = _canonical_value(session, entity_type, value)
     if canonical_value is None:
@@ -162,7 +170,7 @@ async def upload_metadata_artwork(
 def delete_metadata_artwork(
     entity_type: MetadataEntityType,
     value: str,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> Response:
     artwork = session.scalar(
         select(MetadataArtwork).where(
@@ -183,8 +191,8 @@ def delete_metadata_artwork(
 @router.get("/artwork/{artwork_id}")
 def metadata_artwork(
     artwork_id: int,
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
+    current_user: CurrentUser,
+    session: SessionDependency,
 ) -> Response:
     artwork = session.get(MetadataArtwork, artwork_id)
     if artwork is None:

@@ -9,10 +9,12 @@ from meshive.auth.access import (
     get_access_context,
     get_visible_model_or_404,
     require_access_permission,
+    require_any_global_permission,
+    require_global_permission,
     visible_model_scope,
 )
-from meshive.auth.dependencies import get_current_user, require_admin
-from meshive.auth.permissions import CATALOGUE_VIEW, MODELS_TAGS
+from meshive.auth.dependencies import get_current_user
+from meshive.auth.permissions import CATALOGUE_VIEW, MODELS_TAGS, TAG_RULES_MANAGE, TAGS_MANAGE
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
 from meshive.models.library_source import LibrarySource
@@ -42,17 +44,16 @@ from meshive.services.tags import (
 )
 
 router = APIRouter(prefix="/tags", tags=["tags"], dependencies=[Depends(get_current_user)])
-admin_router = APIRouter(
-    prefix="/admin", tags=["tag administration"], dependencies=[Depends(require_admin)]
-)
+admin_router = APIRouter(prefix="/admin", tags=["tag administration"])
 model_tag_router = APIRouter(prefix="/admin", tags=["tag administration"])
 CurrentUser = Annotated[User, Depends(get_current_user)]
+SessionDependency = Annotated[Session, Depends(get_session)]
 
 
 @router.get("", response_model=list[TagRead])
 def list_tags(
     current_user: CurrentUser,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> list[Tag]:
     access = get_access_context(session, current_user)
     require_access_permission(access, CATALOGUE_VIEW)
@@ -69,8 +70,28 @@ def list_tags(
     return list(session.scalars(statement))
 
 
-@admin_router.post("/tags", response_model=TagRead, status_code=201)
-def create_tag(payload: TagCreate, session: Session = Depends(get_session)) -> Tag:
+@admin_router.get(
+    "/tags",
+    response_model=list[TagRead],
+    dependencies=[Depends(require_any_global_permission({TAGS_MANAGE, TAG_RULES_MANAGE}))],
+)
+def list_admin_tags(session: SessionDependency) -> list[Tag]:
+    return list(session.scalars(select(Tag).order_by(Tag.name.collate("NOCASE"))))
+
+
+@admin_router.get(
+    "/tags/library-sources",
+    dependencies=[Depends(require_global_permission(TAGS_MANAGE))],
+)
+def list_tag_rule_sources(session: SessionDependency) -> list[dict[str, object]]:
+    return [
+        {"id": source.id, "name": source.name}
+        for source in session.scalars(select(LibrarySource).order_by(LibrarySource.name))
+    ]
+
+
+@admin_router.post("/tags", response_model=TagRead, status_code=201, dependencies=[Depends(require_global_permission(TAGS_MANAGE))])
+def create_tag(payload: TagCreate, session: SessionDependency) -> Tag:
     name, description = _tag_values(payload)
     tag = Tag(name=name, color=payload.color, description=description)
     session.add(tag)
@@ -85,11 +106,11 @@ def create_tag(payload: TagCreate, session: Session = Depends(get_session)) -> T
     return tag
 
 
-@admin_router.put("/tags/{tag_id}", response_model=TagRead)
+@admin_router.put("/tags/{tag_id}", response_model=TagRead, dependencies=[Depends(require_global_permission(TAGS_MANAGE))])
 def update_tag(
     tag_id: int,
     payload: TagUpdate,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> Tag:
     tag = session.get(Tag, tag_id)
     if tag is None:
@@ -107,8 +128,8 @@ def update_tag(
     return tag
 
 
-@admin_router.delete("/tags/{tag_id}", status_code=204)
-def delete_tag(tag_id: int, session: Session = Depends(get_session)) -> Response:
+@admin_router.delete("/tags/{tag_id}", status_code=204, dependencies=[Depends(require_global_permission(TAGS_MANAGE))])
+def delete_tag(tag_id: int, session: SessionDependency) -> Response:
     tag = session.get(Tag, tag_id)
     if tag is None:
         raise HTTPException(status_code=404, detail="Tag not found")
@@ -122,7 +143,7 @@ def add_model_tag(
     model_id: int,
     tag_id: int,
     current_user: CurrentUser,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> Response:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
@@ -153,7 +174,7 @@ def remove_model_tag(
     model_id: int,
     tag_id: int,
     current_user: CurrentUser,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> Response:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
@@ -171,8 +192,8 @@ def remove_model_tag(
     return Response(status_code=204)
 
 
-@admin_router.get("/folder-tag-rules", response_model=list[FolderRuleRead])
-def list_rules(session: Session = Depends(get_session)) -> list[FolderRuleRead]:
+@admin_router.get("/folder-tag-rules", response_model=list[FolderRuleRead], dependencies=[Depends(require_global_permission(TAGS_MANAGE))])
+def list_rules(session: SessionDependency) -> list[FolderRuleRead]:
     return [
         FolderRuleRead(
             id=rule.id,
@@ -188,9 +209,9 @@ def list_rules(session: Session = Depends(get_session)) -> list[FolderRuleRead]:
     ]
 
 
-@admin_router.post("/folder-tag-rules", response_model=FolderRuleRead, status_code=201)
+@admin_router.post("/folder-tag-rules", response_model=FolderRuleRead, status_code=201, dependencies=[Depends(require_global_permission(TAGS_MANAGE))])
 def create_rule(
-    payload: FolderRuleCreate, session: Session = Depends(get_session)
+    payload: FolderRuleCreate, session: SessionDependency
 ) -> FolderRuleRead:
     source = session.get(LibrarySource, payload.library_source_id)
     tag = session.get(Tag, payload.tag_id)
@@ -226,8 +247,8 @@ def create_rule(
     )
 
 
-@admin_router.delete("/folder-tag-rules/{rule_id}", status_code=204)
-def delete_rule(rule_id: int, session: Session = Depends(get_session)) -> Response:
+@admin_router.delete("/folder-tag-rules/{rule_id}", status_code=204, dependencies=[Depends(require_global_permission(TAGS_MANAGE))])
+def delete_rule(rule_id: int, session: SessionDependency) -> Response:
     rule = session.get(FolderTagRule, rule_id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Folder tag rule not found")
@@ -239,9 +260,9 @@ def delete_rule(rule_id: int, session: Session = Depends(get_session)) -> Respon
     return Response(status_code=204)
 
 
-@admin_router.get("/automatic-tag-rules", response_model=list[AutomaticTagRuleRead])
+@admin_router.get("/automatic-tag-rules", response_model=list[AutomaticTagRuleRead], dependencies=[Depends(require_global_permission(TAG_RULES_MANAGE))])
 def list_automatic_rules(
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> list[AutomaticTagRuleRead]:
     return [
         AutomaticTagRuleRead(
@@ -275,10 +296,11 @@ def list_automatic_rules(
     "/automatic-tag-rules",
     response_model=AutomaticTagRuleRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_global_permission(TAG_RULES_MANAGE))],
 )
 def create_automatic_rule(
     payload: AutomaticTagRuleCreate,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> AutomaticTagRuleRead:
     tag = session.get(Tag, payload.tag_id)
     if tag is None:
@@ -305,11 +327,11 @@ def create_automatic_rule(
     return _automatic_rule_read(session, rule, tag.name)
 
 
-@admin_router.put("/automatic-tag-rules/{rule_id}", response_model=AutomaticTagRuleRead)
+@admin_router.put("/automatic-tag-rules/{rule_id}", response_model=AutomaticTagRuleRead, dependencies=[Depends(require_global_permission(TAG_RULES_MANAGE))])
 def update_automatic_rule(
     rule_id: int,
     payload: AutomaticTagRuleCreate,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> AutomaticTagRuleRead:
     rule = session.get(AutomaticTagRule, rule_id)
     tag = session.get(Tag, payload.tag_id)
@@ -334,8 +356,8 @@ def update_automatic_rule(
     return _automatic_rule_read(session, rule, tag.name)
 
 
-@admin_router.delete("/automatic-tag-rules/{rule_id}", status_code=204)
-def delete_automatic_rule(rule_id: int, session: Session = Depends(get_session)) -> Response:
+@admin_router.delete("/automatic-tag-rules/{rule_id}", status_code=204, dependencies=[Depends(require_global_permission(TAG_RULES_MANAGE))])
+def delete_automatic_rule(rule_id: int, session: SessionDependency) -> Response:
     rule = session.get(AutomaticTagRule, rule_id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Automatic tag rule not found")
@@ -349,9 +371,10 @@ def delete_automatic_rule(rule_id: int, session: Session = Depends(get_session))
 @admin_router.post(
     "/automatic-tag-rules/re-evaluate",
     response_model=AutomaticTagEvaluationRead,
+    dependencies=[Depends(require_global_permission(TAG_RULES_MANAGE))],
 )
 def reevaluate_automatic_rules(
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> AutomaticTagEvaluationRead:
     result = recompute_automatic_tags(session)
     session.commit()

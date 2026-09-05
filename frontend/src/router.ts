@@ -113,7 +113,7 @@ export const router = createRouter({
       path: "/admin/metadata",
       name: "metadata",
       component: CreatorsView,
-      meta: { requiresAuth: true, requiresAdmin: true },
+      meta: { requiresAuth: true, requiredPermission: "metadata.manage", requiresAllSources: true },
     },
     {
       path: "/admin/creators",
@@ -123,7 +123,11 @@ export const router = createRouter({
       path: "/admin/tags",
       name: "tags",
       component: TagsView,
-      meta: { requiresAuth: true, requiresAdmin: true },
+      meta: {
+        requiresAuth: true,
+        requiredAnyPermission: ["tags.manage", "tag_rules.manage"],
+        requiresAllSources: true,
+      },
     },
     {
       path: "/admin/sources",

@@ -1,9 +1,12 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from meshive.auth.dependencies import require_admin
+from meshive.auth.access import require_global_permission
+from meshive.auth.permissions import METADATA_MANAGE
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
 from meshive.models.creator import CreatorLink
@@ -18,8 +21,9 @@ from meshive.schemas.creator import (
 router = APIRouter(
     prefix="/admin/creator-links",
     tags=["creator administration"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_global_permission(METADATA_MANAGE))],
 )
+SessionDependency = Annotated[Session, Depends(get_session)]
 
 LINK_LABELS: dict[CreatorLinkKind, str] = {
     "website": "Website",
@@ -55,7 +59,7 @@ def _canonical_creator_name(session: Session, creator_name: str) -> str | None:
 
 
 @router.get("", response_model=list[CreatorRead])
-def list_creators(session: Session = Depends(get_session)) -> list[CreatorRead]:
+def list_creators(session: SessionDependency) -> list[CreatorRead]:
     model_rows = session.execute(
         select(LibraryModel.creator, func.count(LibraryModel.id))
         .where(
@@ -108,7 +112,7 @@ def list_creators(session: Session = Depends(get_session)) -> list[CreatorRead]:
 )
 def create_creator_link(
     payload: CreatorLinkCreate,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> CreatorMetadataLinkRead:
     canonical_name = _canonical_creator_name(session, payload.creator_name)
     if canonical_name is None:
@@ -139,7 +143,7 @@ def create_creator_link(
 def update_creator_link(
     link_id: int,
     payload: CreatorLinkUpdate,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> CreatorMetadataLinkRead:
     creator_link = session.get(CreatorLink, link_id)
     if creator_link is None:
@@ -165,7 +169,7 @@ def update_creator_link(
 @router.delete("/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_creator_link(
     link_id: int,
-    session: Session = Depends(get_session),
+    session: SessionDependency,
 ) -> Response:
     creator_link = session.get(CreatorLink, link_id)
     if creator_link is None:
