@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, get_session
 from meshive.main import app
+from meshive.models.audit import AuditEvent
 from meshive.models.authorization import Role, RolePermission, UserLibrarySource
 from meshive.models.catalog import ScanRun
 from meshive.models.library_source import LibrarySource
@@ -396,6 +397,22 @@ def test_start_and_control_scans_require_visible_sources_and_permissions(monkeyp
             assert session.get(ScanRun, a_pending_id).status == "cancelled"
             assert session.get(ScanRun, a_completed_id).pause_requested is False
             assert session.get(ScanRun, b_scan_id).status == "completed"
+            events = session.query(AuditEvent).order_by(AuditEvent.id).all()
+            assert [event.action for event in events] == [
+                "scan.pause_requested",
+                "scan.resume_requested",
+                "scan.cancel_requested",
+                "scan.started",
+                "scan.pause_requested",
+                "scan.resume_requested",
+            ]
+            started_event = events[3]
+            assert started_event.target_type == "scan"
+            assert started_event.target_id == b_started_id
+            assert started_event.target_label == "Smart scan for Source B"
+            assert started_event.library_source_id == source_b.id
+            assert started_event.details == {"mode": "smart", "trigger": "manual"}
+            assert all("/" not in str(event.details) for event in events)
     finally:
         app.dependency_overrides.clear()
         Base.metadata.drop_all(engine)

@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, get_session
 from meshive.main import app
+from meshive.models.audit import AuditEvent
 from meshive.models.authorization import Role, RolePermission
 from meshive.models.catalog import LibraryModel
 from meshive.models.library_source import LibrarySource
@@ -78,6 +79,9 @@ def test_create_list_update_and_delete_source() -> None:
         assert updated.status_code == 200
         assert updated.json()["name"] == "Bulkamancer Sculpts"
 
+        duplicate = client.post("/api/admin/library-sources", json=update)
+        assert duplicate.status_code == 409
+
         with sessions() as session:
             session.add(
                 LibraryModel(
@@ -94,6 +98,21 @@ def test_create_list_update_and_delete_source() -> None:
         assert client.get("/api/admin/library-sources").json() == []
         with sessions() as session:
             assert session.query(LibraryModel).count() == 0
+            events = session.query(AuditEvent).order_by(AuditEvent.id).all()
+            assert [event.action for event in events] == [
+                "source.created",
+                "source.updated",
+                "source.deleted",
+            ]
+            assert all(event.target_type == "library_source" for event in events)
+            assert events[0].target_label == "Bulkamancer"
+            assert events[1].target_label == "Bulkamancer Sculpts"
+            assert events[1].details == {"changed_categories": ["name"]}
+            assert events[2].target_label == "Bulkamancer Sculpts"
+            assert events[2].library_source_id is None
+            serialized_events = " ".join(str(event.details) for event in events)
+            assert "/models/bulkamancer" not in serialized_events
+            assert "{creator_folder}" not in serialized_events
 
 
 def test_preview_endpoint_parses_confirmed_layout() -> None:
