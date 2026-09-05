@@ -5,7 +5,7 @@ from sqlalchemy import ColumnElement, Select, select
 from sqlalchemy.orm import Session
 
 from meshive.auth.dependencies import get_current_user
-from meshive.auth.permissions import ALL_PERMISSION_KEYS
+from meshive.auth.permissions import ALL_PERMISSION_KEYS, TAG_RULES_MANAGE
 from meshive.database import get_session
 from meshive.models.authorization import RolePermission, UserLibrarySource
 from meshive.models.catalog import LibraryModel, ScanRun
@@ -156,6 +156,11 @@ def require_global_permission(permission_key: str):
         return access
 
     return dependency
+
+
+def require_tag_assignment_rules_manage():
+    """Phase-1 access contract for all future canonical-rule endpoints."""
+    return require_global_permission(TAG_RULES_MANAGE)
 
 
 def require_any_global_permission(permission_keys: set[str]):
