@@ -1,5 +1,6 @@
 from meshive.auth.passwords import hash_password
 from meshive.auth.permissions import CATALOGUE_VIEW, ROLES_MANAGE, USERS_MANAGE
+from meshive.models.audit import AuditEvent
 from meshive.models.authorization import Role, RolePermission, UserLibrarySource
 from meshive.models.library_source import LibrarySource
 from meshive.models.user import User
@@ -67,6 +68,10 @@ def test_custom_role_crud_rejects_invalid_permissions_and_system_roles() -> None
             json={"name": "Changed", "permission_keys": []},
         ).status_code == 409
         assert client.delete(f"/api/admin/roles/{role_id}").status_code == 204
+        with sessions() as session:
+            events = session.query(AuditEvent).order_by(AuditEvent.id).all()
+            assert [event.action for event in events] == ["role.created", "role.deleted"]
+            assert all("correct horse" not in str(event.details) for event in events)
 
 
 def test_user_access_assignments_are_validated_and_hidden_grants_are_cleared() -> None:
@@ -117,6 +122,11 @@ def test_user_access_assignments_are_validated_and_hidden_grants_are_cleared() -
         assert all_sources.json()["source_ids"] == []
         with sessions() as session:
             assert not session.query(UserLibrarySource).filter_by(user_id=user_id).count()
+            events = session.query(AuditEvent).order_by(AuditEvent.id).all()
+            assert "user.created" in [event.action for event in events]
+            assert "user.source_access_changed" in [event.action for event in events]
+            assert all("sufficiently long password" not in str(event.details) for event in events)
+            assert all("@" not in f"{event.actor_username} {event.target_label} {event.details}" for event in events)
 
 
 def test_user_create_defaults_to_legacy_member_role_without_role_selection() -> None:
