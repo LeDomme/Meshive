@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 import { apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
 import TagChip from "../../components/TagChip.vue"
@@ -26,17 +26,40 @@ interface AutomaticEvaluation {
 }
 interface FolderNameRule { id: number; tag_id: number; tag_name: string; pattern: string; enabled: boolean; match_count: number }
 interface FolderNamePreview { model_name: string; relative_path: string }
+type RuleType = "folder_path" | "folder_name_regex" | "archive_entry_text"
+interface RuleListItem {
+  id: number
+  type: RuleType
+  tagId: number
+  tagName: string
+  summary: string
+  enabled?: boolean
+  matchCount?: number
+}
+interface EditingRule {
+  id: number
+  type: RuleType
+  tagId: number
+  sourceId?: number
+  relativePath?: string
+  recursive?: boolean
+  pattern?: string
+  enabled?: boolean
+}
 
 const tags = ref<Tag[]>([])
 const sources = ref<Source[]>([])
 const rules = ref<Rule[]>([])
 const automaticRules = ref<AutomaticRule[]>([])
 const folderNameRules = ref<FolderNameRule[]>([])
-const folderNameTagId = ref("")
-const folderNamePattern = ref("")
+const ruleType = ref<RuleType>("folder_path")
+const ruleTagId = ref("")
+const rulePattern = ref("")
 const folderNamePreview = ref<FolderNamePreview[]>([])
-const folderNameError = ref("")
-const folderNameWorking = ref(false)
+const ruleFeedback = ref("")
+const ruleError = ref("")
+const ruleWorking = ref(false)
+const editingRule = ref<EditingRule | null>(null)
 const name = ref("")
 const color = ref("#5eead4")
 const description = ref("")
@@ -48,17 +71,41 @@ const tagFeedback = ref("")
 const tagError = ref("")
 const tagWorking = ref(false)
 const sourceId = ref("")
-const tagId = ref("")
 const path = ref("")
 const recursive = ref(true)
-const automaticTagId = ref("")
-const automaticPattern = ref("")
-const automaticFeedback = ref("")
-const automaticError = ref("")
-const automaticWorking = ref(false)
 const auth = useAuthStore()
 const canManageTags = auth.can("tags.manage")
 const canManageTagRules = auth.can("tag_rules.manage")
+const canManageAnyRules = canManageTags || canManageTagRules
+if (!canManageTags && canManageTagRules) ruleType.value = "archive_entry_text"
+const sourcesById = computed(() => new Map(sources.value.map(source => [source.id, source.name])))
+const tagRules = computed<RuleListItem[]>(() => [
+  ...rules.value.map(rule => ({
+    id: rule.id,
+    type: "folder_path" as const,
+    tagId: rule.tag_id,
+    tagName: rule.tag_name,
+    summary: `${sourcesById.value.get(rule.library_source_id) ?? "Source"} · ${rule.relative_path}${rule.recursive ? " · includes subfolders" : ""}`,
+  })),
+  ...folderNameRules.value.map(rule => ({
+    id: rule.id,
+    type: "folder_name_regex" as const,
+    tagId: rule.tag_id,
+    tagName: rule.tag_name,
+    summary: rule.pattern,
+    enabled: rule.enabled,
+    matchCount: rule.match_count,
+  })),
+  ...automaticRules.value.map(rule => ({
+    id: rule.id,
+    type: "archive_entry_text" as const,
+    tagId: rule.tag_id,
+    tagName: rule.tag_name,
+    summary: rule.pattern,
+    enabled: rule.enabled,
+    matchCount: rule.match_count,
+  })),
+])
 
 async function load() {
   const [loadedTags, loadedSources, loadedRules, loadedAutomaticRules, loadedFolderNameRules] = await Promise.all([
@@ -78,36 +125,53 @@ async function load() {
   automaticRules.value = loadedAutomaticRules
   folderNameRules.value = loadedFolderNameRules
 }
-async function previewFolderNameRule() {
-  folderNameError.value = ""
+function setRuleType(type: RuleType) {
+  ruleType.value = type
+  folderNamePreview.value = []
+  ruleError.value = ""
+}
+async function previewFolderNameRule(pattern = rulePattern.value) {
+  ruleError.value = ""
   folderNamePreview.value = []
   try {
     folderNamePreview.value = await apiRequest<FolderNamePreview[]>("/api/admin/folder-name-tag-rules/preview", {
-      method: "POST", body: JSON.stringify({ pattern: folderNamePattern.value, limit: 25 }),
+      method: "POST", body: JSON.stringify({ pattern, limit: 25 }),
     })
   } catch (error) {
-    folderNameError.value = error instanceof Error ? error.message : "Unable to preview rule"
+    ruleError.value = error instanceof Error ? error.message : "Unable to preview rule"
   }
 }
-async function createFolderNameRule() {
-  folderNameWorking.value = true
-  folderNameError.value = ""
+async function createTagRule() {
+  ruleWorking.value = true
+  ruleError.value = ""
+  ruleFeedback.value = ""
   try {
-    await apiRequest("/api/admin/folder-name-tag-rules", {
-      method: "POST", body: JSON.stringify({ tag_id: Number(folderNameTagId.value), pattern: folderNamePattern.value, enabled: true }),
-    })
-    folderNamePattern.value = ""
+    if (ruleType.value === "folder_path") {
+      await apiRequest("/api/admin/folder-tag-rules", {
+        method: "POST",
+        body: JSON.stringify({ library_source_id: Number(sourceId.value), relative_path: path.value, tag_id: Number(ruleTagId.value), recursive: recursive.value }),
+      })
+    } else if (ruleType.value === "folder_name_regex") {
+      await apiRequest("/api/admin/folder-name-tag-rules", {
+        method: "POST",
+        body: JSON.stringify({ tag_id: Number(ruleTagId.value), pattern: rulePattern.value, enabled: true }),
+      })
+    } else {
+      await apiRequest("/api/admin/automatic-tag-rules", {
+        method: "POST",
+        body: JSON.stringify({ tag_id: Number(ruleTagId.value), pattern: rulePattern.value, enabled: true }),
+      })
+    }
+    path.value = ""
+    rulePattern.value = ""
     folderNamePreview.value = []
+    ruleFeedback.value = "Rule saved."
     await load()
   } catch (error) {
-    folderNameError.value = error instanceof Error ? error.message : "Unable to save rule"
+    ruleError.value = error instanceof Error ? error.message : "Unable to save rule"
   } finally {
-    folderNameWorking.value = false
+    ruleWorking.value = false
   }
-}
-async function deleteFolderNameRule(id: number) {
-  await apiRequest(`/api/admin/folder-name-tag-rules/${id}`, { method: "DELETE" })
-  await load()
 }
 async function createTag() {
   tagWorking.value = true
@@ -181,91 +245,85 @@ async function deleteTag(id: number) {
     tagWorking.value = false
   }
 }
-async function createRule() {
-  await apiRequest("/api/admin/folder-tag-rules", { method: "POST", body: JSON.stringify({
-    library_source_id: Number(sourceId.value), relative_path: path.value,
-    tag_id: Number(tagId.value), recursive: recursive.value,
-  }) })
-  path.value = ""
-  await load()
+function ruleTypeLabel(type: RuleType) {
+  return { folder_path: "Folder path", folder_name_regex: "Folder name regex", archive_entry_text: "Archive entry text" }[type]
 }
-async function deleteRule(id: number) {
-  await apiRequest(`/api/admin/folder-tag-rules/${id}`, { method: "DELETE" })
-  await load()
+function startEditingRule(item: RuleListItem) {
+  if (item.type === "folder_path") {
+    const rule = rules.value.find(candidate => candidate.id === item.id)
+    if (!rule) return
+    editingRule.value = { id: rule.id, type: item.type, tagId: rule.tag_id, sourceId: rule.library_source_id, relativePath: rule.relative_path, recursive: rule.recursive }
+  } else if (item.type === "folder_name_regex") {
+    const rule = folderNameRules.value.find(candidate => candidate.id === item.id)
+    if (!rule) return
+    editingRule.value = { id: rule.id, type: item.type, tagId: rule.tag_id, pattern: rule.pattern, enabled: rule.enabled }
+  } else {
+    const rule = automaticRules.value.find(candidate => candidate.id === item.id)
+    if (!rule) return
+    editingRule.value = { id: rule.id, type: item.type, tagId: rule.tag_id, pattern: rule.pattern, enabled: rule.enabled }
+  }
+  folderNamePreview.value = []
+  ruleError.value = ""
 }
-async function createAutomaticRule() {
-  automaticWorking.value = true
-  automaticFeedback.value = ""
-  automaticError.value = ""
+async function saveEditingRule() {
+  const rule = editingRule.value
+  if (!rule) return
+  ruleWorking.value = true
+  ruleError.value = ""
+  ruleFeedback.value = ""
   try {
-    await apiRequest("/api/admin/automatic-tag-rules", {
-      method: "POST",
-      body: JSON.stringify({
-        tag_id: Number(automaticTagId.value),
-        pattern: automaticPattern.value,
-        enabled: true,
-      }),
-    })
-    automaticPattern.value = ""
-    automaticFeedback.value = "Rule saved and existing models re-evaluated."
+    if (rule.type === "folder_path") {
+      await apiRequest(`/api/admin/folder-tag-rules/${rule.id}`, { method: "PUT", body: JSON.stringify({ library_source_id: Number(rule.sourceId), relative_path: rule.relativePath, tag_id: Number(rule.tagId), recursive: rule.recursive }) })
+    } else if (rule.type === "folder_name_regex") {
+      await apiRequest(`/api/admin/folder-name-tag-rules/${rule.id}`, { method: "PUT", body: JSON.stringify({ tag_id: Number(rule.tagId), pattern: rule.pattern, enabled: rule.enabled }) })
+    } else {
+      await apiRequest(`/api/admin/automatic-tag-rules/${rule.id}`, { method: "PUT", body: JSON.stringify({ tag_id: Number(rule.tagId), pattern: rule.pattern, enabled: rule.enabled }) })
+    }
+    editingRule.value = null
+    folderNamePreview.value = []
+    ruleFeedback.value = "Rule updated."
     await load()
   } catch (error) {
-    automaticError.value = error instanceof Error ? error.message : "Unable to save rule"
+    ruleError.value = error instanceof Error ? error.message : "Unable to update rule"
   } finally {
-    automaticWorking.value = false
+    ruleWorking.value = false
   }
 }
-async function saveAutomaticRule(rule: AutomaticRule) {
-  automaticWorking.value = true
-  automaticFeedback.value = ""
-  automaticError.value = ""
+async function deleteTagRule(item: RuleListItem) {
+  const endpoint = item.type === "folder_path"
+    ? `/api/admin/folder-tag-rules/${item.id}`
+    : item.type === "folder_name_regex"
+      ? `/api/admin/folder-name-tag-rules/${item.id}`
+      : `/api/admin/automatic-tag-rules/${item.id}`
+  if (!confirm(`Delete this ${ruleTypeLabel(item.type).toLowerCase()} rule?`)) return
+  ruleWorking.value = true
+  ruleError.value = ""
   try {
-    await apiRequest(`/api/admin/automatic-tag-rules/${rule.id}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        tag_id: rule.tag_id,
-        pattern: rule.pattern,
-        enabled: rule.enabled,
-      }),
-    })
-    automaticFeedback.value = "Rule updated and existing models re-evaluated."
+    await apiRequest(endpoint, { method: "DELETE" })
+    if (editingRule.value?.id === item.id && editingRule.value.type === item.type) editingRule.value = null
+    ruleFeedback.value = "Rule deleted."
     await load()
   } catch (error) {
-    automaticError.value = error instanceof Error ? error.message : "Unable to update rule"
+    ruleError.value = error instanceof Error ? error.message : "Unable to delete rule"
   } finally {
-    automaticWorking.value = false
-  }
-}
-async function deleteAutomaticRule(rule: AutomaticRule) {
-  if (!confirm(`Delete the automatic rule “${rule.pattern}”?`)) return
-  automaticWorking.value = true
-  automaticFeedback.value = ""
-  automaticError.value = ""
-  try {
-    await apiRequest(`/api/admin/automatic-tag-rules/${rule.id}`, { method: "DELETE" })
-    automaticFeedback.value = "Rule deleted and derived tags re-evaluated."
-    await load()
-  } catch (error) {
-    automaticError.value = error instanceof Error ? error.message : "Unable to delete rule"
-  } finally {
-    automaticWorking.value = false
+    ruleWorking.value = false
   }
 }
 async function reevaluateAutomaticRules() {
-  automaticWorking.value = true
-  automaticFeedback.value = ""
-  automaticError.value = ""
+  ruleWorking.value = true
+  ruleFeedback.value = ""
+  ruleError.value = ""
   try {
     const result = await apiRequest<AutomaticEvaluation>(
       "/api/admin/automatic-tag-rules/re-evaluate",
       { method: "POST" },
     )
-    automaticFeedback.value = `${result.models_evaluated} models evaluated · ${result.matches} matches · ${result.assignments_added} tags added · ${result.assignments_removed} tags removed.`
+    ruleFeedback.value = `${result.models_evaluated} models evaluated · ${result.matches} matches · ${result.assignments_added} tags added · ${result.assignments_removed} tags removed.`
     await load()
   } catch (error) {
-    automaticError.value = error instanceof Error ? error.message : "Unable to re-evaluate rules"
+    ruleError.value = error instanceof Error ? error.message : "Unable to re-evaluate archive entry text rules"
   } finally {
-    automaticWorking.value = false
+    ruleWorking.value = false
   }
 }
 onMounted(load)
@@ -355,118 +413,170 @@ onMounted(load)
           </div>
         </div>
       </div>
-      <div v-if="canManageTags" class="panel">
-        <h2>Folder tag rules</h2>
-        <form class="source-form" @submit.prevent="createRule">
-          <label><span>Source</span><select v-model="sourceId" required><option value="">Select…</option><option v-for="source in sources" :key="source.id" :value="String(source.id)">{{ source.name }}</option></select></label>
-          <label><span>Relative folder</span><input v-model="path" required placeholder="Franchise/Series"></label>
-          <label><span>Tag</span><select v-model="tagId" required><option value="">Select…</option><option v-for="tag in tags" :key="tag.id" :value="String(tag.id)">{{ tag.name }}</option></select></label>
-          <label><input v-model="recursive" type="checkbox"> Include subfolders</label>
-          <button class="primary-button">Add rule</button>
-        </form>
-        <div class="source-list">
-          <div v-for="rule in rules" :key="rule.id" class="source-row">
-            <span>{{ rule.relative_path }} → {{ rule.tag_name }}{{ rule.recursive ? " (recursive)" : "" }}</span>
-            <button class="danger-button" @click="deleteRule(rule.id)">Delete</button>
-          </div>
-        </div>
-      </div>
-      <div v-if="canManageTagRules" class="panel automatic-tag-panel">
+      <div v-if="canManageAnyRules" class="panel tag-rules-panel">
         <div class="panel-heading">
           <div>
-            <h2>Automatic tag rules</h2>
-            <p class="panel-copy">
-              Match text anywhere in an archive entry name or its full path. Matching is
-              case-insensitive and never removes manually assigned tags.
-            </p>
+            <h2>Tag rules</h2>
+            <p class="panel-copy">Create and maintain path, folder-name, and archive-entry tagging rules in one place.</p>
           </div>
           <button
+            v-if="canManageTagRules"
             class="secondary-button"
             type="button"
-            :disabled="automaticWorking"
+            :disabled="ruleWorking"
             @click="reevaluateAutomaticRules"
-          >Re-evaluate all models</button>
+          >Re-evaluate archive entry text rules</button>
         </div>
+        <p v-if="ruleFeedback" class="success-panel" aria-live="polite">{{ ruleFeedback }}</p>
+        <p v-if="ruleError" class="form-error" role="alert">{{ ruleError }}</p>
 
-        <p v-if="automaticFeedback" class="success-panel" aria-live="polite">
-          {{ automaticFeedback }}
-        </p>
-        <p v-if="automaticError" class="form-error" role="alert">
-          {{ automaticError }}
-        </p>
-
-        <form class="source-form automatic-rule-form" @submit.prevent="createAutomaticRule">
+        <form class="source-form tag-rule-form" @submit.prevent="createTagRule">
           <label>
-            <span>Text to match</span>
-            <input v-model="automaticPattern" required maxlength="255" placeholder="Bust">
-          </label>
-          <label>
-            <span>Assign tag</span>
-            <select v-model="automaticTagId" required>
-              <option value="">Select a tag</option>
-              <option v-for="tag in tags" :key="tag.id" :value="String(tag.id)">
-                {{ tag.name }}
-              </option>
+            <span>Rule type</span>
+            <select :value="ruleType" @change="setRuleType(($event.target as HTMLSelectElement).value as RuleType)">
+              <option v-if="canManageTags" value="folder_path">Folder path</option>
+              <option v-if="canManageTagRules" value="folder_name_regex">Folder name regex</option>
+              <option v-if="canManageTagRules" value="archive_entry_text">Archive entry text</option>
             </select>
           </label>
-          <button class="primary-button" :disabled="automaticWorking">Add rule</button>
-        </form>
-
-        <div class="source-list automatic-rule-list">
-          <p v-if="!automaticRules.length" class="panel-copy">No automatic rules configured.</p>
-          <div v-for="rule in automaticRules" :key="rule.id" class="automatic-rule-row">
-            <label>
-              <span>Text to match</span>
-              <input v-model="rule.pattern" maxlength="255" required>
-            </label>
-            <label>
-              <span>Tag</span>
-              <select v-model="rule.tag_id">
-                <option v-for="tag in tags" :key="tag.id" :value="tag.id">
-                  {{ tag.name }}
-                </option>
-              </select>
-            </label>
-            <label class="automatic-rule-enabled">
-              <input v-model="rule.enabled" type="checkbox">
-              Enabled
-            </label>
-            <span class="automatic-rule-matches">{{ rule.match_count }} models matched</span>
-            <div class="row-actions">
-              <button
-                class="secondary-button"
-                type="button"
-                :disabled="automaticWorking"
-                @click="saveAutomaticRule(rule)"
-              >Save</button>
-              <button
-                class="danger-button"
-                type="button"
-                :disabled="automaticWorking"
-                @click="deleteAutomaticRule(rule)"
-              >Delete</button>
-            </div>
+          <p v-if="ruleType === 'folder_path'" class="rule-help">Match an exact folder or a folder structure, optionally including its subfolders.</p>
+          <p v-else-if="ruleType === 'folder_name_regex'" class="rule-help">Match individual folder names with case-insensitive RE2. Example: <code>_p[12]$</code>.</p>
+          <p v-else class="rule-help">Match text in file names or paths inside an archive. Matching is case-insensitive.</p>
+          <div class="tag-rule-fields">
+            <template v-if="ruleType === 'folder_path'">
+              <label><span>Source</span><select v-model="sourceId" required><option value="">Select a source</option><option v-for="source in sources" :key="source.id" :value="String(source.id)">{{ source.name }}</option></select></label>
+              <label><span>Relative folder</span><input v-model="path" required placeholder="Franchise/Series"></label>
+              <label class="inline-check"><input v-model="recursive" type="checkbox"> Include subfolders</label>
+            </template>
+            <label v-else><span>{{ ruleType === 'folder_name_regex' ? 'Folder name regex' : 'Archive entry text' }}</span><input v-model="rulePattern" required maxlength="255" :placeholder="ruleType === 'folder_name_regex' ? '_p[12]$' : 'Bust'"></label>
+            <label><span>Assign tag</span><select v-model="ruleTagId" required><option value="">Select a tag</option><option v-for="tag in tags" :key="tag.id" :value="String(tag.id)">{{ tag.name }}</option></select></label>
           </div>
-        </div>
-      </div>
-      <div v-if="canManageTagRules" class="panel automatic-tag-panel">
-        <h2>Folder name rules</h2>
-        <p class="panel-copy">
-          Match each individual folder name in a model path with a case-insensitive RE2 regular expression. Example: <code>_p[12]$</code>.
-        </p>
-        <p v-if="folderNameError" class="form-error" role="alert">{{ folderNameError }}</p>
-        <form class="source-form automatic-rule-form" @submit.prevent="createFolderNameRule">
-          <label><span>Folder name regex</span><input v-model="folderNamePattern" required maxlength="255" placeholder="_p[12]$"></label>
-          <label><span>Assign tag</span><select v-model="folderNameTagId" required><option value="">Select a tag</option><option v-for="tag in tags" :key="tag.id" :value="String(tag.id)">{{ tag.name }}</option></select></label>
-          <div class="row-actions"><button class="secondary-button" type="button" @click="previewFolderNameRule">Preview</button><button class="primary-button" :disabled="folderNameWorking">Add rule</button></div>
+          <div class="row-actions">
+            <button v-if="ruleType === 'folder_name_regex'" class="secondary-button" type="button" @click="previewFolderNameRule()">Preview</button>
+            <button class="primary-button" :disabled="ruleWorking">Add rule</button>
+          </div>
         </form>
-        <div v-if="folderNamePreview.length" class="source-list">
+        <div v-if="folderNamePreview.length" class="source-list rule-preview" aria-live="polite">
           <div v-for="match in folderNamePreview" :key="`${match.model_name}:${match.relative_path}`" class="source-row"><span>{{ match.model_name }} · {{ match.relative_path }}</span></div>
         </div>
-        <div class="source-list automatic-rule-list">
-          <div v-for="rule in folderNameRules" :key="rule.id" class="automatic-rule-row"><span>{{ rule.pattern }} → {{ rule.tag_name }}</span><span class="automatic-rule-matches">{{ rule.match_count }} models matched</span><button class="danger-button" type="button" @click="deleteFolderNameRule(rule.id)">Delete</button></div>
+
+        <div class="source-list tag-rule-list">
+          <p v-if="!tagRules.length" class="panel-copy">No tag rules configured.</p>
+          <article v-for="item in tagRules" :key="`${item.type}:${item.id}`" class="tag-rule-row">
+            <template v-if="editingRule?.id === item.id && editingRule.type === item.type">
+              <form class="source-form tag-rule-edit-form" @submit.prevent="saveEditingRule">
+                <span class="rule-type-badge" :class="`rule-type-${item.type}`">{{ ruleTypeLabel(item.type) }}</span>
+                <template v-if="editingRule.type === 'folder_path'">
+                  <label><span>Source</span><select v-model="editingRule.sourceId" required><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></label>
+                  <label><span>Relative folder</span><input v-model="editingRule.relativePath" required></label>
+                  <label class="inline-check"><input v-model="editingRule.recursive" type="checkbox"> Include subfolders</label>
+                </template>
+                <template v-else>
+                  <label><span>{{ editingRule.type === 'folder_name_regex' ? 'Folder name regex' : 'Archive entry text' }}</span><input v-model="editingRule.pattern" required maxlength="255"></label>
+                  <label class="inline-check"><input v-model="editingRule.enabled" type="checkbox"> Enabled</label>
+                </template>
+                <label><span>Assign tag</span><select v-model="editingRule.tagId" required><option v-for="tag in tags" :key="tag.id" :value="tag.id">{{ tag.name }}</option></select></label>
+                <div class="row-actions"><button v-if="editingRule.type === 'folder_name_regex'" class="secondary-button" type="button" @click="previewFolderNameRule(editingRule.pattern)">Preview</button><button class="primary-button" :disabled="ruleWorking">Save</button><button class="secondary-button" type="button" :disabled="ruleWorking" @click="editingRule = null">Cancel</button></div>
+              </form>
+            </template>
+            <template v-else>
+              <span class="rule-type-badge" :class="`rule-type-${item.type}`">{{ ruleTypeLabel(item.type) }}</span>
+              <div class="tag-rule-summary"><strong>{{ item.summary }}</strong><small>Assigns {{ item.tagName }}<template v-if="item.matchCount !== undefined"> · {{ item.matchCount }} models matched</template><template v-if="item.enabled === false"> · Disabled</template></small></div>
+              <div class="row-actions"><button class="secondary-button" type="button" :disabled="ruleWorking" @click="startEditingRule(item)">Edit</button><button class="danger-button" type="button" :disabled="ruleWorking" @click="deleteTagRule(item)">Delete</button></div>
+            </template>
+          </article>
         </div>
       </div>
     </section>
   </main>
 </template>
+
+<style scoped>
+.tag-rules-panel {
+  grid-column: 1 / -1;
+}
+
+.tag-rule-form,
+.tag-rule-edit-form {
+  gap: 1rem;
+}
+
+.rule-help {
+  margin: 0;
+  color: #a9b8cc;
+}
+
+.tag-rule-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: end;
+}
+
+.tag-rule-list {
+  margin-top: 1.25rem;
+}
+
+.tag-rule-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem 0;
+  border-top: 1px solid #28364b;
+}
+
+.tag-rule-summary {
+  display: grid;
+  gap: .25rem;
+  min-width: 0;
+}
+
+.tag-rule-summary strong,
+.tag-rule-summary small {
+  overflow-wrap: anywhere;
+}
+
+.tag-rule-summary small {
+  color: #a9b8cc;
+}
+
+.rule-type-badge {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid #40608a;
+  border-radius: 999px;
+  padding: .2rem .5rem;
+  color: #c7dcff;
+  font-size: .78rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.rule-type-folder_name_regex { border-color: #7c5bb3; color: #dcc8ff; }
+.rule-type-archive_entry_text { border-color: #277a75; color: #a7f3d0; }
+
+.tag-rule-edit-form {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: auto repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+}
+
+.rule-preview {
+  margin-top: 1rem;
+}
+
+@media (max-width: 800px) {
+  .tag-rule-fields,
+  .tag-rule-edit-form {
+    grid-template-columns: 1fr;
+  }
+
+  .tag-rule-row {
+    grid-template-columns: 1fr;
+    gap: .75rem;
+  }
+}
+</style>
