@@ -122,7 +122,7 @@ def _copy_legacy_rules() -> None:
     connection = op.get_bind()
     op.execute(
         """
-        INSERT INTO tag_assignment_rules
+        INSERT OR IGNORE INTO tag_assignment_rules
             (tag_id, library_source_id, match_mode, path_value, path_relation, enabled,
              legacy_kind, legacy_rule_id, created_at, updated_at)
         SELECT tag_id, library_source_id, 'path_relation', relative_path,
@@ -133,7 +133,7 @@ def _copy_legacy_rules() -> None:
     )
     op.execute(
         """
-        INSERT INTO tag_assignment_rule_targets
+        INSERT OR IGNORE INTO tag_assignment_rule_targets
             (tag_assignment_rule_id, target_type, folder_segment)
         SELECT id, 'model_relative_path', 0
         FROM tag_assignment_rules
@@ -142,7 +142,7 @@ def _copy_legacy_rules() -> None:
     )
     op.execute(
         """
-        INSERT INTO tag_assignment_rules
+        INSERT OR IGNORE INTO tag_assignment_rules
             (tag_id, library_source_id, match_mode, pattern, pattern_key, enabled,
              legacy_kind, legacy_rule_id, created_at, updated_at)
         SELECT tag_id, NULL, 'contains', pattern, pattern_key, enabled,
@@ -154,7 +154,7 @@ def _copy_legacy_rules() -> None:
         connection.execute(
             sa.text(
                 """
-                INSERT INTO tag_assignment_rule_targets
+                INSERT OR IGNORE INTO tag_assignment_rule_targets
                     (tag_assignment_rule_id, target_type, folder_segment)
                 SELECT id, :target_type, 0
                 FROM tag_assignment_rules
@@ -165,7 +165,7 @@ def _copy_legacy_rules() -> None:
         )
     op.execute(
         """
-        INSERT INTO tag_assignment_rule_matches (tag_assignment_rule_id, model_id, created_at)
+        INSERT OR IGNORE INTO tag_assignment_rule_matches (tag_assignment_rule_id, model_id, created_at)
         SELECT canonical.id, legacy.model_id, legacy.created_at
         FROM automatic_tag_matches AS legacy
         JOIN tag_assignment_rules AS canonical
@@ -182,7 +182,7 @@ def _copy_legacy_rules() -> None:
         return
     op.execute(
         """
-        INSERT INTO tag_assignment_rules
+        INSERT OR IGNORE INTO tag_assignment_rules
             (tag_id, library_source_id, match_mode, pattern, pattern_key, enabled,
              legacy_kind, legacy_rule_id, created_at, updated_at)
         SELECT tag_id, NULL, 'regex', pattern, pattern_key, enabled,
@@ -192,7 +192,7 @@ def _copy_legacy_rules() -> None:
     )
     op.execute(
         """
-        INSERT INTO tag_assignment_rule_targets
+        INSERT OR IGNORE INTO tag_assignment_rule_targets
             (tag_assignment_rule_id, target_type, folder_segment)
         SELECT id, 'model_relative_path', 1
         FROM tag_assignment_rules
@@ -202,7 +202,7 @@ def _copy_legacy_rules() -> None:
     if "folder_name_regex_tag_matches" in inspector.get_table_names():
         op.execute(
             """
-            INSERT INTO tag_assignment_rule_matches
+            INSERT OR IGNORE INTO tag_assignment_rule_matches
                 (tag_assignment_rule_id, model_id, created_at)
             SELECT canonical.id, legacy.model_id, legacy.created_at
             FROM folder_name_regex_tag_matches AS legacy

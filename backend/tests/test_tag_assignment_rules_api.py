@@ -18,7 +18,13 @@ from meshive.models.audit import AuditEvent
 from meshive.models.authorization import Role, RolePermission
 from meshive.models.catalog import Archive, ArchiveEntry, LibraryModel
 from meshive.models.library_source import LibrarySource
-from meshive.models.tag import ModelTag, Tag, TagAssignmentRule, TagAssignmentRuleMatch
+from meshive.models.tag import (
+    ModelTag,
+    Tag,
+    TagAssignmentRule,
+    TagAssignmentRuleMatch,
+    TagAssignmentRuleTarget,
+)
 from meshive.models.user import User
 from meshive.schemas.tag import TagAssignmentRulePreview, TagAssignmentRuleWrite
 
@@ -134,6 +140,59 @@ def test_assignment_rule_api_preview_permissions_scope_and_no_persistence() -> N
             assert session.scalar(select(TagAssignmentRuleMatch)) is None
             assert session.scalar(select(ModelTag).where(ModelTag.is_assignment_rule.is_(True))) is None
             assert session.scalar(select(AuditEvent)) is None
+    finally:
+        _teardown_rule_test_database(engine, actor)
+
+
+def test_legacy_automatic_rule_is_listed_but_remains_read_only() -> None:
+    engine, sessions, actor, tag_ids, model_ids = _rule_test_database()
+    try:
+        with sessions() as session:
+            legacy = TagAssignmentRule(
+                tag_id=tag_ids["legacy"],
+                match_mode="contains",
+                pattern="chitu",
+                pattern_key="chitu",
+                enabled=True,
+                legacy_kind="automatic_tag_rule",
+                legacy_rule_id=42,
+            )
+            session.add(legacy)
+            session.flush()
+            session.add(
+                TagAssignmentRuleTarget(
+                    tag_assignment_rule_id=legacy.id,
+                    target_type="archive_entry_path",
+                )
+            )
+            session.add(TagAssignmentRuleMatch(tag_assignment_rule_id=legacy.id, model_id=model_ids["a2"]))
+            session.commit()
+
+            listed = list_assignment_rules(tag_ids["legacy"], actor["value"], session)
+            assert len(listed) == 1
+            assert listed[0].legacy_kind == "automatic_tag_rule"
+            with pytest.raises(HTTPException) as update_error:
+                update_assignment_rule(
+                    legacy.id,
+                    TagAssignmentRuleWrite(
+                        match_mode="contains",
+                        pattern="other",
+                        targets=[{"target_type": "archive_entry_path"}],
+                    ),
+                    actor["value"],
+                    session,
+                )
+            assert update_error.value.status_code == 404
+            with pytest.raises(HTTPException) as delete_error:
+                delete_assignment_rule(legacy.id, actor["value"], session)
+            assert delete_error.value.status_code == 404
+            assignment = session.scalar(
+                select(ModelTag).where(
+                    ModelTag.model_id == model_ids["a2"],
+                    ModelTag.tag_id == tag_ids["legacy"],
+                )
+            )
+            assert assignment is not None and assignment.is_automatic
     finally:
         _teardown_rule_test_database(engine, actor)
 

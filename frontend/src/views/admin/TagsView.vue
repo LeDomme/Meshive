@@ -1,411 +1,44 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue"
+import { computed, onMounted, reactive, ref, watch } from "vue"
 import { apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
 import TagChip from "../../components/TagChip.vue"
 import { useAuthStore } from "../../stores/auth"
 
-interface Tag { id: number; name: string; color: string | null; description: string | null }
-interface Source { id: number; name: string }
-interface Rule { id: number; library_source_id: number; relative_path: string; tag_id: number; recursive: boolean; tag_name: string }
-interface AutomaticRule {
-  id: number
-  tag_id: number
-  tag_name: string
-  pattern: string
-  enabled: boolean
-  match_count: number
-  created_at: string
-  updated_at: string
-}
-interface AutomaticEvaluation {
-  models_evaluated: number
-  matches: number
-  assignments_added: number
-  assignments_removed: number
-}
-
-const tags = ref<Tag[]>([])
-const sources = ref<Source[]>([])
-const rules = ref<Rule[]>([])
-const automaticRules = ref<AutomaticRule[]>([])
-const name = ref("")
-const color = ref("#5eead4")
-const description = ref("")
-const editingTagId = ref<number | null>(null)
-const editTagName = ref("")
-const editTagColor = ref("#5eead4")
-const editTagDescription = ref("")
-const tagFeedback = ref("")
-const tagError = ref("")
-const tagWorking = ref(false)
-const sourceId = ref("")
-const tagId = ref("")
-const path = ref("")
-const recursive = ref(true)
-const automaticTagId = ref("")
-const automaticPattern = ref("")
-const automaticFeedback = ref("")
-const automaticError = ref("")
-const automaticWorking = ref(false)
-const auth = useAuthStore()
-const canManageTags = auth.can("tags.manage")
-const canManageTagRules = auth.can("tag_rules.manage")
-
-async function load() {
-  const [loadedTags, loadedSources, loadedRules, loadedAutomaticRules] = await Promise.all([
-    apiRequest<Tag[]>("/api/admin/tags"),
-    canManageTags ? apiRequest<Source[]>("/api/admin/tags/library-sources") : Promise.resolve([]),
-    canManageTags ? apiRequest<Rule[]>("/api/admin/folder-tag-rules") : Promise.resolve([]),
-    canManageTagRules
-      ? apiRequest<AutomaticRule[]>("/api/admin/automatic-tag-rules")
-      : Promise.resolve([]),
-  ])
-  tags.value = loadedTags
-  sources.value = loadedSources
-  rules.value = loadedRules
-  automaticRules.value = loadedAutomaticRules
-}
-async function createTag() {
-  tagWorking.value = true
-  tagFeedback.value = ""
-  tagError.value = ""
-  try {
-    await apiRequest("/api/admin/tags", {
-      method: "POST",
-      body: JSON.stringify({
-        name: name.value,
-        color: color.value,
-        description: description.value || null,
-      }),
-    })
-    name.value = ""
-    description.value = ""
-    tagFeedback.value = "Tag created."
-    await load()
-  } catch (error) {
-    tagError.value = error instanceof Error ? error.message : "Unable to create tag"
-  } finally {
-    tagWorking.value = false
-  }
-}
-function editTag(tag: Tag) {
-  editingTagId.value = tag.id
-  editTagName.value = tag.name
-  editTagColor.value = tag.color || "#5eead4"
-  editTagDescription.value = tag.description || ""
-  tagFeedback.value = ""
-  tagError.value = ""
-}
-function cancelTagEdit() {
-  editingTagId.value = null
-}
-async function saveTag(tagId: number) {
-  tagWorking.value = true
-  tagFeedback.value = ""
-  tagError.value = ""
-  try {
-    await apiRequest(`/api/admin/tags/${tagId}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        name: editTagName.value,
-        color: editTagColor.value,
-        description: editTagDescription.value || null,
-      }),
-    })
-    editingTagId.value = null
-    tagFeedback.value = "Tag updated. Existing assignments and rules were preserved."
-    await load()
-  } catch (error) {
-    tagError.value = error instanceof Error ? error.message : "Unable to update tag"
-  } finally {
-    tagWorking.value = false
-  }
-}
-async function deleteTag(id: number) {
-  if (!confirm("Delete this tag and all its assignments?")) return
-  tagWorking.value = true
-  tagFeedback.value = ""
-  tagError.value = ""
-  try {
-    await apiRequest(`/api/admin/tags/${id}`, { method: "DELETE" })
-    if (editingTagId.value === id) editingTagId.value = null
-    tagFeedback.value = "Tag and its assignments were deleted."
-    await load()
-  } catch (error) {
-    tagError.value = error instanceof Error ? error.message : "Unable to delete tag"
-  } finally {
-    tagWorking.value = false
-  }
-}
-async function createRule() {
-  await apiRequest("/api/admin/folder-tag-rules", { method: "POST", body: JSON.stringify({
-    library_source_id: Number(sourceId.value), relative_path: path.value,
-    tag_id: Number(tagId.value), recursive: recursive.value,
-  }) })
-  path.value = ""
-  await load()
-}
-async function deleteRule(id: number) {
-  await apiRequest(`/api/admin/folder-tag-rules/${id}`, { method: "DELETE" })
-  await load()
-}
-async function createAutomaticRule() {
-  automaticWorking.value = true
-  automaticFeedback.value = ""
-  automaticError.value = ""
-  try {
-    await apiRequest("/api/admin/automatic-tag-rules", {
-      method: "POST",
-      body: JSON.stringify({
-        tag_id: Number(automaticTagId.value),
-        pattern: automaticPattern.value,
-        enabled: true,
-      }),
-    })
-    automaticPattern.value = ""
-    automaticFeedback.value = "Rule saved and existing models re-evaluated."
-    await load()
-  } catch (error) {
-    automaticError.value = error instanceof Error ? error.message : "Unable to save rule"
-  } finally {
-    automaticWorking.value = false
-  }
-}
-async function saveAutomaticRule(rule: AutomaticRule) {
-  automaticWorking.value = true
-  automaticFeedback.value = ""
-  automaticError.value = ""
-  try {
-    await apiRequest(`/api/admin/automatic-tag-rules/${rule.id}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        tag_id: rule.tag_id,
-        pattern: rule.pattern,
-        enabled: rule.enabled,
-      }),
-    })
-    automaticFeedback.value = "Rule updated and existing models re-evaluated."
-    await load()
-  } catch (error) {
-    automaticError.value = error instanceof Error ? error.message : "Unable to update rule"
-  } finally {
-    automaticWorking.value = false
-  }
-}
-async function deleteAutomaticRule(rule: AutomaticRule) {
-  if (!confirm(`Delete the automatic rule “${rule.pattern}”?`)) return
-  automaticWorking.value = true
-  automaticFeedback.value = ""
-  automaticError.value = ""
-  try {
-    await apiRequest(`/api/admin/automatic-tag-rules/${rule.id}`, { method: "DELETE" })
-    automaticFeedback.value = "Rule deleted and derived tags re-evaluated."
-    await load()
-  } catch (error) {
-    automaticError.value = error instanceof Error ? error.message : "Unable to delete rule"
-  } finally {
-    automaticWorking.value = false
-  }
-}
-async function reevaluateAutomaticRules() {
-  automaticWorking.value = true
-  automaticFeedback.value = ""
-  automaticError.value = ""
-  try {
-    const result = await apiRequest<AutomaticEvaluation>(
-      "/api/admin/automatic-tag-rules/re-evaluate",
-      { method: "POST" },
-    )
-    automaticFeedback.value = `${result.models_evaluated} models evaluated · ${result.matches} matches · ${result.assignments_added} tags added · ${result.assignments_removed} tags removed.`
-    await load()
-  } catch (error) {
-    automaticError.value = error instanceof Error ? error.message : "Unable to re-evaluate rules"
-  } finally {
-    automaticWorking.value = false
-  }
-}
-onMounted(load)
+interface Tag { id:number; name:string; color:string|null; description:string|null }
+interface Source { id:number; name:string }
+interface Target { target_type:string; folder_segment:boolean }
+interface Rule { id:number; library_source_id:number|null; legacy_kind:string|null; match_mode:"contains"|"regex"|"path_relation"; pattern:string|null; path_value:string|null; path_relation:"direct_child"|"self_or_descendant"|null; enabled:boolean; targets:Target[]; match_count:number }
+interface Preview { model_name:string; relative_path:string }
+const auth=useAuthStore()
+const canTags=auth.can("tags.manage")
+const canRules=auth.can("tag_rules.manage") && Boolean(auth.user?.source_access.all_sources)
+const tags=ref<Tag[]>([]), sources=ref<Source[]>([]), selectedId=ref<number|null>(null), rules=ref<Rule[]>([]), busy=ref(false), error=ref(""), feedback=ref(""), preview=ref<Preview[]>([]), editingRule=ref<number|null>(null), editingTag=ref(false)
+const selected=computed(()=>tags.value.find(tag=>tag.id===selectedId.value)??null)
+const tagForm=reactive({name:"",color:"#5eead4",description:""})
+const ruleForm=reactive({match_mode:"contains" as Rule["match_mode"],pattern:"",path_value:"",path_relation:"self_or_descendant",library_source_id:"",enabled:true,targets:["archive_entry_path"] as string[],folder_segment:false})
+const textMode=computed(()=>ruleForm.match_mode!=="path_relation")
+function message(value:string){feedback.value=value;error.value=""}
+function select(id:number){selectedId.value=id; editingTag.value=false; preview.value=[]; loadRules()}
+async function loadRules(){rules.value=canRules&&selectedId.value?await apiRequest<Rule[]>(`/api/admin/tags/${selectedId.value}/assignment-rules`):[]}
+async function load(){tags.value=await apiRequest<Tag[]>("/api/admin/tags");if(!selected.value)selectedId.value=tags.value[0]?.id??null;if(canRules)sources.value=await apiRequest<Source[]>("/api/admin/tags/library-sources");await loadRules()}
+function startTagEdit(){if(!selected.value)return;Object.assign(tagForm,selected.value);editingTag.value=true}
+function resetRule(){Object.assign(ruleForm,{match_mode:"contains",pattern:"",path_value:"",path_relation:"self_or_descendant",library_source_id:"",enabled:true,targets:["archive_entry_path"],folder_segment:false});editingRule.value=null;preview.value=[]}
+function rulePayload(){return ruleForm.match_mode==="path_relation"?{match_mode:"path_relation",path_value:ruleForm.path_value,path_relation:ruleForm.path_relation,library_source_id:ruleForm.library_source_id?Number(ruleForm.library_source_id):null,enabled:ruleForm.enabled,targets:[{target_type:"model_relative_path",folder_segment:false}]}:{match_mode:ruleForm.match_mode,pattern:ruleForm.pattern,library_source_id:ruleForm.library_source_id?Number(ruleForm.library_source_id):null,enabled:ruleForm.enabled,targets:ruleForm.targets.map(target_type=>({target_type,folder_segment:target_type==="model_relative_path"&&ruleForm.folder_segment}))}}
+async function saveTag(){if(!canTags)return;busy.value=true;try{const method=editingTag.value?"PUT":"POST";const url=editingTag.value?`/api/admin/tags/${selectedId.value}`:"/api/admin/tags";const saved=await apiRequest<Tag>(url,{method,body:JSON.stringify({...tagForm,description:tagForm.description||null})});editingTag.value=false;if(method==="POST")selectedId.value=saved.id;await load();message(`Tag ${method==="POST"?"created":"updated"}.`)}catch(e){error.value=e instanceof Error?e.message:"Unable to save tag"}finally{busy.value=false}}
+async function deleteTag(){if(!selected.value||!confirm(`Delete ${selected.value.name}?`))return;await apiRequest(`/api/admin/tags/${selected.value.id}`,{method:"DELETE"});selectedId.value=null;await load();message("Tag deleted.")}
+async function saveRule(){if(!selectedId.value)return;busy.value=true;try{const url=editingRule.value?`/api/admin/tag-assignment-rules/${editingRule.value}`:`/api/admin/tags/${selectedId.value}/assignment-rules`;await apiRequest(url,{method:editingRule.value?"PUT":"POST",body:JSON.stringify(rulePayload())});resetRule();await loadRules();message("Assignment rule saved.")}catch(e){error.value=e instanceof Error?e.message:"Unable to save assignment rule"}finally{busy.value=false}}
+async function previewRule(){busy.value=true;try{preview.value=await apiRequest<Preview[]>("/api/admin/tag-assignment-rules/preview",{method:"POST",body:JSON.stringify({...rulePayload(),limit:25})})}catch(e){error.value=e instanceof Error?e.message:"Unable to preview rule"}finally{busy.value=false}}
+function editRule(rule:Rule){if(rule.legacy_kind){error.value="Legacy rules remain read-only until Phase 2C.";return}editingRule.value=rule.id;Object.assign(ruleForm,{match_mode:rule.match_mode,pattern:rule.pattern??"",path_value:rule.path_value??"",path_relation:rule.path_relation??"self_or_descendant",library_source_id:rule.library_source_id?String(rule.library_source_id):"",enabled:rule.enabled,targets:rule.targets.map(t=>t.target_type),folder_segment:rule.targets.some(t=>t.target_type==="model_relative_path"&&t.folder_segment)})}
+async function removeRule(rule:Rule){if(rule.legacy_kind){error.value="Legacy rules remain read-only until Phase 2C.";return}if(!confirm("Delete this assignment rule?"))return;await apiRequest(`/api/admin/tag-assignment-rules/${rule.id}`,{method:"DELETE"});await loadRules();message("Assignment rule deleted.")}
+async function reevaluate(rule:Rule){if(rule.legacy_kind){error.value="Legacy rules remain read-only until Phase 2C.";return}busy.value=true;try{await apiRequest(`/api/admin/tag-assignment-rules/${rule.id}/re-evaluate`,{method:"POST"});await loadRules();message("Assignment rule re-evaluated.")}finally{busy.value=false}}
+watch(()=>ruleForm.match_mode,()=>{if(ruleForm.match_mode==="path_relation")ruleForm.targets=["model_relative_path"]});onMounted(load)
 </script>
-
 <template>
-  <main class="admin-shell">
-    <AdminHeader title="Tags" />
-    <section class="admin-grid">
-      <div v-if="canManageTags" class="panel">
-        <h2>Tags</h2>
-        <p v-if="tagFeedback" class="success-panel" aria-live="polite">
-          {{ tagFeedback }}
-        </p>
-        <p v-if="tagError" class="form-error" role="alert">{{ tagError }}</p>
-        <form class="source-form" @submit.prevent="createTag">
-          <label><span>Name</span><input v-model="name" required></label>
-          <label><span>Colour</span><input v-model="color" type="color"></label>
-          <label>
-            <span>Description</span>
-            <textarea
-              v-model="description"
-              maxlength="1000"
-              rows="2"
-              placeholder="Optional description"
-            ></textarea>
-          </label>
-          <button class="primary-button" :disabled="tagWorking">Create tag</button>
-        </form>
-        <div class="source-list tag-admin-list">
-          <div v-for="tag in tags" :key="tag.id" class="tag-admin-item">
-            <form
-              v-if="editingTagId === tag.id"
-              class="source-form tag-edit-form"
-              @submit.prevent="saveTag(tag.id)"
-            >
-              <label>
-                <span>Name</span>
-                <input v-model="editTagName" required maxlength="80">
-              </label>
-              <label>
-                <span>Colour</span>
-                <input v-model="editTagColor" type="color">
-              </label>
-              <label class="tag-edit-description">
-                <span>Description</span>
-                <textarea
-                  v-model="editTagDescription"
-                  maxlength="1000"
-                  rows="2"
-                  placeholder="Optional description"
-                ></textarea>
-              </label>
-              <div class="row-actions tag-edit-actions">
-                <button class="primary-button" :disabled="tagWorking">Save changes</button>
-                <button
-                  class="secondary-button"
-                  type="button"
-                  :disabled="tagWorking"
-                  @click="cancelTagEdit"
-                >Cancel</button>
-              </div>
-            </form>
-            <div v-else class="source-row tag-admin-row">
-              <div class="tag-admin-summary">
-                <TagChip
-                  :color="tag.color"
-                  :description="tag.description"
-                >{{ tag.name }}</TagChip>
-                <small v-if="tag.description">{{ tag.description }}</small>
-              </div>
-              <div class="row-actions">
-                <button
-                  class="secondary-button"
-                  type="button"
-                  :disabled="tagWorking"
-                  @click="editTag(tag)"
-                >Edit</button>
-                <button
-                  class="danger-button"
-                  type="button"
-                  :disabled="tagWorking"
-                  @click="deleteTag(tag.id)"
-                >Delete</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div v-if="canManageTags" class="panel">
-        <h2>Folder tag rules</h2>
-        <form class="source-form" @submit.prevent="createRule">
-          <label><span>Source</span><select v-model="sourceId" required><option value="">Select…</option><option v-for="source in sources" :key="source.id" :value="String(source.id)">{{ source.name }}</option></select></label>
-          <label><span>Relative folder</span><input v-model="path" required placeholder="Franchise/Series"></label>
-          <label><span>Tag</span><select v-model="tagId" required><option value="">Select…</option><option v-for="tag in tags" :key="tag.id" :value="String(tag.id)">{{ tag.name }}</option></select></label>
-          <label><input v-model="recursive" type="checkbox"> Include subfolders</label>
-          <button class="primary-button">Add rule</button>
-        </form>
-        <div class="source-list">
-          <div v-for="rule in rules" :key="rule.id" class="source-row">
-            <span>{{ rule.relative_path }} → {{ rule.tag_name }}{{ rule.recursive ? " (recursive)" : "" }}</span>
-            <button class="danger-button" @click="deleteRule(rule.id)">Delete</button>
-          </div>
-        </div>
-      </div>
-      <div v-if="canManageTagRules" class="panel automatic-tag-panel">
-        <div class="panel-heading">
-          <div>
-            <h2>Automatic tag rules</h2>
-            <p class="panel-copy">
-              Match text anywhere in an archive entry name or its full path. Matching is
-              case-insensitive and never removes manually assigned tags.
-            </p>
-          </div>
-          <button
-            class="secondary-button"
-            type="button"
-            :disabled="automaticWorking"
-            @click="reevaluateAutomaticRules"
-          >Re-evaluate all models</button>
-        </div>
-
-        <p v-if="automaticFeedback" class="success-panel" aria-live="polite">
-          {{ automaticFeedback }}
-        </p>
-        <p v-if="automaticError" class="form-error" role="alert">
-          {{ automaticError }}
-        </p>
-
-        <form class="source-form automatic-rule-form" @submit.prevent="createAutomaticRule">
-          <label>
-            <span>Text to match</span>
-            <input v-model="automaticPattern" required maxlength="255" placeholder="Bust">
-          </label>
-          <label>
-            <span>Assign tag</span>
-            <select v-model="automaticTagId" required>
-              <option value="">Select a tag</option>
-              <option v-for="tag in tags" :key="tag.id" :value="String(tag.id)">
-                {{ tag.name }}
-              </option>
-            </select>
-          </label>
-          <button class="primary-button" :disabled="automaticWorking">Add rule</button>
-        </form>
-
-        <div class="source-list automatic-rule-list">
-          <p v-if="!automaticRules.length" class="panel-copy">No automatic rules configured.</p>
-          <div v-for="rule in automaticRules" :key="rule.id" class="automatic-rule-row">
-            <label>
-              <span>Text to match</span>
-              <input v-model="rule.pattern" maxlength="255" required>
-            </label>
-            <label>
-              <span>Tag</span>
-              <select v-model="rule.tag_id">
-                <option v-for="tag in tags" :key="tag.id" :value="tag.id">
-                  {{ tag.name }}
-                </option>
-              </select>
-            </label>
-            <label class="automatic-rule-enabled">
-              <input v-model="rule.enabled" type="checkbox">
-              Enabled
-            </label>
-            <span class="automatic-rule-matches">{{ rule.match_count }} models matched</span>
-            <div class="row-actions">
-              <button
-                class="secondary-button"
-                type="button"
-                :disabled="automaticWorking"
-                @click="saveAutomaticRule(rule)"
-              >Save</button>
-              <button
-                class="danger-button"
-                type="button"
-                :disabled="automaticWorking"
-                @click="deleteAutomaticRule(rule)"
-              >Delete</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  </main>
+<main class="admin-shell"><AdminHeader title="Tags"/><p v-if="error" class="form-error">{{error}}</p><p v-if="feedback" class="success-panel">{{feedback}}</p>
+<section class="layout"><aside class="panel"><h2>Tags</h2><button v-for="tag in tags" :key="tag.id" class="tag-select" :class="{selected:tag.id===selectedId}" @click="select(tag.id)"><TagChip :color="tag.color" :description="tag.description">{{tag.name}}</TagChip></button><p v-if="!tags.length" class="panel-copy">No tags yet.</p></aside>
+<section class="panel"><template v-if="selected"><header class="panel-heading"><div><h2>{{selected.name}}</h2><p class="panel-copy">{{selected.description||"Manage this tag."}}</p></div><div v-if="canTags" class="row-actions"><button class="secondary-button" @click="startTagEdit">Edit tag</button><button class="danger-button" @click="deleteTag">Delete tag</button></div></header>
+<form v-if="canTags" class="tag-form" @submit.prevent="saveTag"><h3>{{editingTag?"Edit tag":"Create tag"}}</h3><label><span>Name</span><input v-model="tagForm.name" required maxlength="80"></label><label><span>Colour</span><input v-model="tagForm.color" type="color"></label><label><span>Description</span><textarea v-model="tagForm.description" maxlength="1000"></textarea></label><div class="row-actions"><button class="primary-button" :disabled="busy">{{editingTag?"Save tag":"Create tag"}}</button><button v-if="editingTag" type="button" class="secondary-button" @click="editingTag=false">Cancel</button></div></form>
+<template v-if="canRules"><h3>Assignment rules</h3><form class="rule-form" @submit.prevent="saveRule"><label><span>Match mode</span><select v-model="ruleForm.match_mode"><option value="contains">Text contains</option><option value="regex">Regular expression</option><option value="path_relation">Folder path</option></select></label><label><span>Source scope</span><select v-model="ruleForm.library_source_id"><option value="">All sources</option><option v-for="source in sources" :key="source.id" :value="String(source.id)">{{source.name}}</option></select></label><label v-if="textMode"><span>{{ruleForm.match_mode==='regex'?'Regular expression':'Text to match'}}</span><input v-model="ruleForm.pattern" required placeholder="(_P|P\.)[2-9]"></label><label v-else><span>Folder path</span><input v-model="ruleForm.path_value" required></label><label v-if="!textMode"><span>Include</span><select v-model="ruleForm.path_relation"><option value="self_or_descendant">Folder and subfolders</option><option value="direct_child">Direct children only</option></select></label><fieldset v-if="textMode"><legend>Search targets</legend><label v-for="target in ['model_relative_path','archive_filename','archive_entry_path','archive_entry_name']" :key="target"><input v-model="ruleForm.targets" type="checkbox" :value="target"> {{target.replaceAll('_',' ')}}</label><label v-if="ruleForm.targets.includes('model_relative_path')"><input v-model="ruleForm.folder_segment" type="checkbox"> Match individual folder names</label></fieldset><label><input v-model="ruleForm.enabled" type="checkbox"> Enabled</label><div class="row-actions"><button class="primary-button" :disabled="busy">{{editingRule?'Save rule':'Add rule'}}</button><button v-if="textMode" type="button" class="secondary-button" @click="previewRule">Preview</button><button v-if="editingRule" type="button" class="secondary-button" @click="resetRule">Cancel</button></div></form><div v-if="preview.length" class="preview"><strong>Preview matches</strong><p v-for="model in preview" :key="model.relative_path">{{model.model_name}} · {{model.relative_path}}</p></div><article v-for="rule in rules" :key="rule.id" class="rule"><div><b>{{rule.match_mode}}</b> · {{rule.match_count}} matches · {{rule.enabled?'Enabled':'Disabled'}}</div><div class="row-actions"><button class="secondary-button" @click="editRule(rule)">Edit</button><button class="secondary-button" @click="reevaluate(rule)">Re-evaluate rule</button><button class="danger-button" @click="removeRule(rule)">Delete</button></div></article></template><p v-else class="panel-copy">Assignment rules are unavailable for this account.</p></template><template v-else><template v-if="canTags"><h2>Create tag</h2><form class="tag-form" @submit.prevent="saveTag"><label><span>Name</span><input v-model="tagForm.name" required></label><button class="primary-button">Create tag</button></form></template><p v-else class="panel-copy">No tags available.</p></template></section></section></main>
 </template>
+<style scoped>.layout{display:grid;grid-template-columns:minmax(14rem,.7fr) minmax(0,2fr);gap:1rem}.tag-select{display:block;width:100%;text-align:left;padding:.6rem;margin:.3rem;border:2px solid transparent;background:var(--panel-background);transition:border-color .15s ease,background-color .15s ease}.tag-select:hover{border-color:var(--accent-color)}.tag-select:focus-visible{outline:3px solid var(--accent-color);outline-offset:2px}.tag-select.selected{border-color:var(--accent-color);background:var(--muted-background);outline:none}.tag-form,.rule-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7rem;margin:1rem 0}.tag-form label,.rule-form label{display:grid;gap:.25rem}.tag-form label:last-of-type,.rule-form fieldset,.rule-form .row-actions{grid-column:1/-1}.rule{display:flex;justify-content:space-between;gap:1rem;padding:.75rem;border:1px solid var(--border-color);margin:.5rem 0}.preview{padding:.7rem;background:var(--muted-background)}@media(max-width:760px){.layout,.tag-form,.rule-form{grid-template-columns:1fr}.rule{display:grid}}</style>
