@@ -79,3 +79,60 @@ test("metadata and tag routes require their permissions and all-sources access",
   await page.goto("/admin/tags")
   await expect(page).not.toHaveURL(/\/admin\/tags/)
 })
+
+test("TagsView keeps selection, create and edit states separate and keyboard accessible", async ({ page }) => {
+  await mockAuth(page, ["tags.manage"])
+  let tags = [
+    { id: 1, name: "First", color: "#5eead4", description: "First tag" },
+    { id: 2, name: "Second", color: "#60a5fa", description: null },
+  ]
+  await page.route("**/api/admin/tags", async route => {
+    if (route.request().method() === "POST") {
+      tags = [...tags, { id: 3, name: "Created", color: "#5eead4", description: null }]
+      await route.fulfill({ status: 201, json: tags[2] })
+      return
+    }
+    await route.fulfill({ json: tags })
+  })
+
+  await page.goto("/admin/tags")
+  const first = page.getByRole("button", { name: /First/ })
+  await expect(first).toHaveClass(/selected/)
+  await page.getByRole("button", { name: /Second/ }).focus()
+  await expect(page.getByRole("button", { name: /Second/ })).toBeFocused()
+  await page.keyboard.press("Enter")
+  await expect(page.getByRole("heading", { name: "Second" })).toBeVisible()
+  await page.getByRole("button", { name: "Create tag" }).click()
+  await expect(page.getByRole("heading", { name: "Create tag" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Edit tag" })).toHaveCount(0)
+  await page.getByLabel("Name").fill("Created")
+  await page.getByRole("button", { name: "Create tag", exact: true }).last().click()
+  await expect(page.getByRole("status")).toContainText("Tag created")
+  await expect(page.getByRole("heading", { name: "Created" })).toBeVisible()
+})
+
+test("TagsView provides rule feedback, confirmation and responsive rule cards", async ({ page }) => {
+  await mockAuth(page, ["tags.manage", "tag_rules.manage"])
+  const tag = { id: 1, name: "Bust", color: null, description: null }
+  const rule = { id: 8, legacy_kind: "automatic_tag_rule", library_source_id: null, match_mode: "contains", pattern: "chitu", path_value: null, path_relation: null, enabled: true, targets: [{ target_type: "archive_entry_path", folder_segment: false }], match_count: 1 }
+  let updateRequests = 0
+  await page.route("**/api/admin/tags/library-sources", route => route.fulfill({ json: [] }))
+  await page.route("**/api/admin/tags/1/assignment-rules", route => route.fulfill({ json: [rule] }))
+  await page.route("**/api/admin/tag-assignment-rules/8", async route => {
+    updateRequests += 1
+    await route.fulfill({ json: { ...rule, enabled: false } })
+  })
+  await page.route("**/api/admin/tag-assignment-rules/preview", route => route.fulfill({ json: [] }))
+  await page.route("**/api/admin/tags", route => route.fulfill({ json: [tag] }))
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/admin/tags")
+  await expect(page.getByRole("article")).toBeVisible()
+  await page.getByRole("button", { name: "Disable" }).click()
+  await expect(page.getByRole("status")).toContainText("Assignment rule disabled")
+  expect(updateRequests).toBe(1)
+  await page.getByRole("button", { name: "Preview matches" }).click()
+  await expect(page.getByText("No matching models found")).toBeVisible()
+  page.once("dialog", dialog => dialog.accept())
+  await page.getByRole("button", { name: "Delete", exact: true }).click()
+  await expect(page.getByRole("article")).toBeVisible()
+})
