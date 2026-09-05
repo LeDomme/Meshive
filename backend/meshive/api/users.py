@@ -184,6 +184,8 @@ def update_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     previous_role_id = user.role_id
+    previous_username = user.username
+    previous_email_category = bool(user.email)
     previous_all_sources = user.all_sources
     previous_source_ids = {grant.library_source_id for grant in user.library_source_grants}
     previous_active = user.is_active
@@ -230,8 +232,13 @@ def update_user(
     if user.id != current_user.id and (payload.password or not payload.is_active):
         user.sessions.clear()
 
-    safe_changes = ["profile"]
-    log_event(session, current_user, AuditAction.USER_UPDATED, "user", user.username, target_id=user.id, details={"changed_categories": safe_changes})
+    if previous_username != user.username or previous_email_category != bool(user.email):
+        changed_categories = []
+        if previous_username != user.username:
+            changed_categories.append("username")
+        if previous_email_category != bool(user.email):
+            changed_categories.append("email")
+        log_event(session, current_user, AuditAction.USER_UPDATED, "user", user.username, target_id=user.id, details={"changed_categories": changed_categories})
     if previous_role_id != user.role_id:
         log_event(session, current_user, AuditAction.USER_ROLE_CHANGED, "user", user.username, target_id=user.id)
     if previous_all_sources != user.all_sources or previous_source_ids != set(source_ids):

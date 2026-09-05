@@ -20,10 +20,17 @@ import CreatorsView from "./views/admin/CreatorsView.vue"
 import DiagnosticsView from "./views/admin/DiagnosticsView.vue"
 import RolesView from "./views/admin/RolesView.vue"
 import ScansView from "./views/admin/ScansView.vue"
+import AuditView from "./views/admin/AuditView.vue"
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
+    {
+      path: "/admin/audit",
+      name: "audit",
+      component: AuditView,
+      meta: { requiresAuth: true, requiredPermission: "audit.view", requiresAllSources: true },
+    },
     {
       path: "/",
       name: "home",

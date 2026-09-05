@@ -16,4 +16,7 @@ class AuditEvent(Base):
     target_type: Mapped[str] = mapped_column(String(60), nullable=False)
     target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target_label: Mapped[str] = mapped_column(String(255), nullable=False)
+    library_source_id: Mapped[int | None] = mapped_column(
+        ForeignKey("library_sources.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     details: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
