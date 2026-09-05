@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue"
 import { ApiError, apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
 import { useAuthStore } from "../../stores/auth"
@@ -95,11 +95,26 @@ const activityClock = ref(Date.now())
 let queueTimer: number | undefined
 let activityClockTimer: number | undefined
 
+const fullSourceManager = computed(
+  () => auth.can("sources.manage") && Boolean(auth.user?.source_access.all_sources),
+)
+const scopedSourceManager = computed(
+  () => auth.can("sources.manage") && !auth.user?.source_access.all_sources,
+)
+const canViewScans = computed(() => auth.can("scans.view"))
+const canStartScans = computed(() => auth.can("scans.start"))
+const canControlScans = computed(() => auth.can("scans.control"))
+const editingSource = computed(() =>
+  sources.value.find((source) => source.id === editingId.value) ?? null,
+)
+
 const form = reactive({
   name: "",
   root_path: "/models/",
   directory_pattern: "{franchise}/{model_folder}",
   model_pattern: "{franchise} - {model} - by {creator}",
+  archive_formats: ["7z", "zip", "rar"] as string[],
+  image_formats: ["jpg", "jpeg", "png", "webp"] as string[],
   relative_path: "",
   is_active: true,
   scan_enabled: true,
@@ -126,7 +141,7 @@ async function loadSources() {
     for (const source of sources.value) {
       scanModesBySource.value[source.id] ??= "smart"
     }
-    if (auth.can("scans.view")) await Promise.all([loadQueue(), ...sources.value.map(loadLatestScan)])
+    if (canViewScans.value) await Promise.all([loadQueue(), ...sources.value.map(loadLatestScan)])
   } catch (error) {
     showError(error)
   } finally {
@@ -135,10 +150,12 @@ async function loadSources() {
 }
 
 async function loadQueue() {
+  if (!canViewScans.value) return
   scanQueue.value = await apiRequest<ScanQueueItem[]>("/api/admin/scans/queue")
 }
 
 async function loadLatestScan(source: LibrarySource) {
+  if (!canViewScans.value) return
   const scans = await apiRequest<ScanRun[]>(
     `/api/admin/library-sources/${source.id}/scans`,
   )
@@ -150,6 +167,7 @@ async function loadLatestScan(source: LibrarySource) {
 }
 
 async function startScan(source: LibrarySource, mode = scanModesBySource.value[source.id] ?? 'smart') {
+  if (!canStartScans.value || !auth.canForSource("scans.start", source.id)) return
   errorMessage.value = ""
   try {
     const scan = await apiRequest<ScanRun>(
@@ -157,33 +175,36 @@ async function startScan(source: LibrarySource, mode = scanModesBySource.value[s
       { method: "POST", body: JSON.stringify({ mode }) },
     )
     latestScans.value[source.id] = scan
-    window.setTimeout(() => pollScan(source.id, scan.id), 1000)
+    if (canViewScans.value) window.setTimeout(() => pollScan(source.id, scan.id), 1000)
   } catch (error) {
     showError(error)
   }
 }
 
 async function toggleScanPause(item: ScanQueueItem) {
+  if (!canControlScans.value || !auth.canForSource("scans.control", item.library_source_id)) return
   errorMessage.value = ""
   try {
     await apiRequest<ScanRun>(`/api/admin/scans/${item.id}/${item.pause_requested ? "resume" : "pause"}`, {
       method: "POST",
     })
-    await loadQueue()
+    if (canViewScans.value) await loadQueue()
   } catch (error) {
     showError(error)
   }
 }
 async function cancelScan(item: ScanQueueItem) {
+  if (!canControlScans.value || !auth.canForSource("scans.control", item.library_source_id)) return
   errorMessage.value = ""
   try {
     await apiRequest<ScanRun>(`/api/admin/scans/${item.id}/cancel`, { method: "POST" })
-    await loadQueue()
+    if (canViewScans.value) await loadQueue()
   } catch (error) {
     showError(error)
   }
 }
 async function pollScan(sourceId: number, scanId: number) {
+  if (!canViewScans.value) return
   try {
     const scan = await apiRequest<ScanRun>(`/api/admin/scans/${scanId}`)
     latestScans.value[sourceId] = scan
@@ -265,8 +286,8 @@ function payload() {
     root_path: form.root_path,
     directory_pattern: form.directory_pattern,
     model_pattern: form.model_pattern || null,
-    archive_formats: ["7z", "zip", "rar"],
-    image_formats: ["jpg", "jpeg", "png", "webp"],
+    archive_formats: form.archive_formats,
+    image_formats: form.image_formats,
     is_active: form.is_active,
     scan_enabled: form.scan_enabled,
     auto_scan_enabled: form.auto_scan_enabled,
@@ -278,6 +299,7 @@ function payload() {
 }
 
 async function saveSource() {
+  if (!editingId.value && !fullSourceManager.value) return
   saving.value = true
   errorMessage.value = ""
   try {
@@ -298,6 +320,7 @@ async function saveSource() {
 }
 
 async function previewPath() {
+  if (!fullSourceManager.value) return
   preview.value = null
   errorMessage.value = ""
   if (!form.relative_path.trim()) {
@@ -327,6 +350,8 @@ function editSource(source: LibrarySource) {
   form.root_path = source.root_path
   form.directory_pattern = source.directory_pattern
   form.model_pattern = source.model_pattern ?? ""
+  form.archive_formats = [...source.archive_formats]
+  form.image_formats = [...source.image_formats]
   form.is_active = source.is_active
   form.scan_enabled = source.scan_enabled
   form.auto_scan_enabled = source.auto_scan_enabled
@@ -339,6 +364,7 @@ function editSource(source: LibrarySource) {
 }
 
 async function removeSource(source: LibrarySource) {
+  if (!fullSourceManager.value) return
   if (!window.confirm(`Delete the source “${source.name}”?`)) return
   try {
     await apiRequest<void>(`/api/admin/library-sources/${source.id}`, {
@@ -357,6 +383,8 @@ function resetForm() {
   form.root_path = "/models/"
   form.directory_pattern = "{franchise}/{model_folder}"
   form.model_pattern = "{franchise} - {model} - by {creator}"
+  form.archive_formats = ["7z", "zip", "rar"]
+  form.image_formats = ["jpg", "jpeg", "png", "webp"]
   form.relative_path = ""
   form.is_active = true
   form.scan_enabled = true
@@ -376,9 +404,11 @@ function showError(error: unknown) {
 onMounted(async () => {
   await loadSources()
   activityClockTimer = window.setInterval(() => { activityClock.value = Date.now() }, 1000)
-  queueTimer = window.setInterval(() => {
-    void loadQueue().catch(() => undefined)
-  }, 3000)
+  if (canViewScans.value) {
+    queueTimer = window.setInterval(() => {
+      void loadQueue().catch(() => undefined)
+    }, 3000)
+  }
 })
 onBeforeUnmount(() => {
   if (queueTimer !== undefined) window.clearInterval(queueTimer)
@@ -399,7 +429,7 @@ onBeforeUnmount(() => {
       {{ errorMessage }}
     </p>
 
-    <section class="admin-grid">
+    <section v-if="fullSourceManager || editingId" class="admin-grid">
       <form class="panel source-form" @submit.prevent="saveSource">
         <div class="panel-heading">
           <h2>{{ editingId ? "Edit source" : "Add source" }}</h2>
@@ -408,6 +438,10 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
+        <p v-if="scopedSourceManager" class="panel-copy">
+          This account can edit the source name and automatic scan schedule only.
+        </p>
+
         <label>
           <span>Name</span>
           <input v-model="form.name" required placeholder="Primary library">
@@ -415,7 +449,7 @@ onBeforeUnmount(() => {
 
         <label>
           <span>Container path</span>
-          <input v-model="form.root_path" required placeholder="/models/library-one">
+          <input v-model="form.root_path" required :readonly="scopedSourceManager" placeholder="/models/library-one">
         </label>
 
         <label>
@@ -424,6 +458,7 @@ onBeforeUnmount(() => {
             v-model="form.directory_pattern"
             required
             rows="3"
+            :readonly="scopedSourceManager"
             placeholder="{creator_folder}/{franchise}/{model_folder}"
           />
           <small>Enter one layout per line. More specific layouts should come first.</small>
@@ -434,6 +469,7 @@ onBeforeUnmount(() => {
           <textarea
             v-model="form.model_pattern"
             rows="3"
+            :readonly="scopedSourceManager"
             placeholder="{franchise} - {model} - by {creator}"
           />
           <small>
@@ -448,9 +484,20 @@ onBeforeUnmount(() => {
 
 
         <div class="check-row">
-          <label><input v-model="form.is_active" type="checkbox"> Active</label>
-          <label><input v-model="form.scan_enabled" type="checkbox"> Scanning enabled</label>
+          <label><input v-model="form.is_active" type="checkbox" :disabled="scopedSourceManager"> Active</label>
+          <label><input v-model="form.scan_enabled" type="checkbox" :disabled="scopedSourceManager"> Scanning enabled</label>
         </div>
+
+        <dl v-if="scopedSourceManager && editingSource" class="source-readonly-summary">
+          <div>
+            <dt>Archive formats</dt>
+            <dd>{{ editingSource.archive_formats.join(", ") }}</dd>
+          </div>
+          <div>
+            <dt>Image formats</dt>
+            <dd>{{ editingSource.image_formats.join(", ") }}</dd>
+          </div>
+        </dl>
 
         <details class="schedule-fields">
           <summary>Automatic scanning</summary>
@@ -494,7 +541,7 @@ onBeforeUnmount(() => {
         </button>
       </form>
 
-      <section class="panel">
+      <section v-if="fullSourceManager" class="panel">
         <h2>Test pattern</h2>
         <p class="panel-copy">
           Enter a model-folder path relative to the container path. Do not include
@@ -534,7 +581,7 @@ onBeforeUnmount(() => {
       </section>
     </section>
 
-    <section class="panel scan-queue-panel">
+    <section v-if="canViewScans" class="panel scan-queue-panel">
       <h2>Scan activity</h2>
       <p v-if="scanQueue.length === 0" class="muted">
         No scans are currently running or queued.
@@ -555,6 +602,7 @@ onBeforeUnmount(() => {
             {{ item.cancel_requested ? "Cancelling" : item.pause_requested ? "Paused" : item.status === "running" ? "Running" : `Queue #${item.position}` }}
           </span>
           <button
+            v-if="canControlScans"
             class="secondary-button compact-button"
             type="button"
             :disabled="item.cancel_requested"
@@ -563,6 +611,7 @@ onBeforeUnmount(() => {
             {{ item.pause_requested ? "Resume" : "Pause" }}
           </button>
           <button
+            v-if="canControlScans"
             class="secondary-button compact-button"
             type="button"
             :disabled="item.cancel_requested"
@@ -597,7 +646,7 @@ onBeforeUnmount(() => {
               : source.auto_scan_time }}
             ({{ source.auto_scan_timezone }})
           </p>
-          <p v-if="latestScans[source.id]" class="scan-summary">
+          <p v-if="canViewScans && latestScans[source.id]" class="scan-summary">
             Scan: <strong>{{ latestScans[source.id].status }}</strong>
             · {{ scanModeLabel(latestScans[source.id].mode) }}
             · {{ latestScans[source.id].models_found }} models
@@ -621,11 +670,11 @@ onBeforeUnmount(() => {
             </template>
             · {{ latestScans[source.id].issues_count }} issues
           </p>
-          <p v-if="latestScans[source.id]?.error_message" class="form-error">
+          <p v-if="canViewScans && latestScans[source.id]?.error_message" class="form-error">
             {{ latestScans[source.id].error_message }}
           </p>
           <details
-            v-if="latestScans[source.id]?.issues?.length"
+            v-if="canViewScans && latestScans[source.id]?.issues?.length"
             class="scan-issues"
           >
             <summary>Show scan issues</summary>
@@ -642,6 +691,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="row-actions">
           <select
+            v-if="canStartScans"
             class="scan-mode-control"
             aria-label="Scan mode"
             :disabled="scanIsActive(source.id) || !source.scan_enabled"
@@ -652,6 +702,7 @@ onBeforeUnmount(() => {
             </option>
           </select>
           <button
+            v-if="canStartScans"
             class="primary-button compact-button"
             type="button"
             :disabled="scanIsActive(source.id) || !source.scan_enabled"
@@ -662,7 +713,7 @@ onBeforeUnmount(() => {
           <button class="secondary-button" type="button" @click="editSource(source)">
             Edit
           </button>
-          <button class="danger-button" type="button" @click="removeSource(source)">
+          <button v-if="fullSourceManager" class="danger-button" type="button" @click="removeSource(source)">
             Delete
           </button>
         </div>
