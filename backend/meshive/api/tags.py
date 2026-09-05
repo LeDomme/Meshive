@@ -98,7 +98,7 @@ def list_admin_tags(session: SessionDependency) -> list[Tag]:
 
 @admin_router.get(
     "/tags/library-sources",
-    dependencies=[Depends(require_global_permission(TAGS_MANAGE))],
+    dependencies=[Depends(require_any_global_permission({TAGS_MANAGE, TAG_RULES_MANAGE}))],
 )
 def list_tag_rule_sources(session: SessionDependency) -> list[dict[str, object]]:
     return [
