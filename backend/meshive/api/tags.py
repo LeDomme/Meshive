@@ -55,6 +55,10 @@ from meshive.services.tag_assignment_rules import (
     reevaluate_canonical_rules,
     refresh_assignment_rule_tags,
 )
+
+# These helpers remain imported only for the retained, unreachable legacy
+# compatibility bodies below.  Legacy mutation endpoints return 410 before
+# they can invoke either evaluator.
 from meshive.services.tags import (
     normalize_automatic_pattern,
     recompute_automatic_tags,
@@ -296,6 +300,7 @@ def create_rule(
     current_user: CurrentUser,
     session: SessionDependency,
 ) -> FolderRuleRead:
+    _legacy_rule_mutation_gone()
     source = session.get(LibrarySource, payload.library_source_id)
     tag = session.get(Tag, payload.tag_id)
     if source is None or tag is None:
@@ -351,6 +356,7 @@ def update_rule(
     current_user: CurrentUser,
     session: SessionDependency,
 ) -> FolderRuleRead:
+    _legacy_rule_mutation_gone()
     rule = session.get(FolderTagRule, rule_id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Folder tag rule not found")
@@ -407,6 +413,7 @@ def update_rule(
 def delete_rule(
     rule_id: int, current_user: CurrentUser, session: SessionDependency
 ) -> Response:
+    _legacy_rule_mutation_gone()
     rule = session.get(FolderTagRule, rule_id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Folder tag rule not found")
@@ -470,6 +477,7 @@ def create_automatic_rule(
     current_user: CurrentUser,
     session: SessionDependency,
 ) -> AutomaticTagRuleRead:
+    _legacy_rule_mutation_gone()
     tag = session.get(Tag, payload.tag_id)
     if tag is None:
         raise HTTPException(status_code=404, detail="Tag not found")
@@ -511,6 +519,7 @@ def update_automatic_rule(
     current_user: CurrentUser,
     session: SessionDependency,
 ) -> AutomaticTagRuleRead:
+    _legacy_rule_mutation_gone()
     rule = session.get(AutomaticTagRule, rule_id)
     tag = session.get(Tag, payload.tag_id)
     if rule is None:
@@ -557,6 +566,7 @@ def update_automatic_rule(
 def delete_automatic_rule(
     rule_id: int, current_user: CurrentUser, session: SessionDependency
 ) -> Response:
+    _legacy_rule_mutation_gone()
     rule = session.get(AutomaticTagRule, rule_id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Automatic tag rule not found")
@@ -583,9 +593,15 @@ def delete_automatic_rule(
 def reevaluate_automatic_rules(
     session: SessionDependency,
 ) -> AutomaticTagEvaluationRead:
-    result = recompute_automatic_tags(session)
-    session.commit()
-    return AutomaticTagEvaluationRead(**result.__dict__)
+    _legacy_rule_mutation_gone()
+
+
+def _legacy_rule_mutation_gone() -> None:
+    """Make the cutover explicit instead of silently changing old CRUD APIs."""
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Legacy tag rules are read-only; use tag assignment rules",
+    )
 
 
 @admin_router.get(

@@ -94,9 +94,9 @@ def test_direct_and_recursive_tags_are_exposed_and_filterable() -> None:
                     "recursive": True,
                 },
             )
-            assert rule.status_code == 201
+            assert rule.status_code == 410
             detail = client.get(f"/api/models/{model.id}").json()
-            assert {tag["name"] for tag in detail["tags"]} == {"Curated", "Marvel"}
+            assert {tag["name"] for tag in detail["tags"]} == {"Curated"}
             conflict = client.put(
                 f"/api/admin/tags/{tag_id}",
                 json={"name": "Marvel", "color": None, "description": None},
@@ -104,7 +104,7 @@ def test_direct_and_recursive_tags_are_exposed_and_filterable() -> None:
             assert conflict.status_code == 409
             assert {
                 tag["name"] for tag in client.get(f"/api/models/{model.id}").json()["tags"]
-            } == {"Curated", "Marvel"}
+            } == {"Curated"}
     finally:
         app.dependency_overrides.clear()
         Base.metadata.drop_all(engine)

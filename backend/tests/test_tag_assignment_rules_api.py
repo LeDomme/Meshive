@@ -29,7 +29,10 @@ from meshive.models.tag import (
 )
 from meshive.models.user import User
 from meshive.schemas.tag import TagAssignmentRulePreview, TagAssignmentRuleWrite
-from meshive.services.tag_assignment_rules import legacy_rule_preflight
+from meshive.services.tag_assignment_rules import (
+    legacy_rule_preflight,
+    reevaluate_canonical_rules,
+)
 
 
 def test_assignment_rule_api_evaluates_targets_and_preserves_other_provenance() -> None:
@@ -198,6 +201,52 @@ def test_legacy_automatic_rule_is_listed_but_remains_read_only() -> None:
             assert assignment is not None and assignment.is_automatic
     finally:
         _teardown_rule_test_database(engine, actor)
+
+
+def test_cutover_evaluates_migrated_rules_and_preserves_direct_tags() -> None:
+    """Legacy copies, rather than legacy provenance, drive post-cutover tags."""
+    engine, sessions, _, tag_ids, model_ids = _rule_test_database()
+    try:
+        with sessions() as session:
+            legacy = TagAssignmentRule(
+                tag_id=tag_ids["legacy"], match_mode="contains", pattern="A2_P2",
+                pattern_key="a2_p2", enabled=True, legacy_kind="automatic_tag_rule",
+                legacy_rule_id=42,
+            )
+            session.add(legacy)
+            session.flush()
+            session.add(TagAssignmentRuleTarget(
+                tag_assignment_rule_id=legacy.id, target_type="archive_entry_path"
+            ))
+            # This is deliberately stale legacy provenance.  The evaluator must
+            # rebuild canonical matches and retain the independent direct tag.
+            legacy_assignment = session.scalar(select(ModelTag).where(
+                ModelTag.model_id == model_ids["a2"], ModelTag.tag_id == tag_ids["legacy"]
+            ))
+            assert legacy_assignment is not None and legacy_assignment.is_automatic
+            reevaluate_canonical_rules(session)
+            session.flush()
+            assignment = session.scalar(select(ModelTag).where(
+                ModelTag.model_id == model_ids["a2"], ModelTag.tag_id == tag_ids["legacy"]
+            ))
+            direct = session.scalar(select(ModelTag).where(
+                ModelTag.model_id == model_ids["a2"], ModelTag.tag_id == tag_ids["direct"]
+            ))
+            assert assignment is not None and assignment.is_assignment_rule
+            assert assignment.is_automatic is False
+            assert direct is not None and direct.is_direct
+
+            legacy.enabled = False
+            reevaluate_canonical_rules(session)
+            session.flush()
+            assert session.scalar(select(ModelTag).where(
+                ModelTag.model_id == model_ids["a2"], ModelTag.tag_id == tag_ids["legacy"]
+            )) is None
+            assert session.scalar(select(ModelTag).where(
+                ModelTag.model_id == model_ids["a2"], ModelTag.tag_id == tag_ids["direct"]
+            )) is not None
+    finally:
+        _teardown_rule_test_database(engine)
 
 
 def test_legacy_preflight_is_read_only_and_limits_diagnostics() -> None:

@@ -25,14 +25,14 @@ from meshive.models.catalog import (
 from meshive.models.library_source import LibrarySource
 from meshive.services.archive_images import (
     ArchiveImageError,
-    archive_image_limit_skip_counts,
     archive_image_candidate_sort_key,
+    archive_image_limit_skip_counts,
     iter_extracted_archive_image_batches,
     select_archive_image_candidates,
     validate_extracted_archive_image,
 )
 from meshive.services.library_paths import PathPatternError, parse_library_path
-from meshive.services.tags import recompute_automatic_tags, recompute_inherited_tags
+from meshive.services.tag_assignment_rules import reevaluate_canonical_rules
 from meshive.services.thumbnails import (
     ThumbnailError,
     generate_cached_webp,
@@ -41,6 +41,7 @@ from meshive.services.thumbnails import (
     remove_cached_thumbnail,
     safe_cache_path,
 )
+
 
 class ScanCancelled(RuntimeError):
     pass
@@ -354,14 +355,25 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
             .values(status="missing")
         )
         scan.models_missing = missing_result.rowcount or 0
-        recompute_inherited_tags(session, source.id)
+        (
+            _models_evaluated,
+            scan.automatic_tag_matches,
+            scan.automatic_tags_added,
+            scan.automatic_tags_removed,
+        ) = reevaluate_canonical_rules(session)
         scan.status = "completed_with_errors" if scan.issues_count else "completed"
     except ScanCancelled:
         session.rollback()
         scan = session.get(ScanRun, scan_run_id)
         if scan is not None:
             scan.status = "cancelled"
-    except Exception as error:
+    except (
+        ArchiveImageError,
+        ArchiveReadError,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as error:
         session.rollback()
         scan = session.get(ScanRun, scan_run_id)
         if scan is not None:
@@ -773,23 +785,9 @@ def _scan_model(
 
 
 def _apply_automatic_tags(session: Session, scan: ScanRun, model: LibraryModel) -> None:
-    try:
-        with session.begin_nested():
-            result = recompute_automatic_tags(session, [model.id])
-    except Exception as error:
-        _add_issue(
-            session,
-            scan,
-            model.relative_path,
-            "warning",
-            "automatic_tag_evaluation_failed",
-            str(error),
-            model.id,
-        )
-        return
-    scan.automatic_tag_matches += result.matches
-    scan.automatic_tags_added += result.assignments_added
-    scan.automatic_tags_removed += result.assignments_removed
+    # Phase 2C evaluates canonical rules once during scan finalization.  Legacy
+    # evaluators must not mutate assignments alongside canonical provenance.
+    return
 
 
 def _is_model_candidate(directory: Path, source: LibrarySource) -> bool:

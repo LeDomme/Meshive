@@ -1,5 +1,4 @@
 import os
-from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -21,7 +20,12 @@ from meshive.models.catalog import (
     ScanRun,
 )
 from meshive.models.library_source import LibrarySource
-from meshive.models.tag import AutomaticTagRule, ModelTag, Tag
+from meshive.models.tag import (
+    ModelTag,
+    Tag,
+    TagAssignmentRule,
+    TagAssignmentRuleTarget,
+)
 from meshive.schemas.scan import ScanStartRequest
 from meshive.services import scanner
 from meshive.services.archive_images import ArchiveImageError, ValidatedArchiveImage
@@ -98,8 +102,8 @@ def test_source_scan_transitions_from_discovering_to_scanning_finalizing_and_cle
         )
         monkeypatch.setattr(
             scanner,
-            "recompute_inherited_tags",
-            lambda _session, _source_id: phases.append(scan.current_phase),
+            "reevaluate_canonical_rules",
+            lambda _session: (phases.append(scan.current_phase), 0, 0, 0),
         )
 
         scanner._execute_scan(session, source.id, scan.id)
@@ -400,7 +404,7 @@ def test_cancellation_after_last_model_skips_finalization(tmp_path, monkeypatch)
             nonlocal finalization_called
             finalization_called = True
 
-        monkeypatch.setattr(scanner, "recompute_inherited_tags", inherited_tags)
+        monkeypatch.setattr(scanner, "reevaluate_canonical_rules", lambda *_args: (inherited_tags(), 0, 0, 0))
         scanner._execute_scan(session, source.id, scan.id)
 
         assert scan.status == "cancelled"
@@ -1143,14 +1147,19 @@ def test_scans_model_archive_image_and_marks_missing(tmp_path, monkeypatch) -> N
         automatic_tag = Tag(name="Printable")
         session.add(automatic_tag)
         session.flush()
-        session.add(
-            AutomaticTagRule(
-                tag_id=automatic_tag.id,
-                pattern="MODEL.STL",
-                pattern_key="model.stl",
-                enabled=True,
-            )
+        rule = TagAssignmentRule(
+            tag_id=automatic_tag.id,
+            match_mode="contains",
+            pattern="MODEL.STL",
+            pattern_key="model.stl",
+            enabled=True,
         )
+        session.add(rule)
+        session.flush()
+        session.add_all([
+            TagAssignmentRuleTarget(tag_assignment_rule_id=rule.id, target_type="archive_entry_path"),
+            TagAssignmentRuleTarget(tag_assignment_rule_id=rule.id, target_type="archive_entry_name"),
+        ])
         session.commit()
         scan = make_scan(session, source.id)
 
@@ -1181,7 +1190,7 @@ def test_scans_model_archive_image_and_marks_missing(tmp_path, monkeypatch) -> N
         assert completed.automatic_tags_added == 1
         assignment = session.scalar(select(ModelTag))
         assert assignment is not None
-        assert assignment.is_automatic is True
+        assert assignment.is_assignment_rule is True
         assert completed.issues_count == 0
 
         second_archive_path = model_directory / "extras.zip"
@@ -1877,7 +1886,6 @@ def test_reconcile_repairs_incomplete_model_and_refreshes_archive_manifest(
 
     def sync_images(*_args, **_kwargs):
         calls.append("images")
-        return None
 
     monkeypatch.setattr(scanner, "_sync_archives", sync_archives)
     monkeypatch.setattr(scanner, "_sync_archive_images", sync_images)
