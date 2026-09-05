@@ -4,7 +4,9 @@ import signal
 import sqlite3
 import threading
 import time
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -12,17 +14,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from meshive.auth.access import require_global_permission
+from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import BACKUPS_MANAGE
 from meshive.backup import delete_backup_files, validate_backup
 from meshive.config import get_settings
 from meshive.database import get_session
 from meshive.models.backup import BackupRun, BackupSchedule
+from meshive.models.user import User
 from meshive.schemas.backup import (
     BackupRestoreRequest,
     BackupRunRead,
     BackupScheduleData,
     BackupScheduleRead,
 )
+from meshive.services.audit import AuditAction, log_event
 from meshive.services.backup_scheduler import (
     run_backup,
     sync_backup_history,
@@ -33,16 +38,18 @@ router = APIRouter(
     tags=["backup administration"],
     dependencies=[Depends(require_global_permission(BACKUPS_MANAGE))],
 )
+CurrentUser = Annotated[User, Depends(get_current_user)]
+SessionDependency = Annotated[Session, Depends(get_session)]
 
 
 @router.get("/schedule", response_model=BackupScheduleRead)
-def get_schedule(session: Session = Depends(get_session)) -> BackupSchedule:
+def get_schedule(session: SessionDependency) -> BackupSchedule:
     return _schedule(session)
 
 
 @router.put("/schedule", response_model=BackupScheduleRead)
 def update_schedule(
-    payload: BackupScheduleData, session: Session = Depends(get_session)
+    payload: BackupScheduleData, session: SessionDependency
 ) -> BackupSchedule:
     try:
         ZoneInfo(payload.timezone)
@@ -57,15 +64,15 @@ def update_schedule(
 
 
 @router.post("/run", response_model=BackupRunRead)
-def backup_now() -> BackupRun:
-    run = run_backup("manual")
+def backup_now(current_user: CurrentUser) -> BackupRun:
+    run = run_backup("manual", actor=current_user)
     if run.status == "failed":
         raise HTTPException(status_code=500, detail=run.error_message or "Backup failed")
     return run
 
 
 @router.get("", response_model=list[BackupRunRead])
-def backup_history(session: Session = Depends(get_session)) -> list[BackupRun]:
+def backup_history(session: SessionDependency) -> list[BackupRun]:
     sync_backup_history(session)
     return list(
         session.scalars(
@@ -97,7 +104,8 @@ def dismiss_restore_result() -> Response:
 def request_restore(
     run_id: int,
     payload: BackupRestoreRequest,
-    session: Session = Depends(get_session),
+    current_user: CurrentUser,
+    session: SessionDependency,
 ) -> dict[str, str]:
     if payload.confirmation != "RESTORE":
         raise HTTPException(status_code=422, detail='Enter "RESTORE" to confirm')
@@ -115,10 +123,33 @@ def request_restore(
 
     marker = get_settings().data_dir / "restore-request.json"
     temporary = marker.with_suffix(".tmp")
+    started_at = datetime.now(UTC)
+    event = log_event(
+        session,
+        current_user,
+        AuditAction.BACKUP_RESTORE_STARTED,
+        "backup",
+        "Database restore",
+        target_id=run.id,
+        created_at=started_at,
+    )
+    session.flush()
     temporary.write_text(
-        json.dumps({"path": str(path)}, indent=2) + "\n",
+        json.dumps(
+            {
+                "path": str(path),
+                "actor_user_id": current_user.id,
+                "actor_username": current_user.username,
+                "audit_started_at": started_at.isoformat(),
+                "audit_event_id": event.id,
+                "run_id": run.id,
+            },
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
+    session.commit()
     os.replace(temporary, marker)
     (get_settings().data_dir / "restore-result.json").unlink(missing_ok=True)
     threading.Thread(target=_restart_process, daemon=True).start()
@@ -126,7 +157,7 @@ def request_restore(
 
 
 @router.delete("/{run_id}", status_code=204)
-def delete_backup(run_id: int, session: Session = Depends(get_session)) -> Response:
+def delete_backup(run_id: int, session: SessionDependency) -> Response:
     run = session.get(BackupRun, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Backup record not found")

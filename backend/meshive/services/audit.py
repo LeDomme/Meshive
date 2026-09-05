@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 from meshive.models.audit import AuditEvent
@@ -17,6 +19,12 @@ class AuditAction:
     SCAN_PAUSE_REQUESTED = "scan.pause_requested"
     SCAN_RESUME_REQUESTED = "scan.resume_requested"
     SCAN_CANCEL_REQUESTED = "scan.cancel_requested"
+    BACKUP_STARTED = "backup.started"
+    BACKUP_COMPLETED = "backup.completed"
+    BACKUP_FAILED = "backup.failed"
+    BACKUP_RESTORE_STARTED = "backup.restore_started"
+    BACKUP_RESTORE_COMPLETED = "backup.restore_completed"
+    BACKUP_RESTORE_FAILED = "backup.restore_failed"
 
 
 def log_event(
@@ -29,10 +37,38 @@ def log_event(
     target_id: int | None = None,
     library_source_id: int | None = None,
     details: dict[str, object] | None = None,
+    created_at: datetime | None = None,
 ) -> AuditEvent:
-    event = AuditEvent(
+    return log_event_snapshot(
+        session,
         actor_user_id=getattr(actor, "id", None),
         actor_username=getattr(actor, "username", "Unknown"),
+        action=action,
+        target_type=target_type,
+        target_label=target_label,
+        target_id=target_id,
+        library_source_id=library_source_id,
+        details=details,
+        created_at=created_at,
+    )
+
+
+def log_event_snapshot(
+    session: Session,
+    *,
+    actor_user_id: int | None,
+    actor_username: str,
+    action: str,
+    target_type: str,
+    target_label: str,
+    target_id: int | None = None,
+    library_source_id: int | None = None,
+    details: dict[str, object] | None = None,
+    created_at: datetime | None = None,
+) -> AuditEvent:
+    event = AuditEvent(
+        actor_user_id=actor_user_id,
+        actor_username=actor_username,
         action=action,
         target_type=target_type,
         target_id=target_id,
@@ -40,5 +76,7 @@ def log_event(
         library_source_id=library_source_id,
         details=details,
     )
+    if created_at is not None:
+        event.created_at = created_at
     session.add(event)
     return event

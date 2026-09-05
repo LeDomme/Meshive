@@ -33,3 +33,15 @@ test("audit log renders source and scan actions with readable labels", async ({ 
   await expect(page.getByText("source.updated", { exact: true })).toHaveCount(0)
   await expect(page.getByText("scan.pause_requested", { exact: true })).toHaveCount(0)
 })
+
+test("audit log renders backup and restore actions with readable labels", async ({ page }) => {
+  await auth(page, ["audit.view"])
+  await page.route("**/api/admin/audit-events**", route => route.fulfill({ json: { total: 2, items: [
+    { id: 2, created_at: "2026-01-02T00:00:00Z", actor_username: "Alice", action: "backup.restore_completed", target_type: "backup", target_label: "Database restore" },
+    { id: 1, created_at: "2026-01-01T00:00:00Z", actor_username: "Alice", action: "backup.completed", target_type: "backup", target_label: "Manual backup" },
+  ] } }))
+  await page.goto("/admin/audit")
+  await expect(page.locator(".audit-row").getByText("Backup completed", { exact: true })).toBeVisible()
+  await expect(page.locator(".audit-row").getByText("Database restore completed", { exact: true })).toBeVisible()
+  await expect(page.getByText("backup.restore_completed", { exact: true })).toHaveCount(0)
+})
