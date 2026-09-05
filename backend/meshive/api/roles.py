@@ -6,11 +6,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from meshive.auth.access import require_global_permission
+from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import ALL_PERMISSION_KEYS, ROLES_MANAGE, normalize_role_name
 from meshive.database import get_session
 from meshive.models.authorization import Role, RolePermission
 from meshive.models.user import User
 from meshive.schemas.user import RoleRead, RoleWrite
+from meshive.services.audit import AuditAction, log_event
 
 router = APIRouter(
     prefix="/admin/roles",
@@ -24,6 +26,7 @@ permissions_router = APIRouter(
 )
 
 SessionDependency = Annotated[Session, Depends(get_session)]
+CurrentUserDependency = Annotated[User, Depends(get_current_user)]
 
 
 def _role_read(session: Session, role: Role) -> RoleRead:
@@ -74,7 +77,7 @@ def list_all_permissions() -> list[str]:
 
 
 @router.post("", response_model=RoleRead, status_code=status.HTTP_201_CREATED)
-def create_role(payload: RoleWrite, session: SessionDependency) -> RoleRead:
+def create_role(payload: RoleWrite, current_user: CurrentUserDependency, session: SessionDependency) -> RoleRead:
     _validate_permission_keys(payload.permission_keys)
     role = Role(
         name=payload.name,
@@ -89,6 +92,8 @@ def create_role(payload: RoleWrite, session: SessionDependency) -> RoleRead:
     ]
     session.add(role)
     try:
+        session.flush()
+        log_event(session, current_user, AuditAction.ROLE_CREATED, "role", role.name, target_id=role.id, details={"permission_keys": sorted(payload.permission_keys)})
         session.commit()
     except IntegrityError as error:
         session.rollback()
@@ -101,7 +106,7 @@ def create_role(payload: RoleWrite, session: SessionDependency) -> RoleRead:
 
 
 @router.put("/{role_id}", response_model=RoleRead)
-def update_role(role_id: int, payload: RoleWrite, session: SessionDependency) -> RoleRead:
+def update_role(role_id: int, payload: RoleWrite, current_user: CurrentUserDependency, session: SessionDependency) -> RoleRead:
     role = _get_role_or_404(session, role_id)
     if role.is_system:
         raise HTTPException(
@@ -112,10 +117,12 @@ def update_role(role_id: int, payload: RoleWrite, session: SessionDependency) ->
     role.name = payload.name
     role.normalized_name = normalize_role_name(payload.name)
     role.description = payload.description
+    previous_permissions = {permission.permission_key for permission in role.permissions}
     role.permissions = [
         RolePermission(permission_key=permission_key)
         for permission_key in sorted(payload.permission_keys)
     ]
+    log_event(session, current_user, AuditAction.ROLE_UPDATED, "role", role.name, target_id=role.id, details={"permissions_added": sorted(set(payload.permission_keys) - previous_permissions), "permissions_removed": sorted(previous_permissions - set(payload.permission_keys))})
     try:
         session.commit()
     except IntegrityError as error:
@@ -129,7 +136,7 @@ def update_role(role_id: int, payload: RoleWrite, session: SessionDependency) ->
 
 
 @router.delete("/{role_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_role(role_id: int, session: SessionDependency) -> None:
+def delete_role(role_id: int, current_user: CurrentUserDependency, session: SessionDependency) -> None:
     role = _get_role_or_404(session, role_id)
     if role.is_system:
         raise HTTPException(
@@ -145,5 +152,6 @@ def delete_role(role_id: int, session: SessionDependency) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Role is assigned to {user_count} users",
         )
+    log_event(session, current_user, AuditAction.ROLE_DELETED, "role", role.name, target_id=role.id)
     session.delete(role)
     session.commit()

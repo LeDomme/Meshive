@@ -1,5 +1,6 @@
 from meshive.auth.passwords import hash_password
 from meshive.auth.permissions import CATALOGUE_VIEW, ROLES_MANAGE, USERS_MANAGE
+from meshive.models.audit import AuditEvent
 from meshive.models.authorization import Role, RolePermission, UserLibrarySource
 from meshive.models.library_source import LibrarySource
 from meshive.models.user import User
@@ -67,6 +68,10 @@ def test_custom_role_crud_rejects_invalid_permissions_and_system_roles() -> None
             json={"name": "Changed", "permission_keys": []},
         ).status_code == 409
         assert client.delete(f"/api/admin/roles/{role_id}").status_code == 204
+        with sessions() as session:
+            events = session.query(AuditEvent).order_by(AuditEvent.id).all()
+            assert [event.action for event in events] == ["role.created", "role.deleted"]
+            assert all("correct horse" not in str(event.details) for event in events)
 
 
 def test_user_access_assignments_are_validated_and_hidden_grants_are_cleared() -> None:
@@ -117,6 +122,11 @@ def test_user_access_assignments_are_validated_and_hidden_grants_are_cleared() -
         assert all_sources.json()["source_ids"] == []
         with sessions() as session:
             assert not session.query(UserLibrarySource).filter_by(user_id=user_id).count()
+            events = session.query(AuditEvent).order_by(AuditEvent.id).all()
+            assert "user.created" in [event.action for event in events]
+            assert "user.source_access_changed" in [event.action for event in events]
+            assert all("sufficiently long password" not in str(event.details) for event in events)
+            assert all("@" not in f"{event.actor_username} {event.target_label} {event.details}" for event in events)
 
 
 def test_user_create_defaults_to_legacy_member_role_without_role_selection() -> None:
@@ -138,6 +148,50 @@ def test_user_create_defaults_to_legacy_member_role_without_role_selection() -> 
         assert created.json()["role"] == "user"
         assert created.json()["role_definition"]["name"] == "Member"
         assert created.json()["all_sources"] is True
+
+
+def test_audit_events_cover_role_and_user_mutations_without_sensitive_values() -> None:
+    with _admin_client() as (client, sessions):
+        _add_admin(sessions)
+        with sessions() as session:
+            session.add_all([
+                LibrarySource(name="A", root_path="/private/a", directory_pattern="{model}"),
+                LibrarySource(name="B", root_path="/private/b", directory_pattern="{model}"),
+            ])
+            session.commit()
+            source_ids = [source.id for source in session.query(LibrarySource).order_by(LibrarySource.id)]
+            member_id = next(role.id for role in session.query(Role) if role.name == "Member")
+            viewer_id = next(role.id for role in session.query(Role) if role.name == "Viewer")
+        assert client.post("/api/auth/login", json={"username": "admin", "password": "correct horse battery staple"}).status_code == 200
+        created_role = client.post("/api/admin/roles", json={"name": "Audit role", "permission_keys": [CATALOGUE_VIEW]})
+        role_id = created_role.json()["id"]
+        assert client.put(f"/api/admin/roles/{role_id}", json={"name": "Audited role", "permission_keys": [USERS_MANAGE]}).status_code == 200
+        created_user = client.post("/api/admin/users", json={"username": "Audited", "password": "secret never audit", "role_id": member_id, "all_sources": False, "source_ids": [source_ids[0]], "is_active": True, "must_change_password": False})
+        user_id = created_user.json()["id"]
+        assert client.put(f"/api/admin/users/{user_id}", json={"username": "Audited", "password": "changed never audit", "role_id": viewer_id, "all_sources": True, "source_ids": source_ids, "is_active": False, "must_change_password": True}).status_code == 200
+        assert client.delete(f"/api/admin/users/{user_id}").status_code == 204
+        with sessions() as session:
+            events = session.query(AuditEvent).order_by(AuditEvent.id).all()
+            updated_role = next(event for event in events if event.action == "role.updated")
+            assert set(updated_role.details) == {"permissions_added", "permissions_removed"}
+            actions = {event.action for event in events}
+            assert {"user.updated", "user.role_changed", "user.source_access_changed", "user.status_changed", "user.password_changed", "user.require_password_change_changed", "user.deleted"} <= actions
+            deleted = next(event for event in events if event.action == "user.deleted")
+            assert deleted.target_label == "Audited" and deleted.target_id == user_id
+            assert session.get(User, user_id) is None
+            serialized = " ".join(f"{event.actor_username} {event.target_label} {event.details}" for event in events)
+            for forbidden in ("secret never audit", "changed never audit", "/private/a", "/private/b"):
+                assert forbidden not in serialized
+
+
+def test_failed_role_mutation_does_not_persist_an_audit_event() -> None:
+    with _admin_client() as (client, sessions):
+        _add_admin(sessions)
+        assert client.post("/api/auth/login", json={"username": "admin", "password": "correct horse battery staple"}).status_code == 200
+        assert client.post("/api/admin/roles", json={"name": "Duplicate", "permission_keys": []}).status_code == 201
+        assert client.post("/api/admin/roles", json={"name": "Duplicate", "permission_keys": []}).status_code == 409
+        with sessions() as session:
+            assert [event.action for event in session.query(AuditEvent)] == ["role.created"]
 
 
 def test_last_system_superuser_cannot_be_demoted_or_deleted() -> None:

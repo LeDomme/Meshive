@@ -32,6 +32,7 @@ from meshive.schemas.user import (
     UserSourcePickerRead,
     UserUpdate,
 )
+from meshive.services.audit import AuditAction, log_event
 from meshive.services.mailer import EmailDeliveryError, send_email_verification
 
 router = APIRouter(
@@ -141,7 +142,7 @@ def list_user_role_picker(session: SessionDependency) -> list[UserRolePickerRead
 
 
 @router.post("", response_model=UserManagementRead, status_code=status.HTTP_201_CREATED)
-def create_user(payload: UserCreate, session: SessionDependency) -> UserManagementRead:
+def create_user(payload: UserCreate, current_user: CurrentUserDependency, session: SessionDependency) -> UserManagementRead:
     role = _resolve_role(session, payload)
     source_ids = _resolve_source_ids(session, payload.source_ids)
     user = User(
@@ -158,6 +159,8 @@ def create_user(payload: UserCreate, session: SessionDependency) -> UserManageme
     _apply_access(user, role, payload.all_sources, source_ids)
     session.add(user)
     try:
+        session.flush()
+        log_event(session, current_user, AuditAction.USER_CREATED, "user", user.username, target_id=user.id, details={"all_sources": user.all_sources, "source_grant_count": len(source_ids)})
         session.commit()
     except IntegrityError as error:
         session.rollback()
@@ -180,6 +183,11 @@ def update_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    previous_role_id = user.role_id
+    previous_all_sources = user.all_sources
+    previous_source_ids = {grant.library_source_id for grant in user.library_source_grants}
+    previous_active = user.is_active
+    previous_required_change = user.must_change_password
     role = _resolve_role(session, payload)
     source_ids = _resolve_source_ids(session, payload.source_ids)
     removes_active_superuser = (
@@ -221,6 +229,19 @@ def update_user(
         delete_user_action_tokens(session, user.id)
     if user.id != current_user.id and (payload.password or not payload.is_active):
         user.sessions.clear()
+
+    safe_changes = ["profile"]
+    log_event(session, current_user, AuditAction.USER_UPDATED, "user", user.username, target_id=user.id, details={"changed_categories": safe_changes})
+    if previous_role_id != user.role_id:
+        log_event(session, current_user, AuditAction.USER_ROLE_CHANGED, "user", user.username, target_id=user.id)
+    if previous_all_sources != user.all_sources or previous_source_ids != set(source_ids):
+        log_event(session, current_user, AuditAction.USER_SOURCE_ACCESS_CHANGED, "user", user.username, target_id=user.id, details={"all_sources": user.all_sources, "source_grant_count": len(source_ids)})
+    if previous_active != user.is_active:
+        log_event(session, current_user, AuditAction.USER_STATUS_CHANGED, "user", user.username, target_id=user.id, details={"is_active": user.is_active})
+    if payload.password:
+        log_event(session, current_user, AuditAction.USER_PASSWORD_CHANGED, "user", user.username, target_id=user.id)
+    if previous_required_change != user.must_change_password:
+        log_event(session, current_user, AuditAction.USER_REQUIRE_PASSWORD_CHANGE_CHANGED, "user", user.username, target_id=user.id, details={"required": user.must_change_password})
 
     try:
         session.commit()
@@ -316,5 +337,6 @@ def delete_user(
             status_code=status.HTTP_409_CONFLICT,
             detail="The last active administrator cannot be deleted",
         )
+    log_event(session, current_user, AuditAction.USER_DELETED, "user", user.username, target_id=user.id)
     session.delete(user)
     session.commit()

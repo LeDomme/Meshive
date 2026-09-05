@@ -1,4 +1,5 @@
 from meshive.models.authorization import Role, RolePermission, UserLibrarySource
+from meshive.models.audit import AuditEvent
 from meshive.models.backup import BackupRun, BackupSchedule
 from meshive.models.catalog import (
     Archive,
@@ -25,6 +26,7 @@ from meshive.models.user_token import UserActionToken
 
 __all__ = [
     "Archive",
+    "AuditEvent",
     "ArchiveEntry",
     "AutomaticTagMatch",
     "AutomaticTagRule",
