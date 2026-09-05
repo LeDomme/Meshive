@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from meshive.auth.dependencies import get_current_user, require_admin
-from meshive.auth.permissions import MODELS_TAGS
+from meshive.auth.permissions import CATALOGUE_VIEW, MODELS_TAGS
 from meshive.database import Base, get_session
 from meshive.main import app
 from meshive.models.authorization import Role, RolePermission, UserLibrarySource
@@ -127,7 +127,10 @@ def test_tags_and_direct_model_actions_are_source_scoped() -> None:
             tag_editor = Role(name="Tag editor", normalized_name="tag editor")
             no_tags_role = Role(name="No tags", normalized_name="no tags")
             session.add_all([a, b, tag_editor, no_tags_role]); session.flush()
-            session.add(RolePermission(role_id=tag_editor.id, permission_key=MODELS_TAGS))
+            session.add_all([
+                RolePermission(role_id=tag_editor.id, permission_key=CATALOGUE_VIEW),
+                RolePermission(role_id=tag_editor.id, permission_key=MODELS_TAGS),
+            ])
             model_a = LibraryModel(library_source_id=a.id, relative_path="A", name="A", status="available")
             model_b = LibraryModel(library_source_id=b.id, relative_path="B", name="B", status="available")
             tag_a, tag_b, tag_shared = Tag(name="A tag"), Tag(name="B tag"), Tag(name="Shared tag")
@@ -147,6 +150,7 @@ def test_tags_and_direct_model_actions_are_source_scoped() -> None:
             assert client.put(f"/api/admin/models/{model_a.id}/tags/999").status_code == 404
             assert client.delete(f"/api/admin/models/{model_b.id}/tags/{tag_b.id}").status_code == 404
             app.dependency_overrides[get_current_user] = lambda: no_tags
+            assert client.get("/api/tags").status_code == 403
             assert client.put(f"/api/admin/models/{model_a.id}/tags/{tag_a.id}").status_code == 403
             assert client.delete(f"/api/admin/models/{model_b.id}/tags/{tag_b.id}").status_code == 404
             app.dependency_overrides[get_current_user] = lambda: no_grant

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, create_database_engine, get_session
 from meshive.main import app
-from meshive.models.authorization import UserLibrarySource
+from meshive.models.authorization import Role, UserLibrarySource
 from meshive.models.catalog import LibraryModel, ModelImage
 from meshive.models.favorite import FavoriteListItem
 from meshive.models.library_source import LibrarySource
@@ -251,6 +251,47 @@ def test_favorite_item_payload_requires_matching_reference(tmp_path) -> None:
             json={"entity_type": "model", "model_id": 1, "value": "Psylocke"},
         )
         assert mixed_reference.status_code == 422
+
+
+def test_favorite_routes_require_manage_permission(tmp_path) -> None:
+    with favorite_client(tmp_path) as (client, sessions, _current_user):
+        with sessions() as session:
+            role = Role(name="No favorites", normalized_name="no favorites")
+            user = User(
+                username="No favorites",
+                normalized_username="no favorites",
+                password_hash="unused",
+                role="user",
+                role_definition=role,
+                all_sources=True,
+                is_active=True,
+            )
+            session.add_all([role, user])
+            session.commit()
+
+        app.dependency_overrides[get_current_user] = lambda: user
+        routes = [
+            ("get", "/api/favorite-lists", {}),
+            ("post", "/api/favorite-lists", {"json": {"name": "Blocked"}}),
+            (
+                "get",
+                "/api/favorite-lists/model-memberships",
+                {"params": [("model_ids", 1)]},
+            ),
+            ("get", "/api/favorite-lists/1", {}),
+            ("put", "/api/favorite-lists/1", {"json": {"name": "Blocked"}}),
+            ("delete", "/api/favorite-lists/1", {}),
+            (
+                "post",
+                "/api/favorite-lists/1/items",
+                {"json": {"entity_type": "model", "model_id": 1}},
+            ),
+            ("delete", "/api/favorite-lists/1/items/1", {}),
+        ]
+        for method, url, kwargs in routes:
+            response = getattr(client, method)(url, **kwargs)
+            assert response.status_code == 403
+            assert response.json() == {"detail": "Permission denied"}
 
 
 def test_model_favorites_hide_revoked_sources_without_deleting_them(tmp_path) -> None:

@@ -9,7 +9,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from meshive import __version__
-from meshive.auth.dependencies import require_admin
+from meshive.auth.access import require_global_permission
+from meshive.auth.permissions import DIAGNOSTICS_VIEW
 from meshive.config import get_settings
 from meshive.database import get_session
 from meshive.models.catalog import Archive, LibraryModel, ScanRun
@@ -18,7 +19,7 @@ from meshive.services import scan_scheduler
 router = APIRouter(
     prefix="/admin/diagnostics",
     tags=["diagnostics"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_global_permission(DIAGNOSTICS_VIEW))],
 )
 
 

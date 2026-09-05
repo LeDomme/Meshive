@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 
-const user = { id: 1, username: "Admin", role: "admin", must_change_password: false }
+const user = { id: 1, username: "Admin", role: "admin", must_change_password: false, permissions: ["diagnostics.view"], source_access: { all_sources: true, source_ids: [] } }
 
 test("admin diagnostics renders readable storage sizes", async ({ page }) => {
   let requests = 0

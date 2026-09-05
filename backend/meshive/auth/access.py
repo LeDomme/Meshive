@@ -158,6 +158,31 @@ def require_global_permission(permission_key: str):
     return dependency
 
 
+def require_any_global_permission(permission_keys: set[str]):
+    """Require one global permission plus effective access to every source."""
+    if not permission_keys or not permission_keys <= ALL_PERMISSION_KEYS:
+        raise ValueError("Permission keys must be registered")
+
+    def dependency(
+        user: User = CURRENT_USER_DEPENDENCY,
+        session: Session = SESSION_DEPENDENCY,
+    ) -> AccessContext:
+        access = get_access_context(session, user)
+        if not access.permission_keys.intersection(permission_keys):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permission denied",
+            )
+        if not access.all_sources:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="All sources access is required",
+            )
+        return access
+
+    return dependency
+
+
 def require_permission(permission_key: str):
     if permission_key not in ALL_PERMISSION_KEYS:
         raise ValueError(f"Unknown permission key: {permission_key}")
@@ -168,6 +193,25 @@ def require_permission(permission_key: str):
     ) -> AccessContext:
         access = get_access_context(session, user)
         require_access_permission(access, permission_key)
+        return access
+
+    return dependency
+
+
+def require_any_permission(permission_keys: set[str]):
+    if not permission_keys or not permission_keys <= ALL_PERMISSION_KEYS:
+        raise ValueError("Permission keys must be registered")
+
+    def dependency(
+        user: User = CURRENT_USER_DEPENDENCY,
+        session: Session = SESSION_DEPENDENCY,
+    ) -> AccessContext:
+        access = get_access_context(session, user)
+        if not access.permission_keys.intersection(permission_keys):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permission denied",
+            )
         return access
 
     return dependency

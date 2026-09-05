@@ -194,18 +194,21 @@ def test_source_configuration_requires_manage_permission_and_all_sources(monkeyp
         )
 
         with TestClient(app) as client:
+            current_user[:] = [managed_without_all_sources]
+            assert client.get("/api/admin/library-sources").json() == []
+            assert client.put(
+                f"/api/admin/library-sources/{source_id}",
+                json={**source_payload(), "root_path": "/invalid"},
+            ).status_code == 404
             for user in (managed_without_all_sources, without_manage):
                 current_user[:] = [user]
-                assert client.get("/api/admin/library-sources").status_code == 403
                 assert client.post(
                     "/api/admin/library-sources",
                     json={**source_payload(), "root_path": "/invalid"},
                 ).status_code == 403
-                assert client.put(
-                    f"/api/admin/library-sources/{source_id}",
-                    json={**source_payload(), "root_path": "/invalid"},
-                ).status_code == 403
-                assert client.delete(f"/api/admin/library-sources/{source_id}").status_code == 403
+                assert client.delete(f"/api/admin/library-sources/{source_id}").status_code == (
+                    404 if user is managed_without_all_sources else 403
+                )
                 assert client.post(
                     "/api/admin/library-sources/preview",
                     json={
@@ -214,6 +217,12 @@ def test_source_configuration_requires_manage_permission_and_all_sources(monkeyp
                         "relative_path": "invalid",
                     },
                 ).status_code == 403
+
+            current_user[:] = [without_manage]
+            assert client.put(
+                f"/api/admin/library-sources/{source_id}",
+                json={**source_payload(), "root_path": "/invalid"},
+            ).status_code == 403
 
         assert called == []
         with sessions() as session:

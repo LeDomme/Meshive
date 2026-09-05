@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue"
 import { apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
 import TagChip from "../../components/TagChip.vue"
+import { useAuthStore } from "../../stores/auth"
 
 interface Tag { id: number; name: string; color: string | null; description: string | null }
 interface Source { id: number; name: string }
@@ -47,14 +48,23 @@ const automaticPattern = ref("")
 const automaticFeedback = ref("")
 const automaticError = ref("")
 const automaticWorking = ref(false)
+const auth = useAuthStore()
+const canManageTags = auth.can("tags.manage")
+const canManageTagRules = auth.can("tag_rules.manage")
 
 async function load() {
-  ;[tags.value, sources.value, rules.value, automaticRules.value] = await Promise.all([
-    apiRequest<Tag[]>("/api/tags"),
-    apiRequest<Source[]>("/api/admin/library-sources"),
-    apiRequest<Rule[]>("/api/admin/folder-tag-rules"),
-    apiRequest<AutomaticRule[]>("/api/admin/automatic-tag-rules"),
+  const [loadedTags, loadedSources, loadedRules, loadedAutomaticRules] = await Promise.all([
+    apiRequest<Tag[]>("/api/admin/tags"),
+    canManageTags ? apiRequest<Source[]>("/api/admin/tags/library-sources") : Promise.resolve([]),
+    canManageTags ? apiRequest<Rule[]>("/api/admin/folder-tag-rules") : Promise.resolve([]),
+    canManageTagRules
+      ? apiRequest<AutomaticRule[]>("/api/admin/automatic-tag-rules")
+      : Promise.resolve([]),
   ])
+  tags.value = loadedTags
+  sources.value = loadedSources
+  rules.value = loadedRules
+  automaticRules.value = loadedAutomaticRules
 }
 async function createTag() {
   tagWorking.value = true
@@ -222,7 +232,7 @@ onMounted(load)
   <main class="admin-shell">
     <AdminHeader title="Tags" />
     <section class="admin-grid">
-      <div class="panel">
+      <div v-if="canManageTags" class="panel">
         <h2>Tags</h2>
         <p v-if="tagFeedback" class="success-panel" aria-live="polite">
           {{ tagFeedback }}
@@ -302,7 +312,7 @@ onMounted(load)
           </div>
         </div>
       </div>
-      <div class="panel">
+      <div v-if="canManageTags" class="panel">
         <h2>Folder tag rules</h2>
         <form class="source-form" @submit.prevent="createRule">
           <label><span>Source</span><select v-model="sourceId" required><option value="">Select…</option><option v-for="source in sources" :key="source.id" :value="String(source.id)">{{ source.name }}</option></select></label>
@@ -318,7 +328,7 @@ onMounted(load)
           </div>
         </div>
       </div>
-      <div class="panel automatic-tag-panel">
+      <div v-if="canManageTagRules" class="panel automatic-tag-panel">
         <div class="panel-heading">
           <div>
             <h2>Automatic tag rules</h2>

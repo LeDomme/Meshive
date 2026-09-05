@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router"
 
 import { useAuthStore } from "./stores/auth"
+import AccessDeniedView from "./views/AccessDeniedView.vue"
 import HomeView from "./views/HomeView.vue"
 import ForgotPasswordView from "./views/ForgotPasswordView.vue"
 import FavoriteListsView from "./views/FavoriteListsView.vue"
@@ -17,6 +18,8 @@ import UsersView from "./views/admin/UsersView.vue"
 import BackupsView from "./views/admin/BackupsView.vue"
 import CreatorsView from "./views/admin/CreatorsView.vue"
 import DiagnosticsView from "./views/admin/DiagnosticsView.vue"
+import RolesView from "./views/admin/RolesView.vue"
+import ScansView from "./views/admin/ScansView.vue"
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -25,6 +28,12 @@ export const router = createRouter({
       path: "/",
       name: "home",
       component: HomeView,
+      meta: { requiresAuth: true, requiredPermission: "catalogue.view" },
+    },
+    {
+      path: "/access-denied",
+      name: "access-denied",
+      component: AccessDeniedView,
       meta: { requiresAuth: true },
     },
     {
@@ -38,13 +47,13 @@ export const router = createRouter({
       path: "/favorites",
       name: "favorite-lists",
       component: FavoriteListsView,
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiredPermission: "favorites.manage" },
     },
     {
       path: "/models/:id",
       name: "model-detail",
       component: ModelDetailView,
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiredPermission: "catalogue.view" },
     },
     {
       path: "/login",
@@ -77,19 +86,34 @@ export const router = createRouter({
       path: "/admin/backups",
       name: "backups",
       component: BackupsView,
-      meta: { requiresAuth: true, requiresAdmin: true },
+      meta: { requiresAuth: true, requiredPermission: "backups.manage", requiresAllSources: true },
     },
     {
       path: "/admin/users",
       name: "users",
       component: UsersView,
-      meta: { requiresAuth: true, requiresAdmin: true },
+      meta: { requiresAuth: true, requiredPermission: "users.manage", requiresAllSources: true },
+    },
+    {
+      path: "/admin/roles",
+      name: "roles",
+      component: RolesView,
+      meta: { requiresAuth: true, requiredPermission: "roles.manage", requiresAllSources: true },
+    },
+    {
+      path: "/admin/scans",
+      name: "scans",
+      component: ScansView,
+      meta: {
+        requiresAuth: true,
+        requiredAnyPermission: ["scans.view", "scans.start", "scans.control"],
+      },
     },
     {
       path: "/admin/metadata",
       name: "metadata",
       component: CreatorsView,
-      meta: { requiresAuth: true, requiresAdmin: true },
+      meta: { requiresAuth: true, requiredPermission: "metadata.manage", requiresAllSources: true },
     },
     {
       path: "/admin/creators",
@@ -99,19 +123,23 @@ export const router = createRouter({
       path: "/admin/tags",
       name: "tags",
       component: TagsView,
-      meta: { requiresAuth: true, requiresAdmin: true },
+      meta: {
+        requiresAuth: true,
+        requiredAnyPermission: ["tags.manage", "tag_rules.manage"],
+        requiresAllSources: true,
+      },
     },
     {
       path: "/admin/sources",
       name: "sources",
       component: SourcesView,
-      meta: { requiresAuth: true, requiresAdmin: true },
+      meta: { requiresAuth: true, requiredPermission: "sources.manage" },
     },
     {
       path: "/admin/diagnostics",
       name: "diagnostics",
       component: DiagnosticsView,
-      meta: { requiresAuth: true, requiresAdmin: true },
+      meta: { requiresAuth: true, requiredPermission: "diagnostics.view", requiresAllSources: true },
     },
     {
       path: "/:pathMatch(.*)*",
@@ -151,6 +179,21 @@ router.beforeEach(async (to) => {
     return { name: "home" }
   }
   if (to.meta.requiresAdmin && auth.user?.role !== "admin") {
+    return { name: "home" }
+  }
+  if (typeof to.meta.requiredPermission === "string" && !auth.can(to.meta.requiredPermission)) {
+    if (to.meta.requiredPermission === "catalogue.view") {
+      return { name: "access-denied" }
+    }
+    return { name: "home" }
+  }
+  if (
+    Array.isArray(to.meta.requiredAnyPermission)
+    && !to.meta.requiredAnyPermission.some((permission) => auth.can(permission))
+  ) {
+    return { name: "home" }
+  }
+  if (to.meta.requiresAllSources && !auth.user?.source_access?.all_sources) {
     return { name: "home" }
   }
   if (to.name === "login" && auth.user) {

@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from meshive.auth.dependencies import get_current_user, require_admin
 from meshive.database import Base, get_session
 from meshive.main import app
-from meshive.models.authorization import UserLibrarySource
+from meshive.models.authorization import Role, UserLibrarySource
 from meshive.models.catalog import LibraryModel
 from meshive.models.library_source import LibrarySource
 from meshive.models.metadata import MetadataArtwork
@@ -174,9 +174,14 @@ def test_metadata_artwork_is_scoped_to_visible_model_sources() -> None:
             a_only = User(username="A", normalized_username="a", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
             all_sources = User(username="All", normalized_username="all", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=True, is_active=True)
             no_grant = User(username="None", normalized_username="none", password_hash="unused", role="user", role_definition=get_system_role_for_legacy_role(session, "user"), all_sources=False, is_active=True)
-            session.add_all([*artworks, a_only, all_sources, no_grant])
+            no_catalogue_role = Role(name="No catalogue", normalized_name="no catalogue")
+            no_catalogue = User(username="No catalogue", normalized_username="no catalogue", password_hash="unused", role="user", role_definition=no_catalogue_role, all_sources=False, is_active=True)
+            session.add_all([*artworks, a_only, all_sources, no_grant, no_catalogue])
             session.flush()
-            session.add(UserLibrarySource(user_id=a_only.id, library_source_id=source_a.id))
+            session.add_all([
+                UserLibrarySource(user_id=a_only.id, library_source_id=source_a.id),
+                UserLibrarySource(user_id=no_catalogue.id, library_source_id=source_a.id),
+            ])
             session.commit()
         with TestClient(app) as client:
             app.dependency_overrides[get_current_user] = lambda: a_only
@@ -188,6 +193,13 @@ def test_metadata_artwork_is_scoped_to_visible_model_sources() -> None:
             assert hidden.content != artworks[1].content and "etag" not in hidden.headers
             app.dependency_overrides[get_current_user] = lambda: no_grant
             assert client.get(f"/api/metadata/artwork/{artworks[0].id}").status_code == 404
+            app.dependency_overrides[get_current_user] = lambda: no_catalogue
+            visible = client.get(f"/api/metadata/artwork/{artworks[0].id}")
+            assert visible.status_code == 403
+            assert visible.content != artworks[0].content and "etag" not in visible.headers
+            hidden = client.get(f"/api/metadata/artwork/{artworks[1].id}")
+            assert hidden.status_code == 404
+            assert hidden.content != artworks[1].content and "etag" not in hidden.headers
             app.dependency_overrides[get_current_user] = lambda: all_sources
             assert client.get(f"/api/metadata/artwork/{artworks[1].id}").status_code == 200
     finally:

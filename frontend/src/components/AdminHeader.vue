@@ -2,8 +2,10 @@
 import { RouterLink } from "vue-router"
 import AccountMenu from "./AccountMenu.vue"
 import BrandLogo from "./BrandLogo.vue"
+import { useAuthStore } from "../stores/auth"
 
 defineProps<{ title: string }>()
+const auth = useAuthStore()
 </script>
 
 <template>
@@ -16,13 +18,7 @@ defineProps<{ title: string }>()
       </div>
     </div>
     <nav class="admin-nav" aria-label="Administration">
-      <RouterLink class="text-link" to="/">Back to Meshive</RouterLink>
-      <RouterLink class="text-link" to="/admin/sources">Library sources</RouterLink>
-      <RouterLink class="text-link" to="/admin/metadata">Metadata</RouterLink>
-      <RouterLink class="text-link" to="/admin/tags">Tags</RouterLink>
-      <RouterLink class="text-link" to="/admin/users">Users</RouterLink>
-      <RouterLink class="text-link" to="/admin/backups">Backups</RouterLink>
-      <RouterLink class="text-link" to="/admin/diagnostics">Diagnostics</RouterLink>
+      <RouterLink v-if="auth.can('catalogue.view')" class="text-link" to="/">Back to Meshive</RouterLink>
       <AccountMenu />
     </nav>
   </header>

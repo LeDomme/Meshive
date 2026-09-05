@@ -19,6 +19,7 @@ from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import (
     ARCHIVES_DOWNLOAD,
     ARCHIVES_VIEW_ENTRIES,
+    CATALOGUE_VIEW,
     CATALOGUE_VIEW_MAINTENANCE,
     MODELS_DELETE_MISSING,
     MODELS_PRIMARY_IMAGE,
@@ -112,6 +113,7 @@ def list_models(
     session: Session = Depends(get_session),
 ) -> ModelPage:
     access = get_access_context(session, user)
+    require_access_permission(access, CATALOGUE_VIEW)
     if model_status is not None:
         require_access_permission(access, CATALOGUE_VIEW_MAINTENANCE)
     filters = _model_filters(
@@ -233,6 +235,8 @@ def model_navigation(
     session: Session = Depends(get_session),
 ) -> ModelNavigation:
     access = get_access_context(session, user)
+    get_visible_model_or_404(session, access, model_id)
+    require_access_permission(access, CATALOGUE_VIEW)
     if model_status is not None:
         require_access_permission(access, CATALOGUE_VIEW_MAINTENANCE)
 
@@ -291,6 +295,7 @@ def catalogue_filters(
     session: Session = Depends(get_session),
 ) -> CatalogueFilters:
     access = get_access_context(session, user)
+    require_access_permission(access, CATALOGUE_VIEW)
     if model_status is not None:
         require_access_permission(access, CATALOGUE_VIEW_MAINTENANCE)
     values = {
@@ -403,6 +408,7 @@ def model_detail(
             status_code=status.HTTP_404_NOT_FOUND, detail="Model not found"
         )
     model, source_name = row
+    require_access_permission(access, CATALOGUE_VIEW)
     creator_links = (
         list(
             session.scalars(
@@ -574,6 +580,7 @@ def download_all_archives(
 ) -> StreamingResponse:
     access = get_access_context(session, current_user)
     model = get_visible_model_or_404(session, access, model_id)
+    require_access_permission(access, CATALOGUE_VIEW)
     if ARCHIVES_DOWNLOAD not in access.permission_keys:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
     rows = session.execute(
@@ -648,6 +655,7 @@ def download_archive(
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
+    require_access_permission(access, CATALOGUE_VIEW)
     if ARCHIVES_DOWNLOAD not in access.permission_keys:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
     row = session.execute(
@@ -694,6 +702,7 @@ def model_image(
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
+    require_access_permission(access, CATALOGUE_VIEW)
     row = session.execute(
         select(ModelImage, LibrarySource.root_path)
         .join(LibraryModel, LibraryModel.id == ModelImage.model_id)
@@ -747,6 +756,7 @@ def model_thumbnail(
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
+    require_access_permission(access, CATALOGUE_VIEW)
     key = session.scalar(
         select(ModelImage.thumbnail_key).where(
             ModelImage.model_id == model_id,
