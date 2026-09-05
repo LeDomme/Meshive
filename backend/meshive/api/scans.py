@@ -31,8 +31,8 @@ from meshive.schemas.scan import (
     ScanSourcePickerRead,
     ScanStartRequest,
 )
+from meshive.services.audit import AuditAction, log_event
 from meshive.services.scanner import (
-    create_scan_run,
     dispatch_pending_scans,
     has_queued_or_running_scan,
 )
@@ -90,12 +90,26 @@ def start_source_scan(
             status_code=status.HTTP_409_CONFLICT,
             detail="A scan is already queued or running for this source",
         )
-    scan = create_scan_run(
-        session,
-        source_id,
+    scan = ScanRun(
+        library_source_id=source_id,
+        status="pending",
         trigger="manual",
         mode=payload.mode if payload is not None else "smart",
     )
+    session.add(scan)
+    session.flush()
+    log_event(
+        session,
+        current_user,
+        AuditAction.SCAN_STARTED,
+        "scan",
+        _scan_target_label(scan, source.name),
+        target_id=scan.id,
+        library_source_id=source.id,
+        details={"mode": scan.mode, "trigger": scan.trigger},
+    )
+    session.commit()
+    session.refresh(scan)
     dispatch_pending_scans()
     return scan
 
@@ -221,6 +235,7 @@ def cancel_scan(
     if scan.status == "pending":
         scan.status = "cancelled"
         scan.finished_at = utc_now()
+    _log_scan_control_event(session, current_user, scan, AuditAction.SCAN_CANCEL_REQUESTED)
     session.commit()
     return scan
 
@@ -236,6 +251,7 @@ def pause_scan(
     if scan.status not in ("pending", "running"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Scan is not active")
     scan.pause_requested = True
+    _log_scan_control_event(session, current_user, scan, AuditAction.SCAN_PAUSE_REQUESTED)
     session.commit()
     return scan
 
@@ -252,6 +268,7 @@ def resume_scan(
     if scan.status not in ("pending", "running"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Scan is not active")
     scan.pause_requested = False
+    _log_scan_control_event(session, current_user, scan, AuditAction.SCAN_RESUME_REQUESTED)
     session.commit()
     return scan
 
@@ -274,4 +291,30 @@ def get_scan(
     return ScanDetail(
         **ScanRunRead.model_validate(scan).model_dump(),
         issues=[ScanIssueRead.model_validate(issue) for issue in issues],
+    )
+
+
+def _scan_target_label(scan: ScanRun, source_name: str) -> str:
+    if scan.target_model_name:
+        return f"Targeted scan for {scan.target_model_name}"
+    return f"Smart scan for {source_name}"
+
+
+def _log_scan_control_event(
+    session: Session,
+    actor: User,
+    scan: ScanRun,
+    action: str,
+) -> None:
+    source = session.get(LibrarySource, scan.library_source_id)
+    source_name = source.name if source is not None else "deleted source"
+    log_event(
+        session,
+        actor,
+        action,
+        "scan",
+        _scan_target_label(scan, source_name),
+        target_id=scan.id,
+        library_source_id=scan.library_source_id,
+        details={"mode": scan.mode, "trigger": scan.trigger},
     )

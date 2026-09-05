@@ -20,3 +20,16 @@ test("audit link and route require audit view plus all sources", async ({ page }
   await auth(page, ["audit.view"], false)
   await page.goto("/admin/audit"); await expect(page).not.toHaveURL(/\/admin\/audit/)
 })
+
+test("audit log renders source and scan actions with readable labels", async ({ page }) => {
+  await auth(page, ["audit.view"])
+  await page.route("**/api/admin/audit-events**", route => route.fulfill({ json: { total: 2, items: [
+    { id: 2, created_at: "2026-01-02T00:00:00Z", actor_username: "Alice", action: "scan.pause_requested", target_type: "scan", target_label: "Smart scan for Library" },
+    { id: 1, created_at: "2026-01-01T00:00:00Z", actor_username: "Alice", action: "source.updated", target_type: "library_source", target_label: "Library" },
+  ] } }))
+  await page.goto("/admin/audit")
+  await expect(page.locator(".audit-row").getByText("Source updated", { exact: true })).toBeVisible()
+  await expect(page.locator(".audit-row").getByText("Scan pause requested", { exact: true })).toBeVisible()
+  await expect(page.getByText("source.updated", { exact: true })).toHaveCount(0)
+  await expect(page.getByText("scan.pause_requested", { exact: true })).toHaveCount(0)
+})

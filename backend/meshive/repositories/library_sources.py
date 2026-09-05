@@ -25,8 +25,7 @@ def get_source(session: Session, source_id: int) -> LibrarySource | None:
 def create_source(session: Session, data: LibrarySourceCreate) -> LibrarySource:
     source = LibrarySource(**data.model_dump())
     session.add(source)
-    session.commit()
-    session.refresh(source)
+    session.flush()
     return source
 
 
@@ -35,8 +34,6 @@ def update_source(
 ) -> LibrarySource:
     for key, value in data.model_dump().items():
         setattr(source, key, value)
-    session.commit()
-    session.refresh(source)
     return source
 
 
@@ -115,5 +112,4 @@ def delete_source(session: Session, source: LibrarySource) -> list[str]:
         delete(FolderTagRule).where(FolderTagRule.library_source_id == source.id)
     )
     session.delete(source)
-    session.commit()
     return cache_keys
