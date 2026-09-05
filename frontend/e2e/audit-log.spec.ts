@@ -48,12 +48,15 @@ test("audit log renders backup and restore actions with readable labels", async 
 
 test("audit log renders metadata and tag actions with readable labels", async ({ page }) => {
   await auth(page, ["audit.view"])
-  await page.route("**/api/admin/audit-events**", route => route.fulfill({ json: { total: 2, items: [
+  await page.route("**/api/admin/audit-events**", route => route.fulfill({ json: { total: 3, items: [
+    { id: 3, created_at: "2026-01-03T00:00:00Z", actor_username: "Alice", action: "folder_name_regex_tag_rule.created", target_type: "folder_name_regex_tag_rule", target_label: "Folder name regex rule" },
     { id: 2, created_at: "2026-01-02T00:00:00Z", actor_username: "Alice", action: "model_tag.added", target_type: "model_tag", target_label: "Model tag assignment" },
     { id: 1, created_at: "2026-01-01T00:00:00Z", actor_username: "Alice", action: "automatic_tag_rule.updated", target_type: "automatic_tag_rule", target_label: "Automatic tag rule" },
   ] } }))
   await page.goto("/admin/audit")
   await expect(page.locator(".audit-row").getByText("Model tag added", { exact: true })).toBeVisible()
   await expect(page.locator(".audit-row").getByText("Automatic tag rule updated", { exact: true })).toBeVisible()
+  await expect(page.locator(".audit-row").getByText("Folder name rule created", { exact: true })).toBeVisible()
   await expect(page.getByText("automatic_tag_rule.updated", { exact: true })).toHaveCount(0)
+  await expect(page.getByText("folder_name_regex_tag_rule.created", { exact: true })).toHaveCount(0)
 })

@@ -24,11 +24,19 @@ interface AutomaticEvaluation {
   assignments_added: number
   assignments_removed: number
 }
+interface FolderNameRule { id: number; tag_id: number; tag_name: string; pattern: string; enabled: boolean; match_count: number }
+interface FolderNamePreview { model_name: string; relative_path: string }
 
 const tags = ref<Tag[]>([])
 const sources = ref<Source[]>([])
 const rules = ref<Rule[]>([])
 const automaticRules = ref<AutomaticRule[]>([])
+const folderNameRules = ref<FolderNameRule[]>([])
+const folderNameTagId = ref("")
+const folderNamePattern = ref("")
+const folderNamePreview = ref<FolderNamePreview[]>([])
+const folderNameError = ref("")
+const folderNameWorking = ref(false)
 const name = ref("")
 const color = ref("#5eead4")
 const description = ref("")
@@ -53,18 +61,53 @@ const canManageTags = auth.can("tags.manage")
 const canManageTagRules = auth.can("tag_rules.manage")
 
 async function load() {
-  const [loadedTags, loadedSources, loadedRules, loadedAutomaticRules] = await Promise.all([
+  const [loadedTags, loadedSources, loadedRules, loadedAutomaticRules, loadedFolderNameRules] = await Promise.all([
     apiRequest<Tag[]>("/api/admin/tags"),
     canManageTags ? apiRequest<Source[]>("/api/admin/tags/library-sources") : Promise.resolve([]),
     canManageTags ? apiRequest<Rule[]>("/api/admin/folder-tag-rules") : Promise.resolve([]),
     canManageTagRules
       ? apiRequest<AutomaticRule[]>("/api/admin/automatic-tag-rules")
       : Promise.resolve([]),
+    canManageTagRules
+      ? apiRequest<FolderNameRule[]>("/api/admin/folder-name-tag-rules")
+      : Promise.resolve([]),
   ])
   tags.value = loadedTags
   sources.value = loadedSources
   rules.value = loadedRules
   automaticRules.value = loadedAutomaticRules
+  folderNameRules.value = loadedFolderNameRules
+}
+async function previewFolderNameRule() {
+  folderNameError.value = ""
+  folderNamePreview.value = []
+  try {
+    folderNamePreview.value = await apiRequest<FolderNamePreview[]>("/api/admin/folder-name-tag-rules/preview", {
+      method: "POST", body: JSON.stringify({ pattern: folderNamePattern.value, limit: 25 }),
+    })
+  } catch (error) {
+    folderNameError.value = error instanceof Error ? error.message : "Unable to preview rule"
+  }
+}
+async function createFolderNameRule() {
+  folderNameWorking.value = true
+  folderNameError.value = ""
+  try {
+    await apiRequest("/api/admin/folder-name-tag-rules", {
+      method: "POST", body: JSON.stringify({ tag_id: Number(folderNameTagId.value), pattern: folderNamePattern.value, enabled: true }),
+    })
+    folderNamePattern.value = ""
+    folderNamePreview.value = []
+    await load()
+  } catch (error) {
+    folderNameError.value = error instanceof Error ? error.message : "Unable to save rule"
+  } finally {
+    folderNameWorking.value = false
+  }
+}
+async function deleteFolderNameRule(id: number) {
+  await apiRequest(`/api/admin/folder-name-tag-rules/${id}`, { method: "DELETE" })
+  await load()
 }
 async function createTag() {
   tagWorking.value = true
@@ -404,6 +447,24 @@ onMounted(load)
               >Delete</button>
             </div>
           </div>
+        </div>
+      </div>
+      <div v-if="canManageTagRules" class="panel automatic-tag-panel">
+        <h2>Folder name rules</h2>
+        <p class="panel-copy">
+          Match each individual folder name in a model path with a case-insensitive RE2 regular expression. Example: <code>_p[12]$</code>.
+        </p>
+        <p v-if="folderNameError" class="form-error" role="alert">{{ folderNameError }}</p>
+        <form class="source-form automatic-rule-form" @submit.prevent="createFolderNameRule">
+          <label><span>Folder name regex</span><input v-model="folderNamePattern" required maxlength="255" placeholder="_p[12]$"></label>
+          <label><span>Assign tag</span><select v-model="folderNameTagId" required><option value="">Select a tag</option><option v-for="tag in tags" :key="tag.id" :value="String(tag.id)">{{ tag.name }}</option></select></label>
+          <div class="row-actions"><button class="secondary-button" type="button" @click="previewFolderNameRule">Preview</button><button class="primary-button" :disabled="folderNameWorking">Add rule</button></div>
+        </form>
+        <div v-if="folderNamePreview.length" class="source-list">
+          <div v-for="match in folderNamePreview" :key="`${match.model_name}:${match.relative_path}`" class="source-row"><span>{{ match.model_name }} · {{ match.relative_path }}</span></div>
+        </div>
+        <div class="source-list automatic-rule-list">
+          <div v-for="rule in folderNameRules" :key="rule.id" class="automatic-rule-row"><span>{{ rule.pattern }} → {{ rule.tag_name }}</span><span class="automatic-rule-matches">{{ rule.match_count }} models matched</span><button class="danger-button" type="button" @click="deleteFolderNameRule(rule.id)">Delete</button></div>
         </div>
       </div>
     </section>

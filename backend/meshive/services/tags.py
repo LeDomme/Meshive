@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
+import re2
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
@@ -8,6 +9,8 @@ from meshive.models.catalog import Archive, ArchiveEntry, LibraryModel
 from meshive.models.tag import (
     AutomaticTagMatch,
     AutomaticTagRule,
+    FolderNameRegexTagMatch,
+    FolderNameRegexTagRule,
     FolderTagRule,
     ModelTag,
 )
@@ -23,6 +26,19 @@ class AutomaticTagEvaluation:
 
 def normalize_automatic_pattern(value: str) -> str:
     return value.strip().casefold()
+
+
+def compile_folder_name_regex(value: str) -> tuple[str, str, re2._Regexp]:
+    pattern = value.strip()
+    if not pattern:
+        raise ValueError("Pattern cannot be empty")
+    options = re2.Options()
+    options.case_sensitive = False
+    try:
+        compiled = re2.compile(pattern, options=options)
+    except re2.error as error:
+        raise ValueError(f"Invalid RE2 pattern: {error}") from error
+    return pattern, pattern.casefold(), compiled
 
 
 def recompute_inherited_tags(session: Session, source_id: int) -> None:
@@ -75,6 +91,7 @@ def recompute_inherited_tags(session: Session, source_id: int) -> None:
             ModelTag.is_direct.is_(False),
             ModelTag.is_inherited.is_(False),
             ModelTag.is_automatic.is_(False),
+            ModelTag.is_folder_name_regex.is_(False),
         )
     )
 
@@ -167,13 +184,106 @@ def recompute_automatic_tags(
             continue
         assignment.is_automatic = False
         removed += 1
-        if not assignment.is_direct and not assignment.is_inherited:
+        if (
+            not assignment.is_direct
+            and not assignment.is_inherited
+            and not assignment.is_folder_name_regex
+        ):
             session.delete(assignment)
 
     session.flush()
+    recompute_folder_name_regex_tags(session, selected_model_ids)
     return AutomaticTagEvaluation(
         models_evaluated=len(selected_model_ids),
         matches=len(matched_paths),
+        assignments_added=added,
+        assignments_removed=removed,
+    )
+
+
+def recompute_folder_name_regex_tags(
+    session: Session, model_ids: list[int] | None = None
+) -> AutomaticTagEvaluation:
+    statement = select(LibraryModel)
+    if model_ids is not None:
+        selected_model_ids = list(dict.fromkeys(model_ids))
+        if not selected_model_ids:
+            return AutomaticTagEvaluation()
+        statement = statement.where(LibraryModel.id.in_(selected_model_ids))
+    models = list(session.scalars(statement))
+    if not models:
+        return AutomaticTagEvaluation()
+    selected_model_ids = [model.id for model in models]
+    rules = list(
+        session.scalars(
+            select(FolderNameRegexTagRule)
+            .where(FolderNameRegexTagRule.enabled.is_(True))
+            .order_by(FolderNameRegexTagRule.id)
+        )
+    )
+    compiled_rules = {
+        rule.id: compile_folder_name_regex(rule.pattern)[2] for rule in rules
+    }
+    matched_rules: set[tuple[int, int]] = set()
+    for model in models:
+        segments = PurePosixPath(model.relative_path).parts
+        for rule in rules:
+            if any(compiled_rules[rule.id].search(segment) for segment in segments):
+                matched_rules.add((model.id, rule.id))
+
+    session.execute(
+        delete(FolderNameRegexTagMatch).where(
+            FolderNameRegexTagMatch.model_id.in_(selected_model_ids)
+        )
+    )
+    session.add_all(
+        FolderNameRegexTagMatch(
+            folder_name_regex_tag_rule_id=rule_id,
+            model_id=model_id,
+        )
+        for model_id, rule_id in matched_rules
+    )
+    rule_tags = {rule.id: rule.tag_id for rule in rules}
+    desired_tags: dict[int, set[int]] = {model_id: set() for model_id in selected_model_ids}
+    for model_id, rule_id in matched_rules:
+        desired_tags[model_id].add(rule_tags[rule_id])
+    assignments = {
+        (assignment.model_id, assignment.tag_id): assignment
+        for assignment in session.scalars(
+            select(ModelTag).where(ModelTag.model_id.in_(selected_model_ids))
+        )
+    }
+    added = 0
+    removed = 0
+    for model_id, tag_ids in desired_tags.items():
+        for tag_id in tag_ids:
+            assignment = assignments.get((model_id, tag_id))
+            if assignment is None:
+                assignment = ModelTag(
+                    model_id=model_id,
+                    tag_id=tag_id,
+                    is_direct=False,
+                    is_inherited=False,
+                    is_automatic=False,
+                    is_folder_name_regex=True,
+                )
+                session.add(assignment)
+                assignments[(model_id, tag_id)] = assignment
+                added += 1
+            elif not assignment.is_folder_name_regex:
+                assignment.is_folder_name_regex = True
+                added += 1
+    for (model_id, tag_id), assignment in assignments.items():
+        if not assignment.is_folder_name_regex or tag_id in desired_tags[model_id]:
+            continue
+        assignment.is_folder_name_regex = False
+        removed += 1
+        if not assignment.is_direct and not assignment.is_inherited and not assignment.is_automatic:
+            session.delete(assignment)
+    session.flush()
+    return AutomaticTagEvaluation(
+        models_evaluated=len(models),
+        matches=len(matched_rules),
         assignments_added=added,
         assignments_removed=removed,
     )

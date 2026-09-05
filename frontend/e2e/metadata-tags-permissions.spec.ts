@@ -34,16 +34,18 @@ test("metadata managers see only Metadata and load no tag administration APIs", 
   expect(tagRequest).toBe(false)
 })
 
-test("tag-rule managers load only automatic rules", async ({ page }) => {
+test("tag-rule managers load only automatic and folder-name rules", async ({ page }) => {
   let folderRequest = false
   await mockAuth(page, ["tag_rules.manage"])
   await page.route("**/api/admin/tags/library-sources", route => { folderRequest = true; return route.fulfill({ status: 403 }) })
   await page.route("**/api/admin/folder-tag-rules", route => { folderRequest = true; return route.fulfill({ status: 403 }) })
   await page.route("**/api/admin/tags", route => route.fulfill({ json: [{ id: 1, name: "Bust", color: null, description: null }] }))
   await page.route("**/api/admin/automatic-tag-rules", route => route.fulfill({ json: [] }))
+  await page.route("**/api/admin/folder-name-tag-rules", route => route.fulfill({ json: [] }))
 
   await page.goto("/admin/tags")
   await expect(page.getByRole("heading", { name: "Automatic tag rules" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Folder name rules" })).toBeVisible()
   await expect(page.locator(".admin-grid > .panel").filter({ has: page.getByRole("heading", { name: "Tags", exact: true }) })).toHaveCount(0)
   await expect(page.getByRole("heading", { name: "Folder tag rules" })).toHaveCount(0)
   expect(folderRequest).toBe(false)
@@ -51,17 +53,40 @@ test("tag-rule managers load only automatic rules", async ({ page }) => {
 
 test("tag managers load tag and folder administration but no automatic rules", async ({ page }) => {
   let automaticRequest = false
+  let folderNameRequest = false
   await mockAuth(page, ["tags.manage"])
   await page.route("**/api/admin/tags", route => route.fulfill({ json: [] }))
   await page.route("**/api/admin/tags/library-sources", route => route.fulfill({ json: [] }))
   await page.route("**/api/admin/folder-tag-rules", route => route.fulfill({ json: [] }))
   await page.route("**/api/admin/automatic-tag-rules", route => { automaticRequest = true; return route.fulfill({ status: 403 }) })
+  await page.route("**/api/admin/folder-name-tag-rules**", route => { folderNameRequest = true; return route.fulfill({ status: 403 }) })
 
   await page.goto("/admin/tags")
   await expect(page.locator(".admin-grid > .panel").filter({ has: page.getByRole("heading", { name: "Tags", exact: true }) })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Folder tag rules" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Automatic tag rules" })).toHaveCount(0)
+  await expect(page.getByRole("heading", { name: "Folder name rules" })).toHaveCount(0)
   expect(automaticRequest).toBe(false)
+  expect(folderNameRequest).toBe(false)
+})
+
+test("folder-name rule preview is available only to tag-rule managers and does not save", async ({ page }) => {
+  await mockAuth(page, ["tag_rules.manage"])
+  let previewRequested = false
+  await page.route("**/api/admin/tags", route => route.fulfill({ json: [{ id: 1, name: "Variant", color: null, description: null }] }))
+  await page.route("**/api/admin/automatic-tag-rules", route => route.fulfill({ json: [] }))
+  await page.route("**/api/admin/folder-name-tag-rules", route => route.fulfill({ json: [] }))
+  await page.route("**/api/admin/folder-name-tag-rules/preview", route => {
+    previewRequested = true
+    return route.fulfill({ json: [{ model_name: "P1", relative_path: "Sets/psup_p1/Model" }] })
+  })
+
+  await page.goto("/admin/tags")
+  const section = page.locator(".panel").filter({ has: page.getByRole("heading", { name: "Folder name rules" }) })
+  await section.getByLabel("Folder name regex").fill("_p[12]$")
+  await section.getByRole("button", { name: "Preview" }).click()
+  await expect(section.getByText("P1 · Sets/psup_p1/Model")).toBeVisible()
+  expect(previewRequested).toBe(true)
 })
 
 test("metadata and tag routes require their permissions and all-sources access", async ({ page }) => {

@@ -49,3 +49,27 @@ class AutomaticTagEvaluationRead(BaseModel):
     matches: int = Field(ge=0)
     assignments_added: int = Field(ge=0)
     assignments_removed: int = Field(ge=0)
+
+
+class FolderNameRegexTagRuleCreate(BaseModel):
+    tag_id: int = Field(ge=1)
+    pattern: str = Field(min_length=1, max_length=255)
+    enabled: bool = True
+
+
+class FolderNameRegexTagRuleRead(FolderNameRegexTagRuleCreate):
+    id: int
+    tag_name: str
+    match_count: int = Field(ge=0)
+    created_at: datetime
+    updated_at: datetime
+
+
+class FolderNameRegexTagPreviewRequest(BaseModel):
+    pattern: str = Field(min_length=1, max_length=255)
+    limit: int = Field(default=25, ge=1, le=50)
+
+
+class FolderNameRegexTagPreviewRead(BaseModel):
+    model_name: str
+    relative_path: str

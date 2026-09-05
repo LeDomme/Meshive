@@ -1,3 +1,4 @@
+from pathlib import PurePosixPath
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -21,6 +22,8 @@ from meshive.models.library_source import LibrarySource
 from meshive.models.tag import (
     AutomaticTagMatch,
     AutomaticTagRule,
+    FolderNameRegexTagMatch,
+    FolderNameRegexTagRule,
     FolderTagRule,
     ModelTag,
     Tag,
@@ -30,6 +33,10 @@ from meshive.schemas.tag import (
     AutomaticTagEvaluationRead,
     AutomaticTagRuleCreate,
     AutomaticTagRuleRead,
+    FolderNameRegexTagPreviewRead,
+    FolderNameRegexTagPreviewRequest,
+    FolderNameRegexTagRuleCreate,
+    FolderNameRegexTagRuleRead,
     FolderRuleCreate,
     FolderRuleRead,
     TagCreate,
@@ -39,8 +46,10 @@ from meshive.schemas.tag import (
 from meshive.services.audit import AuditAction, log_event
 from meshive.services.library_paths import PathPatternError, normalize_relative_path
 from meshive.services.tags import (
+    compile_folder_name_regex,
     normalize_automatic_pattern,
     recompute_automatic_tags,
+    recompute_folder_name_regex_tags,
     recompute_inherited_tags,
 )
 
@@ -246,7 +255,11 @@ def remove_model_tag(
             library_source_id=model.library_source_id if model is not None else None,
         )
         assignment.is_direct = False
-        if not assignment.is_inherited and not assignment.is_automatic:
+        if (
+            not assignment.is_inherited
+            and not assignment.is_automatic
+            and not assignment.is_folder_name_regex
+        ):
             session.delete(assignment)
         session.commit()
     return Response(status_code=204)
@@ -567,12 +580,179 @@ def reevaluate_automatic_rules(
     return AutomaticTagEvaluationRead(**result.__dict__)
 
 
+@admin_router.get(
+    "/folder-name-tag-rules",
+    response_model=list[FolderNameRegexTagRuleRead],
+    dependencies=[Depends(require_global_permission(TAG_RULES_MANAGE))],
+)
+def list_folder_name_regex_rules(
+    session: SessionDependency,
+) -> list[FolderNameRegexTagRuleRead]:
+    return [
+        _folder_name_regex_rule_read(session, rule, tag_name)
+        for rule, tag_name in session.execute(
+            select(FolderNameRegexTagRule, Tag.name)
+            .join(Tag, Tag.id == FolderNameRegexTagRule.tag_id)
+            .order_by(FolderNameRegexTagRule.id)
+        )
+    ]
+
+
+@admin_router.post(
+    "/folder-name-tag-rules",
+    response_model=FolderNameRegexTagRuleRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_global_permission(TAG_RULES_MANAGE))],
+)
+def create_folder_name_regex_rule(
+    payload: FolderNameRegexTagRuleCreate,
+    current_user: CurrentUser,
+    session: SessionDependency,
+) -> FolderNameRegexTagRuleRead:
+    tag = session.get(Tag, payload.tag_id)
+    if tag is None:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    pattern, pattern_key, _compiled = _folder_name_regex_pattern(payload.pattern)
+    rule = FolderNameRegexTagRule(
+        tag_id=tag.id,
+        pattern=pattern,
+        pattern_key=pattern_key,
+        enabled=payload.enabled,
+    )
+    session.add(rule)
+    try:
+        session.flush()
+        recompute_folder_name_regex_tags(session)
+        log_event(
+            session,
+            current_user,
+            AuditAction.FOLDER_NAME_REGEX_TAG_RULE_CREATED,
+            "folder_name_regex_tag_rule",
+            "Folder name regex rule",
+            target_id=rule.id,
+            details={"changed_categories": ["relation", "scope", "enabled"]},
+        )
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="This folder name rule already exists") from error
+    session.refresh(rule)
+    return _folder_name_regex_rule_read(session, rule, tag.name)
+
+
+@admin_router.put(
+    "/folder-name-tag-rules/{rule_id}",
+    response_model=FolderNameRegexTagRuleRead,
+    dependencies=[Depends(require_global_permission(TAG_RULES_MANAGE))],
+)
+def update_folder_name_regex_rule(
+    rule_id: int,
+    payload: FolderNameRegexTagRuleCreate,
+    current_user: CurrentUser,
+    session: SessionDependency,
+) -> FolderNameRegexTagRuleRead:
+    rule = session.get(FolderNameRegexTagRule, rule_id)
+    tag = session.get(Tag, payload.tag_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Folder name rule not found")
+    if tag is None:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    pattern, pattern_key, _compiled = _folder_name_regex_pattern(payload.pattern)
+    previous_tag_id, previous_pattern, previous_enabled = rule.tag_id, rule.pattern, rule.enabled
+    rule.tag_id = tag.id
+    rule.pattern = pattern
+    rule.pattern_key = pattern_key
+    rule.enabled = payload.enabled
+    try:
+        session.flush()
+        recompute_folder_name_regex_tags(session)
+        changed_categories = []
+        if rule.tag_id != previous_tag_id:
+            changed_categories.append("relation")
+        if rule.pattern != previous_pattern:
+            changed_categories.append("scope")
+        if rule.enabled != previous_enabled:
+            changed_categories.append("enabled")
+        log_event(
+            session,
+            current_user,
+            AuditAction.FOLDER_NAME_REGEX_TAG_RULE_UPDATED,
+            "folder_name_regex_tag_rule",
+            "Folder name regex rule",
+            target_id=rule.id,
+            details={"changed_categories": changed_categories},
+        )
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="This folder name rule already exists") from error
+    session.refresh(rule)
+    return _folder_name_regex_rule_read(session, rule, tag.name)
+
+
+@admin_router.delete(
+    "/folder-name-tag-rules/{rule_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_global_permission(TAG_RULES_MANAGE))],
+)
+def delete_folder_name_regex_rule(
+    rule_id: int, current_user: CurrentUser, session: SessionDependency
+) -> Response:
+    rule = session.get(FolderNameRegexTagRule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Folder name rule not found")
+    log_event(
+        session,
+        current_user,
+        AuditAction.FOLDER_NAME_REGEX_TAG_RULE_DELETED,
+        "folder_name_regex_tag_rule",
+        "Folder name regex rule",
+        target_id=rule.id,
+    )
+    session.delete(rule)
+    session.flush()
+    recompute_folder_name_regex_tags(session)
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@admin_router.post(
+    "/folder-name-tag-rules/preview",
+    response_model=list[FolderNameRegexTagPreviewRead],
+    dependencies=[Depends(require_global_permission(TAG_RULES_MANAGE))],
+)
+def preview_folder_name_regex_rule(
+    payload: FolderNameRegexTagPreviewRequest,
+    session: SessionDependency,
+) -> list[FolderNameRegexTagPreviewRead]:
+    _pattern, _pattern_key, compiled = _folder_name_regex_pattern(payload.pattern)
+    matches = []
+    for model in session.scalars(select(LibraryModel).order_by(LibraryModel.id)):
+        if any(compiled.search(segment) for segment in PurePosixPath(model.relative_path).parts):
+            matches.append(
+                FolderNameRegexTagPreviewRead(
+                    model_name=model.name,
+                    relative_path=model.relative_path,
+                )
+            )
+        if len(matches) >= payload.limit:
+            break
+    return matches
+
+
 def _automatic_pattern(value: str) -> tuple[str, str]:
     pattern = value.strip()
     pattern_key = normalize_automatic_pattern(pattern)
     if not pattern_key:
         raise HTTPException(status_code=422, detail="Pattern cannot be empty")
     return pattern, pattern_key
+
+
+def _folder_name_regex_pattern(value: str):
+    try:
+        return compile_folder_name_regex(value)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 def _tag_values(payload: TagCreate | TagUpdate) -> tuple[str, str | None]:
@@ -595,6 +775,31 @@ def _automatic_rule_read(
         or 0
     )
     return AutomaticTagRuleRead(
+        id=rule.id,
+        tag_id=rule.tag_id,
+        tag_name=tag_name,
+        pattern=rule.pattern,
+        enabled=rule.enabled,
+        match_count=match_count,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at,
+    )
+
+
+def _folder_name_regex_rule_read(
+    session: Session,
+    rule: FolderNameRegexTagRule,
+    tag_name: str,
+) -> FolderNameRegexTagRuleRead:
+    match_count = (
+        session.scalar(
+            select(func.count()).select_from(FolderNameRegexTagMatch).where(
+                FolderNameRegexTagMatch.folder_name_regex_tag_rule_id == rule.id
+            )
+        )
+        or 0
+    )
+    return FolderNameRegexTagRuleRead(
         id=rule.id,
         tag_id=rule.tag_id,
         tag_name=tag_name,

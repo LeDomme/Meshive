@@ -39,6 +39,9 @@ class AuditAction:
     AUTOMATIC_TAG_RULE_DELETED = "automatic_tag_rule.deleted"
     MODEL_TAG_ADDED = "model_tag.added"
     MODEL_TAG_REMOVED = "model_tag.removed"
+    FOLDER_NAME_REGEX_TAG_RULE_CREATED = "folder_name_regex_tag_rule.created"
+    FOLDER_NAME_REGEX_TAG_RULE_UPDATED = "folder_name_regex_tag_rule.updated"
+    FOLDER_NAME_REGEX_TAG_RULE_DELETED = "folder_name_regex_tag_rule.deleted"
 
 
 def log_event(
