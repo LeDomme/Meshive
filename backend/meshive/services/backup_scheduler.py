@@ -1,4 +1,5 @@
 import logging
+import sqlite3
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
@@ -15,6 +16,8 @@ from meshive.backup import (
 from meshive.config import get_settings
 from meshive.database import SessionLocal
 from meshive.models.backup import BackupRun, BackupSchedule
+from meshive.models.user import User
+from meshive.services.audit import AuditAction, log_event
 
 _stop = threading.Event()
 _thread: threading.Thread | None = None
@@ -37,7 +40,7 @@ def safe_destination(value: str) -> Path:
     return destination
 
 
-def run_backup(trigger: str = "manual") -> BackupRun:
+def run_backup(trigger: str = "manual", *, actor: User | None = None) -> BackupRun:
     with SessionLocal() as session:
         schedule = session.get(BackupSchedule, 1)
         destination = get_settings().backup_dir.resolve() / (
@@ -49,6 +52,17 @@ def run_backup(trigger: str = "manual") -> BackupRun:
             started_at=datetime.now(UTC),
         )
         session.add(run)
+        if trigger == "manual" and actor is not None:
+            session.flush()
+            log_event(
+                session,
+                actor,
+                AuditAction.BACKUP_STARTED,
+                "backup",
+                "Manual backup",
+                target_id=run.id,
+            )
+            session.commit()
         try:
             stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
             prefix = "meshive-auto" if trigger == "scheduled" else "meshive-manual"
@@ -57,13 +71,31 @@ def run_backup(trigger: str = "manual") -> BackupRun:
             run.path = str(path)
             run.size_bytes = path.stat().st_size
             run.finished_at = datetime.now(UTC)
-            session.commit()
             if schedule:
                 apply_retention(schedule, session)
-        except Exception as error:
+            if trigger == "manual" and actor is not None:
+                log_event(
+                    session,
+                    actor,
+                    AuditAction.BACKUP_COMPLETED,
+                    "backup",
+                    "Manual backup",
+                    target_id=run.id,
+                )
+            session.commit()
+        except (OSError, RuntimeError, sqlite3.Error) as error:
             run.status = "failed"
             run.error_message = str(error)[:4000]
             run.finished_at = datetime.now(UTC)
+            if trigger == "manual" and actor is not None:
+                log_event(
+                    session,
+                    actor,
+                    AuditAction.BACKUP_FAILED,
+                    "backup",
+                    "Manual backup",
+                    target_id=run.id,
+                )
             session.commit()
         session.refresh(run)
         return run
@@ -152,7 +184,7 @@ def sync_backup_history(session: Session) -> int:
 def _backup_trigger(filename: str) -> str | None:
     if filename.startswith("meshive-auto-"):
         return "scheduled"
-    if filename.startswith("meshive-manual-") or filename.startswith("meshive-"):
+    if filename.startswith(("meshive-manual-", "meshive-")):
         return "manual"
     if filename.startswith("pre-restore-"):
         return "pre_restore"

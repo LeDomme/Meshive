@@ -1,20 +1,24 @@
 import argparse
 import getpass
 import json
+import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from meshive.auth.action_tokens import delete_user_action_tokens
 from meshive.auth.passwords import hash_password
 from meshive.backup import create_backup, restore_backup
 from meshive.database import SessionLocal
+from meshive.models.audit import AuditEvent
 from meshive.models.session import UserSession
 from meshive.models.user import User
 from meshive.repositories.roles import get_system_role_for_legacy_role
 from meshive.repositories.users import get_user_by_username, normalize_username
+from meshive.services.audit import AuditAction, log_event_snapshot
 
 
 def main() -> None:
@@ -82,22 +86,61 @@ def _restore_pending() -> None:
         print("No pending restore.")
         return
     backup_path: str | None = None
+    actor_user_id: int | None = None
+    actor_username = "Unknown"
+    audit_started_at: datetime | None = None
+    run_id: int | None = None
+    audit_event_id: int | None = None
+    is_audited_request = False
     try:
         request = json.loads(marker.read_text(encoding="utf-8"))
         if not isinstance(request, dict) or not isinstance(request.get("path"), str):
-            raise ValueError("Invalid restore request")
+            raise TypeError("Invalid restore request")
         backup_path = request["path"]
+        if isinstance(request.get("actor_user_id"), int):
+            actor_user_id = request["actor_user_id"]
+        if isinstance(request.get("actor_username"), str):
+            actor_username = request["actor_username"]
+        if isinstance(request.get("audit_started_at"), str):
+            audit_started_at = datetime.fromisoformat(request["audit_started_at"])
+        if isinstance(request.get("run_id"), int):
+            run_id = request["run_id"]
+        if isinstance(request.get("audit_event_id"), int):
+            audit_event_id = request["audit_event_id"]
+        is_audited_request = audit_started_at is not None
         safety = restore_backup(
             Path(backup_path),
             confirmed_stopped=True,
         )
+        if is_audited_request and not _restore_start_is_present(audit_event_id):
+            _record_restore_audit(
+                actor_user_id,
+                actor_username,
+                run_id,
+                AuditAction.BACKUP_RESTORE_STARTED,
+                created_at=audit_started_at,
+            )
+        if is_audited_request:
+            _record_restore_audit(
+                actor_user_id,
+                actor_username,
+                run_id,
+                AuditAction.BACKUP_RESTORE_COMPLETED,
+            )
         payload = {
             "status": "completed",
             "backup": backup_path,
             "safety_backup": str(safety) if safety else None,
         }
         print(f"Restore completed from {backup_path}.")
-    except Exception as error:
+    except (OSError, RuntimeError, sqlite3.Error, TypeError, ValueError) as error:
+        if is_audited_request:
+            _record_restore_audit(
+                actor_user_id,
+                actor_username,
+                run_id,
+                AuditAction.BACKUP_RESTORE_FAILED,
+            )
         payload = {
             "status": "failed",
             "backup": backup_path,
@@ -107,6 +150,36 @@ def _restore_pending() -> None:
     finally:
         result.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         marker.unlink(missing_ok=True)
+
+
+def _record_restore_audit(
+    actor_user_id: int | None,
+    actor_username: str,
+    run_id: int | None,
+    action: str,
+    *,
+    created_at: datetime | None = None,
+) -> None:
+    with SessionLocal() as session:
+        actor = session.get(User, actor_user_id) if actor_user_id is not None else None
+        log_event_snapshot(
+            session,
+            actor_user_id=actor.id if actor is not None else None,
+            actor_username=actor_username,
+            action=action,
+            target_type="backup",
+            target_label="Database restore",
+            target_id=run_id,
+            created_at=created_at,
+        )
+        session.commit()
+
+
+def _restore_start_is_present(audit_event_id: int | None) -> bool:
+    if audit_event_id is None:
+        return False
+    with SessionLocal() as session:
+        return session.scalar(select(AuditEvent.id).where(AuditEvent.id == audit_event_id)) is not None
 
 
 def _create_admin(username: str, password_stdin: bool) -> None:
