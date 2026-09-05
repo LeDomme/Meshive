@@ -194,6 +194,28 @@ def test_failed_role_mutation_does_not_persist_an_audit_event() -> None:
             assert [event.action for event in session.query(AuditEvent)] == ["role.created"]
 
 
+def test_audit_event_api_paginates_filters_and_exposes_safe_snapshots() -> None:
+    with _admin_client() as (client, sessions):
+        _add_admin(sessions)
+        with sessions() as session:
+            source = LibrarySource(name="Source", root_path="/secret/path", directory_pattern="{model}")
+            session.add(source)
+            session.flush()
+            session.add_all([
+                AuditEvent(actor_username="Alice", action="role.updated", target_type="role", target_label="One", details={"safe": True}),
+                AuditEvent(actor_username="Bob", action="user.updated", target_type="user", target_label="Two", library_source_id=source.id, details={"safe": True}),
+            ])
+            session.commit()
+        assert client.post("/api/auth/login", json={"username": "admin", "password": "correct horse battery staple"}).status_code == 200
+        first = client.get("/api/admin/audit-events?page=1&page_size=1")
+        second = client.get("/api/admin/audit-events?page=2&page_size=1")
+        assert first.status_code == second.status_code == 200
+        assert first.json()["items"][0]["id"] > second.json()["items"][0]["id"]
+        assert client.get("/api/admin/audit-events?action=role.updated&actor=Alice").json()["total"] == 1
+        item = client.get("/api/admin/audit-events?source_id=1").json()["items"][0]
+        assert item["library_source_id"] == 1 and "/secret/path" not in str(item)
+
+
 def test_last_system_superuser_cannot_be_demoted_or_deleted() -> None:
     with _admin_client() as (client, sessions):
         _add_admin(sessions)

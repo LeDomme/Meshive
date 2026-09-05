@@ -65,6 +65,7 @@ async function logout() {
       <RouterLink v-if="auth.can('roles.manage') && auth.user?.source_access?.all_sources" class="account-menu-item" to="/admin/roles" @click="closeMenu">Roles</RouterLink>
       <RouterLink v-if="auth.can('backups.manage') && auth.user?.source_access?.all_sources" class="account-menu-item" to="/admin/backups" @click="closeMenu">Backups</RouterLink>
       <RouterLink v-if="auth.can('diagnostics.view') && auth.user?.source_access?.all_sources" class="account-menu-item" to="/admin/diagnostics" @click="closeMenu">Diagnostics</RouterLink>
+      <RouterLink v-if="auth.can('audit.view') && auth.user?.source_access?.all_sources" class="account-menu-item" to="/admin/audit" @click="closeMenu">Audit log</RouterLink>
       <div class="account-menu-signout"><button class="account-menu-item" type="button" @click="logout">Sign out</button></div>
     </div>
   </details>
