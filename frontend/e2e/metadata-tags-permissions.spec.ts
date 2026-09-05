@@ -40,10 +40,16 @@ test("tag-rule managers load only assignment rules", async ({ page }) => {
   await page.route("**/api/admin/tags/library-sources", route => route.fulfill({ json: [] }))
   await page.route("**/api/admin/folder-tag-rules", route => { legacyRequest = true; return route.fulfill({ status: 403 }) })
   await page.route("**/api/admin/tags", route => route.fulfill({ json: [{ id: 1, name: "Bust", color: null, description: null }] }))
-  await page.route("**/api/admin/tags/1/assignment-rules", route => route.fulfill({ json: [] }))
+  await page.route("**/api/admin/tags/1/assignment-rules", route => route.fulfill({ json: [{
+    id: 8, legacy_kind: "automatic_tag_rule", library_source_id: null,
+    match_mode: "contains", pattern: "chitu", path_value: null, path_relation: null,
+    enabled: true, targets: [{ target_type: "archive_entry_path", folder_segment: false }],
+    match_count: 1,
+  }] }))
 
   await page.goto("/admin/tags")
   await expect(page.getByRole("heading", { name: "Assignment rules" })).toBeVisible()
+  await expect(page.getByText("contains", { exact: true })).toBeVisible()
   await expect(page.locator("h2", { hasText: "Tags" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Folder tag rules" })).toHaveCount(0)
   expect(legacyRequest).toBe(false)

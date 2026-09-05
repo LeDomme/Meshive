@@ -598,10 +598,7 @@ def list_assignment_rules(
     rules = list(
         session.scalars(
             select(TagAssignmentRule)
-            .where(
-                TagAssignmentRule.tag_id == tag.id,
-                TagAssignmentRule.legacy_kind.is_(None),
-            )
+            .where(TagAssignmentRule.tag_id == tag.id)
             .order_by(TagAssignmentRule.id)
         )
     )
@@ -932,6 +929,7 @@ def _assignment_rule_read(
         id=rule.id,
         tag_id=rule.tag_id,
         tag_name=tag_name,
+        legacy_kind=rule.legacy_kind,
         library_source_id=rule.library_source_id,
         match_mode=rule.match_mode,
         pattern=rule.pattern,

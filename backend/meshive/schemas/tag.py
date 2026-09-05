@@ -97,6 +97,7 @@ class TagAssignmentRuleRead(TagAssignmentRuleWrite):
     id: int
     tag_id: int
     tag_name: str
+    legacy_kind: str | None = None
     match_count: int = Field(ge=0)
     created_at: datetime
     updated_at: datetime
