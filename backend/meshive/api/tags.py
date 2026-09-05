@@ -856,7 +856,7 @@ def _tag_or_404(session: Session, tag_id: int) -> Tag:
 
 def _assignment_rule_or_404(session: Session, rule_id: int) -> TagAssignmentRule:
     rule = session.get(TagAssignmentRule, rule_id)
-    if rule is None or rule.legacy_kind is not None:
+    if rule is None:
         raise HTTPException(status_code=404, detail="Tag assignment rule not found")
     return rule
 
@@ -881,8 +881,6 @@ def _assignment_rule_values(
             "path_value": None,
             "path_relation": None,
             "enabled": payload.enabled,
-            "legacy_kind": None,
-            "legacy_rule_id": None,
         }
     if payload.match_mode == "path_relation":
         try:
@@ -897,8 +895,6 @@ def _assignment_rule_values(
             "path_value": path_value,
             "path_relation": payload.path_relation,
             "enabled": payload.enabled,
-            "legacy_kind": None,
-            "legacy_rule_id": None,
         }
     pattern = (payload.pattern or "").strip()
     if not pattern:
@@ -911,8 +907,6 @@ def _assignment_rule_values(
         "path_value": None,
         "path_relation": None,
         "enabled": payload.enabled,
-        "legacy_kind": None,
-        "legacy_rule_id": None,
     }
 
 
