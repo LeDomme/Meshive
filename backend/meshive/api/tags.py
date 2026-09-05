@@ -36,6 +36,7 @@ from meshive.schemas.tag import (
     TagRead,
     TagUpdate,
 )
+from meshive.services.audit import AuditAction, log_event
 from meshive.services.library_paths import PathPatternError, normalize_relative_path
 from meshive.services.tags import (
     normalize_automatic_pattern,
@@ -91,11 +92,22 @@ def list_tag_rule_sources(session: SessionDependency) -> list[dict[str, object]]
 
 
 @admin_router.post("/tags", response_model=TagRead, status_code=201, dependencies=[Depends(require_global_permission(TAGS_MANAGE))])
-def create_tag(payload: TagCreate, session: SessionDependency) -> Tag:
+def create_tag(
+    payload: TagCreate, current_user: CurrentUser, session: SessionDependency
+) -> Tag:
     name, description = _tag_values(payload)
     tag = Tag(name=name, color=payload.color, description=description)
     session.add(tag)
     try:
+        session.flush()
+        log_event(
+            session,
+            current_user,
+            AuditAction.TAG_CREATED,
+            "tag",
+            tag.name,
+            target_id=tag.id,
+        )
         session.commit()
     except IntegrityError as error:
         session.rollback()
@@ -110,14 +122,30 @@ def create_tag(payload: TagCreate, session: SessionDependency) -> Tag:
 def update_tag(
     tag_id: int,
     payload: TagUpdate,
+    current_user: CurrentUser,
     session: SessionDependency,
 ) -> Tag:
     tag = session.get(Tag, tag_id)
     if tag is None:
         raise HTTPException(status_code=404, detail="Tag not found")
+    previous_name, previous_color = tag.name, tag.color
     tag.name, tag.description = _tag_values(payload)
     tag.color = payload.color
     try:
+        changed_categories = []
+        if tag.name != previous_name:
+            changed_categories.append("name")
+        if tag.color != previous_color:
+            changed_categories.append("color")
+        log_event(
+            session,
+            current_user,
+            AuditAction.TAG_UPDATED,
+            "tag",
+            tag.name,
+            target_id=tag.id,
+            details={"changed_categories": changed_categories},
+        )
         session.commit()
     except IntegrityError as error:
         session.rollback()
@@ -129,10 +157,20 @@ def update_tag(
 
 
 @admin_router.delete("/tags/{tag_id}", status_code=204, dependencies=[Depends(require_global_permission(TAGS_MANAGE))])
-def delete_tag(tag_id: int, session: SessionDependency) -> Response:
+def delete_tag(
+    tag_id: int, current_user: CurrentUser, session: SessionDependency
+) -> Response:
     tag = session.get(Tag, tag_id)
     if tag is None:
         raise HTTPException(status_code=404, detail="Tag not found")
+    log_event(
+        session,
+        current_user,
+        AuditAction.TAG_DELETED,
+        "tag",
+        tag.name,
+        target_id=tag.id,
+    )
     session.delete(tag)
     session.commit()
     return Response(status_code=204)
@@ -153,18 +191,30 @@ def add_model_tag(
     assignment = session.scalar(
         select(ModelTag).where(ModelTag.model_id == model_id, ModelTag.tag_id == tag_id)
     )
+    changed = assignment is None or not assignment.is_direct
     if assignment is None:
-        session.add(
-            ModelTag(
+        assignment = ModelTag(
                 model_id=model_id,
                 tag_id=tag_id,
                 is_direct=True,
                 is_inherited=False,
                 is_automatic=False,
             )
-        )
+        session.add(assignment)
     else:
         assignment.is_direct = True
+    if changed:
+        session.flush()
+        model = session.get(LibraryModel, model_id)
+        log_event(
+            session,
+            current_user,
+            AuditAction.MODEL_TAG_ADDED,
+            "model_tag",
+            "Model tag assignment",
+            target_id=assignment.id,
+            library_source_id=model.library_source_id if model is not None else None,
+        )
     session.commit()
     return Response(status_code=204)
 
@@ -184,7 +234,17 @@ def remove_model_tag(
     assignment = session.scalar(
         select(ModelTag).where(ModelTag.model_id == model_id, ModelTag.tag_id == tag_id)
     )
-    if assignment is not None:
+    if assignment is not None and assignment.is_direct:
+        model = session.get(LibraryModel, model_id)
+        log_event(
+            session,
+            current_user,
+            AuditAction.MODEL_TAG_REMOVED,
+            "model_tag",
+            "Model tag assignment",
+            target_id=assignment.id,
+            library_source_id=model.library_source_id if model is not None else None,
+        )
         assignment.is_direct = False
         if not assignment.is_inherited and not assignment.is_automatic:
             session.delete(assignment)
@@ -211,7 +271,9 @@ def list_rules(session: SessionDependency) -> list[FolderRuleRead]:
 
 @admin_router.post("/folder-tag-rules", response_model=FolderRuleRead, status_code=201, dependencies=[Depends(require_global_permission(TAGS_MANAGE))])
 def create_rule(
-    payload: FolderRuleCreate, session: SessionDependency
+    payload: FolderRuleCreate,
+    current_user: CurrentUser,
+    session: SessionDependency,
 ) -> FolderRuleRead:
     source = session.get(LibrarySource, payload.library_source_id)
     tag = session.get(Tag, payload.tag_id)
@@ -231,6 +293,79 @@ def create_rule(
     try:
         session.flush()
         recompute_inherited_tags(session, source.id)
+        log_event(
+            session,
+            current_user,
+            AuditAction.FOLDER_TAG_RULE_CREATED,
+            "folder_tag_rule",
+            "Folder tag rule",
+            target_id=rule.id,
+            library_source_id=source.id,
+            details={"changed_categories": ["scope"]},
+        )
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(
+            status_code=409, detail="This folder tag rule already exists"
+        ) from error
+    return FolderRuleRead(
+        id=rule.id,
+        library_source_id=source.id,
+        relative_path=path,
+        tag_id=tag.id,
+        recursive=rule.recursive,
+        tag_name=tag.name,
+    )
+
+
+@admin_router.put(
+    "/folder-tag-rules/{rule_id}",
+    response_model=FolderRuleRead,
+    dependencies=[Depends(require_global_permission(TAGS_MANAGE))],
+)
+def update_rule(
+    rule_id: int,
+    payload: FolderRuleCreate,
+    current_user: CurrentUser,
+    session: SessionDependency,
+) -> FolderRuleRead:
+    rule = session.get(FolderTagRule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Folder tag rule not found")
+    source = session.get(LibrarySource, payload.library_source_id)
+    tag = session.get(Tag, payload.tag_id)
+    if source is None or tag is None:
+        raise HTTPException(status_code=404, detail="Source or tag not found")
+    try:
+        path = normalize_relative_path(payload.relative_path)
+    except PathPatternError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    previous_source_id = rule.library_source_id
+    changed_categories = []
+    if rule.library_source_id != source.id or rule.tag_id != tag.id:
+        changed_categories.append("relation")
+    if rule.relative_path != path or rule.recursive != payload.recursive:
+        changed_categories.append("scope")
+    rule.library_source_id = source.id
+    rule.relative_path = path
+    rule.tag_id = tag.id
+    rule.recursive = payload.recursive
+    try:
+        session.flush()
+        recompute_inherited_tags(session, previous_source_id)
+        if source.id != previous_source_id:
+            recompute_inherited_tags(session, source.id)
+        log_event(
+            session,
+            current_user,
+            AuditAction.FOLDER_TAG_RULE_UPDATED,
+            "folder_tag_rule",
+            "Folder tag rule",
+            target_id=rule.id,
+            library_source_id=source.id,
+            details={"changed_categories": changed_categories},
+        )
         session.commit()
     except IntegrityError as error:
         session.rollback()
@@ -248,11 +383,22 @@ def create_rule(
 
 
 @admin_router.delete("/folder-tag-rules/{rule_id}", status_code=204, dependencies=[Depends(require_global_permission(TAGS_MANAGE))])
-def delete_rule(rule_id: int, session: SessionDependency) -> Response:
+def delete_rule(
+    rule_id: int, current_user: CurrentUser, session: SessionDependency
+) -> Response:
     rule = session.get(FolderTagRule, rule_id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Folder tag rule not found")
     source_id = rule.library_source_id
+    log_event(
+        session,
+        current_user,
+        AuditAction.FOLDER_TAG_RULE_DELETED,
+        "folder_tag_rule",
+        "Folder tag rule",
+        target_id=rule.id,
+        library_source_id=source_id,
+    )
     session.delete(rule)
     session.flush()
     recompute_inherited_tags(session, source_id)
@@ -300,6 +446,7 @@ def list_automatic_rules(
 )
 def create_automatic_rule(
     payload: AutomaticTagRuleCreate,
+    current_user: CurrentUser,
     session: SessionDependency,
 ) -> AutomaticTagRuleRead:
     tag = session.get(Tag, payload.tag_id)
@@ -316,6 +463,15 @@ def create_automatic_rule(
     try:
         session.flush()
         recompute_automatic_tags(session)
+        log_event(
+            session,
+            current_user,
+            AuditAction.AUTOMATIC_TAG_RULE_CREATED,
+            "automatic_tag_rule",
+            "Automatic tag rule",
+            target_id=rule.id,
+            details={"changed_categories": ["relation", "scope", "enabled"]},
+        )
         session.commit()
     except IntegrityError as error:
         session.rollback()
@@ -331,6 +487,7 @@ def create_automatic_rule(
 def update_automatic_rule(
     rule_id: int,
     payload: AutomaticTagRuleCreate,
+    current_user: CurrentUser,
     session: SessionDependency,
 ) -> AutomaticTagRuleRead:
     rule = session.get(AutomaticTagRule, rule_id)
@@ -339,12 +496,31 @@ def update_automatic_rule(
         raise HTTPException(status_code=404, detail="Automatic tag rule not found")
     if tag is None:
         raise HTTPException(status_code=404, detail="Tag not found")
+    previous_tag_id = rule.tag_id
+    previous_pattern = rule.pattern
+    previous_enabled = rule.enabled
     rule.pattern, rule.pattern_key = _automatic_pattern(payload.pattern)
     rule.tag_id = tag.id
     rule.enabled = payload.enabled
     try:
         session.flush()
         recompute_automatic_tags(session)
+        changed_categories = []
+        if rule.tag_id != previous_tag_id:
+            changed_categories.append("relation")
+        if rule.pattern != previous_pattern:
+            changed_categories.append("scope")
+        if rule.enabled != previous_enabled:
+            changed_categories.append("enabled")
+        log_event(
+            session,
+            current_user,
+            AuditAction.AUTOMATIC_TAG_RULE_UPDATED,
+            "automatic_tag_rule",
+            "Automatic tag rule",
+            target_id=rule.id,
+            details={"changed_categories": changed_categories},
+        )
         session.commit()
     except IntegrityError as error:
         session.rollback()
@@ -357,10 +533,20 @@ def update_automatic_rule(
 
 
 @admin_router.delete("/automatic-tag-rules/{rule_id}", status_code=204, dependencies=[Depends(require_global_permission(TAG_RULES_MANAGE))])
-def delete_automatic_rule(rule_id: int, session: SessionDependency) -> Response:
+def delete_automatic_rule(
+    rule_id: int, current_user: CurrentUser, session: SessionDependency
+) -> Response:
     rule = session.get(AutomaticTagRule, rule_id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Automatic tag rule not found")
+    log_event(
+        session,
+        current_user,
+        AuditAction.AUTOMATIC_TAG_RULE_DELETED,
+        "automatic_tag_rule",
+        "Automatic tag rule",
+        target_id=rule.id,
+    )
     session.delete(rule)
     session.flush()
     recompute_automatic_tags(session)

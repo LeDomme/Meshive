@@ -6,10 +6,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from meshive.auth.access import require_global_permission
+from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import METADATA_MANAGE
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
 from meshive.models.creator import CreatorLink
+from meshive.models.user import User
 from meshive.schemas.creator import (
     CreatorLinkCreate,
     CreatorLinkKind,
@@ -17,6 +19,7 @@ from meshive.schemas.creator import (
     CreatorMetadataLinkRead,
     CreatorRead,
 )
+from meshive.services.audit import AuditAction, log_event
 
 router = APIRouter(
     prefix="/admin/creator-links",
@@ -24,6 +27,7 @@ router = APIRouter(
     dependencies=[Depends(require_global_permission(METADATA_MANAGE))],
 )
 SessionDependency = Annotated[Session, Depends(get_session)]
+CurrentUser = Annotated[User, Depends(get_current_user)]
 
 LINK_LABELS: dict[CreatorLinkKind, str] = {
     "website": "Website",
@@ -112,6 +116,7 @@ def list_creators(session: SessionDependency) -> list[CreatorRead]:
 )
 def create_creator_link(
     payload: CreatorLinkCreate,
+    current_user: CurrentUser,
     session: SessionDependency,
 ) -> CreatorMetadataLinkRead:
     canonical_name = _canonical_creator_name(session, payload.creator_name)
@@ -128,6 +133,16 @@ def create_creator_link(
     )
     session.add(creator_link)
     try:
+        session.flush()
+        log_event(
+            session,
+            current_user,
+            AuditAction.METADATA_CREATED,
+            "creator_link",
+            "Creator link",
+            target_id=creator_link.id,
+            details={"changed_categories": ["relation"]},
+        )
         session.commit()
     except IntegrityError as error:
         session.rollback()
@@ -143,6 +158,7 @@ def create_creator_link(
 def update_creator_link(
     link_id: int,
     payload: CreatorLinkUpdate,
+    current_user: CurrentUser,
     session: SessionDependency,
 ) -> CreatorMetadataLinkRead:
     creator_link = session.get(CreatorLink, link_id)
@@ -155,6 +171,15 @@ def update_creator_link(
     creator_link.label = _link_label(payload.kind, payload.label)
     creator_link.url = str(payload.url)
     try:
+        log_event(
+            session,
+            current_user,
+            AuditAction.METADATA_UPDATED,
+            "creator_link",
+            "Creator link",
+            target_id=creator_link.id,
+            details={"changed_categories": ["relation"]},
+        )
         session.commit()
     except IntegrityError as error:
         session.rollback()
@@ -169,6 +194,7 @@ def update_creator_link(
 @router.delete("/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_creator_link(
     link_id: int,
+    current_user: CurrentUser,
     session: SessionDependency,
 ) -> Response:
     creator_link = session.get(CreatorLink, link_id)
@@ -177,6 +203,14 @@ def delete_creator_link(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Creator link not found",
         )
+    log_event(
+        session,
+        current_user,
+        AuditAction.METADATA_DELETED,
+        "creator_link",
+        "Creator link",
+        target_id=creator_link.id,
+    )
     session.delete(creator_link)
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
