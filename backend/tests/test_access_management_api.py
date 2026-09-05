@@ -177,7 +177,8 @@ def test_audit_events_cover_role_and_user_mutations_without_sensitive_values() -
             updated_role = next(event for event in events if event.action == "role.updated")
             assert set(updated_role.details) == {"permissions_added", "permissions_removed"}
             actions = {event.action for event in events}
-            assert {"user.updated", "user.role_changed", "user.source_access_changed", "user.status_changed", "user.password_changed", "user.require_password_change_changed", "user.deleted"} <= actions
+            assert {"user.role_changed", "user.source_access_changed", "user.status_changed", "user.password_changed", "user.require_password_change_changed", "user.deleted"} <= actions
+            assert "user.updated" not in actions
             deleted = next(event for event in events if event.action == "user.deleted")
             assert deleted.target_label == "Audited" and deleted.target_id == user_id
             assert session.get(User, user_id) is None
