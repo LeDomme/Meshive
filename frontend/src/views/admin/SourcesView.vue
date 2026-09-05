@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, reactive, ref } from "vue"
 import { ApiError, apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
+import { useAuthStore } from "../../stores/auth"
 
 interface LibrarySource {
   id: number
@@ -81,6 +82,7 @@ interface ScanQueueItem {
 }
 
 const sources = ref<LibrarySource[]>([])
+const auth = useAuthStore()
 const latestScans = ref<Record<number, ScanRun>>({})
 const scanQueue = ref<ScanQueueItem[]>([])
 const scanModesBySource = ref<Record<number, ScanMode>>({})
@@ -124,7 +126,7 @@ async function loadSources() {
     for (const source of sources.value) {
       scanModesBySource.value[source.id] ??= "smart"
     }
-    await Promise.all([loadQueue(), ...sources.value.map(loadLatestScan)])
+    if (auth.can("scans.view")) await Promise.all([loadQueue(), ...sources.value.map(loadLatestScan)])
   } catch (error) {
     showError(error)
   } finally {

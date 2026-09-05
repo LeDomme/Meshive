@@ -121,7 +121,7 @@ function accessPayload(value: { all_sources: boolean; source_ids: number[] }) {
 async function load() {
   [users.value, roles.value, sources.value] = await Promise.all([
     apiRequest<User[]>("/api/admin/users"),
-    apiRequest<Role[]>("/api/admin/roles"),
+    apiRequest<Role[]>("/api/admin/users/roles"),
     apiRequest<Source[]>("/api/admin/users/library-sources"),
   ]);
   form.role_id ||=

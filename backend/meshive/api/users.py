@@ -28,6 +28,7 @@ from meshive.schemas.user import (
     RoleDefinitionRead,
     UserCreate,
     UserManagementRead,
+    UserRolePickerRead,
     UserSourcePickerRead,
     UserUpdate,
 )
@@ -128,6 +129,14 @@ def list_user_source_picker(session: SessionDependency) -> list[UserSourcePicker
     return [
         UserSourcePickerRead(id=source.id, name=source.name)
         for source in session.scalars(select(LibrarySource).order_by(LibrarySource.name))
+    ]
+
+
+@router.get("/roles", response_model=list[UserRolePickerRead])
+def list_user_role_picker(session: SessionDependency) -> list[UserRolePickerRead]:
+    return [
+        UserRolePickerRead(id=role.id, name=role.name, description=role.description, is_system=role.is_system)
+        for role in session.scalars(select(Role).order_by(Role.name))
     ]
 
 

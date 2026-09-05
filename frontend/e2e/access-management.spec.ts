@@ -81,6 +81,9 @@ async function mockApi(page: import("@playwright/test").Page, user = admin) {
   await page.route("**/api/admin/roles", (route) =>
     route.fulfill({ json: roles }),
   );
+  await page.route("**/api/admin/users/roles", (route) =>
+    route.fulfill({ json: roles }),
+  );
   await page.route("**/api/admin/users", (route) =>
     route.fulfill({ json: users }),
   );
