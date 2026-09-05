@@ -52,16 +52,23 @@ async function save() {
 }
 async function runNow() {
   running.value = true
+  scheduleMessage.value = ""
+  errorMessage.value = ""
   try {
     await apiRequest<Run>("/api/admin/backups/run", { method: "POST" })
     await load()
+    scheduleMessage.value = "Manual backup created successfully."
   } catch (error) { showError(error) }
   finally { running.value = false }
 }
 async function remove(run: Run) {
-  if (!confirm("Delete this backup file and its history record?")) return
-  await apiRequest(`/api/admin/backups/${run.id}`, { method: "DELETE" })
-  await load()
+  if (!confirm(`Delete backup #${run.id} and its history record?`)) return
+  errorMessage.value = ""
+  try {
+    await apiRequest(`/api/admin/backups/${run.id}`, { method: "DELETE" })
+    await load()
+    scheduleMessage.value = "Backup deleted."
+  } catch (error) { showError(error) }
 }
 async function dismissRestoreResult() {
   try {
@@ -122,7 +129,8 @@ onMounted(load)
     <p class="admin-intro">
       Backups are written below <code>/backups</code>. Mount this path to independent storage.
     </p>
-    <p v-if="errorMessage" class="form-error error-panel">{{ errorMessage }}</p>
+    <p v-if="errorMessage" class="form-error error-panel" role="alert">{{ errorMessage }}</p>
+    <p v-if="scheduleMessage" class="success-panel" role="status">{{ scheduleMessage }}</p>
     <section
       v-if="restoring || restoreResult.status"
       :class="['restore-status-card', restoreResult.status || 'running']"
@@ -160,7 +168,6 @@ onMounted(load)
         <button class="primary-button" type="submit" :disabled="saving">
           {{ saving ? "Saving..." : "Save schedule" }}
         </button>
-        <p v-if="scheduleMessage" class="success-panel" role="status">{{ scheduleMessage }}</p>
       </form>
       <section class="panel">
         <h2>Manual backup</h2>
@@ -179,7 +186,7 @@ onMounted(load)
             <tr v-for="run in runs" :key="run.id">
               <td>{{ new Date(run.started_at).toLocaleString() }}</td>
               <td>{{ run.trigger }}</td><td>{{ run.status }}</td><td>{{ bytes(run.size_bytes) }}</td>
-              <td class="path-value">{{ run.error_message || run.path || "—" }}</td>
+              <td class="path-value" :title="run.error_message || run.path || undefined">{{ run.error_message || run.path || "—" }}</td>
               <td class="backup-actions">
                 <button
                   v-if="run.status === 'completed' && run.path"

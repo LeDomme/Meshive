@@ -734,23 +734,7 @@ onMounted(async () => {
           <h1 class="catalogue-title">Meshive</h1>
         </div>
       </div>
-      <nav class="catalogue-nav">
-        <RouterLink
-          v-if="auth.user?.role === 'admin'"
-          class="text-link"
-          to="/admin/sources"
-        >
-          Administration
-        </RouterLink>
-        <RouterLink
-          v-if="auth.user?.role === 'admin'"
-          class="text-link"
-          to="/admin/tags"
-        >
-          Tags
-        </RouterLink>
-        <AccountMenu />
-      </nav>
+      <nav class="catalogue-nav" aria-label="Account"><AccountMenu /></nav>
     </header>
 
     <div class="catalogue-filters">

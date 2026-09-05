@@ -42,7 +42,7 @@ function label(value: string) { return value.replaceAll("_", " ").replace(/\b\w/
 <template>
   <main class="admin-shell">
     <AdminHeader title="Diagnostics" />
-    <section class="admin-content">
+    <section class="admin-content panel diagnostics-panel">
       <div class="panel-heading">
         <div>
           <p class="eyebrow">System status</p>

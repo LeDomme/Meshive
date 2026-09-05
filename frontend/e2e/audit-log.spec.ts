@@ -57,3 +57,13 @@ test("audit log renders metadata and tag actions with readable labels", async ({
   await expect(page.locator(".audit-row").getByText("Automatic tag rule updated", { exact: true })).toBeVisible()
   await expect(page.getByText("automatic_tag_rule.updated", { exact: true })).toHaveCount(0)
 })
+
+test("audit log renders canonical tag-assignment actions with readable labels", async ({ page }) => {
+  await auth(page, ["audit.view"])
+  await page.route("**/api/admin/audit-events**", route => route.fulfill({ json: { total: 1, items: [
+    { id: 1, created_at: "2026-01-01T00:00:00Z", actor_username: "Alice", action: "tag_assignment_rule.re_evaluated", target_type: "tag_assignment_rule", target_label: "Tag assignment rule" },
+  ] } }))
+  await page.goto("/admin/audit")
+  await expect(page.locator(".audit-row").getByText("Tag assignment rule re-evaluated", { exact: true })).toBeVisible()
+  await expect(page.getByText("tag_assignment_rule.re_evaluated", { exact: true })).toHaveCount(0)
+})
