@@ -15,7 +15,7 @@ from meshive.models.tag import AutomaticTagMatch, AutomaticTagRule, ModelTag, Ta
 from meshive.services.tags import recompute_automatic_tags
 
 
-def test_automatic_rules_match_paths_and_preserve_manual_tags() -> None:
+def test_legacy_automatic_rule_mutations_are_explicitly_disabled() -> None:
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
@@ -47,52 +47,7 @@ def test_automatic_rules_match_paths_and_preserve_manual_tags() -> None:
             )
             session.add(source)
             session.flush()
-            model = LibraryModel(
-                library_source_id=source.id,
-                relative_path="Hero",
-                name="Hero",
-                status="available",
-            )
-            session.add(model)
-            session.flush()
-            first_archive = Archive(
-                model_id=model.id,
-                filename="hero.7z",
-                relative_path="Hero/hero.7z",
-                format="7z",
-                size_bytes=100,
-                modified_ns=1,
-                status="ready",
-            )
-            second_archive = Archive(
-                model_id=model.id,
-                filename="extras.zip",
-                relative_path="Hero/extras.zip",
-                format="zip",
-                size_bytes=50,
-                modified_ns=1,
-                status="ready",
-            )
-            session.add_all([first_archive, second_archive])
-            session.flush()
-            session.add_all(
-                [
-                    ArchiveEntry(
-                        archive_id=first_archive.id,
-                        path="Supported/BUST/hero.stl",
-                        name="hero.stl",
-                        is_directory=False,
-                    ),
-                    ArchiveEntry(
-                        archive_id=second_archive.id,
-                        path="Documentation/readme.txt",
-                        name="readme.txt",
-                        is_directory=False,
-                    ),
-                ]
-            )
             session.commit()
-            model_id = model.id
 
         with TestClient(app) as client:
             tag = client.post(
@@ -103,44 +58,9 @@ def test_automatic_rules_match_paths_and_preserve_manual_tags() -> None:
                 "/api/admin/automatic-tag-rules",
                 json={"tag_id": tag["id"], "pattern": "bust", "enabled": True},
             )
-            assert created.status_code == 201
-            assert created.json()["match_count"] == 1
-            duplicate = client.post(
-                "/api/admin/automatic-tag-rules",
-                json={"tag_id": tag["id"], "pattern": "BUST", "enabled": True},
-            )
-            assert duplicate.status_code == 409
-
-            detail = client.get(f"/api/models/{model_id}").json()
-            assert [item["name"] for item in detail["tags"]] == ["Bust"]
-
-            listed = client.get("/api/admin/automatic-tag-rules").json()
-            assert listed[0]["pattern"] == "bust"
-            assert listed[0]["match_count"] == 1
-            reevaluated = client.post("/api/admin/automatic-tag-rules/re-evaluate").json()
-            assert reevaluated == {
-                "models_evaluated": 1,
-                "matches": 1,
-                "assignments_added": 0,
-                "assignments_removed": 0,
-            }
-
-            assert client.put(f"/api/admin/models/{model_id}/tags/{tag['id']}").status_code == 204
-            disabled = client.put(
-                f"/api/admin/automatic-tag-rules/{created.json()['id']}",
-                json={"tag_id": tag["id"], "pattern": "bust", "enabled": False},
-            )
-            assert disabled.status_code == 200
-            assert disabled.json()["match_count"] == 0
-
-            detail = client.get(f"/api/models/{model_id}").json()
-            assert [item["name"] for item in detail["tags"]] == ["Bust"]
-
-            assert (
-                client.delete(f"/api/admin/models/{model_id}/tags/{tag['id']}").status_code == 204
-            )
-            detail = client.get(f"/api/models/{model_id}").json()
-            assert detail["tags"] == []
+            assert created.status_code == 410
+            assert "assignment rules" in created.json()["detail"]
+            assert client.post("/api/admin/automatic-tag-rules/re-evaluate").status_code == 410
 
         with sessions() as session:
             assert session.scalar(select(AutomaticTagMatch)) is None

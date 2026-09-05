@@ -176,7 +176,14 @@ def find_assignment_rule_matches(
 def reevaluate_canonical_rules(
     session: Session, rule_ids: list[int] | None = None
 ) -> tuple[int, int, int, int]:
-    statement = select(TagAssignmentRule).where(TagAssignmentRule.legacy_kind.is_(None))
+    """Rebuild canonical provenance for every assignment rule.
+
+    Legacy rows are deliberately included here.  They are immutable copies of
+    the former rules and become the canonical representation at the Phase 2C
+    cutover; excluding them would leave migrated installations with no active
+    automatic assignments.
+    """
+    statement = select(TagAssignmentRule)
     if rule_ids is not None:
         statement = statement.where(TagAssignmentRule.id.in_(rule_ids))
     rules = list(session.scalars(statement))
@@ -196,7 +203,6 @@ def refresh_assignment_rule_tags(session: Session, model_ids: set[int]) -> tuple
         .join(TagAssignmentRule, TagAssignmentRule.id == TagAssignmentRuleMatch.tag_assignment_rule_id)
         .where(
             TagAssignmentRuleMatch.model_id.in_(model_ids),
-            TagAssignmentRule.legacy_kind.is_(None),
             TagAssignmentRule.enabled.is_(True),
         )
     ):
@@ -205,6 +211,14 @@ def refresh_assignment_rule_tags(session: Session, model_ids: set[int]) -> tuple
         (item.model_id, item.tag_id): item
         for item in session.scalars(select(ModelTag).where(ModelTag.model_id.in_(model_ids)))
     }
+    # ``is_inherited`` and ``is_automatic`` are retained for rollback and
+    # historic rows, but they must not keep a tag alive after cutover.  The
+    # canonical match table is now the sole automatic provenance.  Direct
+    # assignments intentionally remain untouched.
+    for assignment in assignments.values():
+        assignment.is_inherited = False
+        assignment.is_automatic = False
+
     added = removed = 0
     for model_id, tag_ids in desired.items():
         for tag_id in tag_ids:
@@ -222,7 +236,7 @@ def refresh_assignment_rule_tags(session: Session, model_ids: set[int]) -> tuple
             continue
         assignment.is_assignment_rule = False
         removed += 1
-        if not assignment.is_direct and not assignment.is_inherited and not assignment.is_automatic:
+        if not assignment.is_direct:
             session.delete(assignment)
     return added, removed
 

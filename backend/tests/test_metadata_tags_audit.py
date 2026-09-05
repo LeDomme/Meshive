@@ -90,25 +90,13 @@ def test_metadata_and_tag_mutations_are_audited_without_raw_values() -> None:
             "/api/admin/folder-tag-rules",
             json={"library_source_id": source_id, "relative_path": "private-folder", "tag_id": tag_id, "recursive": True},
         )
-        assert rule.status_code == 201
-        rule_id = rule.json()["id"]
-        assert client.put(
-            f"/api/admin/folder-tag-rules/{rule_id}",
-            json={"library_source_id": source_id, "relative_path": "other-private-folder", "tag_id": tag_id, "recursive": False},
-        ).status_code == 200
-        assert client.delete(f"/api/admin/folder-tag-rules/{rule_id}").status_code == 204
+        assert rule.status_code == 410
 
         automatic = client.post(
             "/api/admin/automatic-tag-rules",
             json={"tag_id": tag_id, "pattern": "secret-pattern", "enabled": True},
         )
-        assert automatic.status_code == 201
-        automatic_id = automatic.json()["id"]
-        assert client.put(
-            f"/api/admin/automatic-tag-rules/{automatic_id}",
-            json={"tag_id": tag_id, "pattern": "other-secret-pattern", "enabled": False},
-        ).status_code == 200
-        assert client.delete(f"/api/admin/automatic-tag-rules/{automatic_id}").status_code == 204
+        assert automatic.status_code == 410
 
         upload = client.put(
             "/api/admin/metadata/artwork",
@@ -157,16 +145,14 @@ def test_metadata_and_tag_mutations_are_audited_without_raw_values() -> None:
             assert {
                 "metadata.created", "metadata.updated", "metadata.deleted",
                 "tag.created", "tag.updated", "tag.deleted",
-                "folder_tag_rule.created", "folder_tag_rule.updated", "folder_tag_rule.deleted",
-                "automatic_tag_rule.created", "automatic_tag_rule.updated", "automatic_tag_rule.deleted",
                 "model_tag.added", "model_tag.removed",
             } <= actions
             source_events = [
                 event for event in events
-                if event.action.startswith(("folder_tag_rule.", "model_tag."))
+                if event.action.startswith("model_tag.")
             ]
             assert source_events and all(event.library_source_id == source_id for event in source_events)
-            assert all(event.library_source_id is None for event in events if event.action.startswith(("metadata.", "tag.", "automatic_tag_rule.")))
+            assert all(event.library_source_id is None for event in events if event.action.startswith(("metadata.", "tag.")))
             serialized = " ".join(
                 f"{event.target_label} {event.details}" for event in events
             )

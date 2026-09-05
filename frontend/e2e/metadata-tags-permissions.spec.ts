@@ -49,7 +49,7 @@ test("tag-rule managers load only assignment rules", async ({ page }) => {
 
   await page.goto("/admin/tags")
   await expect(page.getByRole("heading", { name: "Assignment rules" })).toBeVisible()
-  await expect(page.getByText("contains", { exact: true })).toBeVisible()
+  await expect(page.getByRole("article").getByText("Text contains", { exact: true })).toBeVisible()
   await expect(page.locator("h2", { hasText: "Tags" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Folder tag rules" })).toHaveCount(0)
   expect(legacyRequest).toBe(false)
