@@ -5,6 +5,13 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-09-06
+### Changed
+- Removed catalogue tag N+1 queries and moved model navigation fully into SQL.
+- Hardened frontend requests against stale responses.
+- Added lazy, paginated archive browsing with server-side search.
+- Reduced canonical tag-assignment evaluation write overhead with bounded batches.
+
 ## [1.6.0] - 2026-09-06
 ### Added
 - Role-based access control with system and custom roles, granular permissions,
@@ -219,7 +226,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
-[Unreleased]: ../../compare/v1.6.0...HEAD
+[Unreleased]: ../../compare/v1.6.1...HEAD
+[1.6.1]: ../../compare/v1.6.0...v1.6.1
 [1.6.0]: ../../compare/v1.5.2...v1.6.0
 [1.5.2]: ../../compare/v1.5.1...v1.5.2
 [1.5.1]: ../../compare/v1.5.0...v1.5.1
