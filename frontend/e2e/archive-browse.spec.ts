@@ -48,3 +48,32 @@ test("browses lazy archive folders and returns from a server search result", asy
   await page.getByRole("button", { name: /deep\/nested\/model.stl/ }).click()
   await expect(page.getByText("model.stl", { exact: true })).toBeVisible()
 })
+
+test("archive switches retry aborted roots without leaking another archive's state", async ({ page }) => {
+  const requests: number[] = []
+  const twoArchives = { ...model, archives: [
+    { ...model.archives[0], id: 8, filename: "first.7z", entries_url: "/api/models/1/archives/8/entries" },
+    { ...model.archives[0], id: 9, filename: "second.7z", entries_url: "/api/models/1/archives/9/entries" },
+  ] }
+  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/tags", route => route.fulfill({ json: [] }))
+  await page.route("**/api/models/1/navigation", route => route.fulfill({ json: { previous: null, next: null } }))
+  await page.route("**/api/models/1", route => route.fulfill({ json: twoArchives }))
+  await page.route(/\/api\/models\/1\/archives\/(8|9)\/entries.*/, async route => {
+    const archiveId = Number(route.request().url().match(/archives\/(\d+)/)?.[1])
+    requests.push(archiveId)
+    await route.fulfill({ json: { parent_path: "", next_cursor: null, items: [{
+      path: `archive-${archiveId}.stl`, name: `archive-${archiveId}.stl`, is_directory: false,
+      size_bytes: 1, compressed_size_bytes: 1, modified_at: null,
+    }] } })
+  })
+  await page.goto("/models/1")
+  await expect.poll(() => requests).toContain(8)
+  await page.getByRole("button", { name: "second.7z" }).click()
+  await expect.poll(() => requests).toContain(9)
+  await expect(page.getByText("archive-9.stl", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "first.7z" }).click()
+  await expect(page.getByText("archive-8.stl", { exact: true })).toBeVisible()
+  expect(requests.filter(id => id === 8)).toHaveLength(1)
+})

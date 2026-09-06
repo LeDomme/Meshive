@@ -117,6 +117,7 @@ interface ArchiveBrowseState {
   nextCursor: string | null
   loading: boolean
   error: string
+  request: number
 }
 
 type CatalogueFilterKey =
@@ -142,7 +143,7 @@ const rescanInProgress = ref(false)
 const archiveFilter = ref("")
 const selectedArchiveIndex = ref(0)
 const expandedFolders = ref<Set<string>>(new Set())
-const archiveBrowseCache = ref(new Map<number, Map<string, ArchiveBrowseState>>())
+const archiveBrowseCache = ref(new Map<string, Map<string, ArchiveBrowseState>>())
 const archiveSearchResults = ref<ArchiveEntry[]>([])
 const archiveSearchLoading = ref(false)
 const archiveSearchError = ref("")
@@ -185,7 +186,9 @@ const favoriteDialogTargets = computed(() =>
 
 const visibleTreeRows = computed(() => {
   const rows: ArchiveTreeNode[] = []
-  const states = currentArchive.value ? archiveBrowseCache.value.get(currentArchive.value.id) : undefined
+  const states = currentArchive.value && model.value
+    ? archiveBrowseCache.value.get(archiveCacheKey(model.value.id, currentArchive.value.id))
+    : undefined
   const visit = (parentPath: string, depth: number) => {
     for (const entry of states?.get(parentPath)?.entries ?? []) {
       rows.push({ key: entry.path, name: entry.name, depth, isDirectory: entry.is_directory, entry })
@@ -379,32 +382,48 @@ function selectArchive(index: number) {
   archiveSearchResults.value = []
   archiveSearchError.value = ""
   abortArchiveRequests()
-  void loadArchiveEntries("")
+  void loadArchiveEntries("", false, model.value?.archives[index])
 }
 
-let archiveRequestGeneration = 0
 let archiveSearchGeneration = 0
 let archiveSearchTimer: number | undefined
 const archiveControllers = new Set<AbortController>()
 let archiveSearchController: AbortController | undefined
 
-function archiveState(archiveId: number, parentPath: string): ArchiveBrowseState {
-  let states = archiveBrowseCache.value.get(archiveId)
-  if (!states) {
-    states = new Map()
-    archiveBrowseCache.value.set(archiveId, states)
-  }
-  let state = states.get(parentPath)
-  if (!state) {
-    state = { entries: [], nextCursor: null, loading: false, error: "" }
-    states.set(parentPath, state)
-  }
+function archiveCacheKey(modelId: number, archiveId: number) {
+  return `${modelId}:${archiveId}`
+}
+
+function archiveState(modelId: number, archiveId: number, parentPath: string): ArchiveBrowseState {
+  const key = archiveCacheKey(modelId, archiveId)
+  const existing = archiveBrowseCache.value.get(key)?.get(parentPath)
+  if (existing) return existing
+  const state = { entries: [], nextCursor: null, loading: false, error: "", request: 0 }
+  publishArchiveState(key, parentPath, state)
   return state
 }
 
+function publishArchiveState(key: string, parentPath: string, state: ArchiveBrowseState) {
+  const cache = new Map(archiveBrowseCache.value)
+  const states = new Map(cache.get(key))
+  states.set(parentPath, state)
+  cache.set(key, states)
+  archiveBrowseCache.value = cache
+}
+
 function abortArchiveRequests() {
-  archiveRequestGeneration += 1
   archiveSearchGeneration += 1
+  const cache = new Map<string, Map<string, ArchiveBrowseState>>()
+  archiveBrowseCache.value.forEach((states, key) => {
+    const nextStates = new Map<string, ArchiveBrowseState>()
+    states.forEach((state, path) => {
+      nextStates.set(path, {
+        ...state, loading: false, request: state.request + 1,
+      })
+    })
+    cache.set(key, nextStates)
+  })
+  archiveBrowseCache.value = cache
   archiveControllers.forEach((controller) => controller.abort())
   archiveControllers.clear()
   archiveSearchController?.abort()
@@ -412,33 +431,42 @@ function abortArchiveRequests() {
   if (archiveSearchTimer !== undefined) window.clearTimeout(archiveSearchTimer)
 }
 
-async function loadArchiveEntries(parentPath: string, append = false) {
-  const archive = currentArchive.value
-  if (!archive || !auth.can("archives.view_entries")) return
-  const state = archiveState(archive.id, parentPath)
+async function loadArchiveEntries(
+  parentPath: string,
+  append = false,
+  requestedArchive: ModelArchive | null | undefined = currentArchive.value,
+) {
+  const archive = requestedArchive
+  const modelId = model.value?.id
+  if (!archive || !modelId || !auth.can("archives.view_entries")) return
+  const key = archiveCacheKey(modelId, archive.id)
+  const state = archiveState(modelId, archive.id, parentPath)
   if (state.loading || (!append && state.entries.length)) return
   if (append && !state.nextCursor) return
-  const generation = ++archiveRequestGeneration
+  const request = state.request + 1
   const controller = new AbortController()
   archiveControllers.add(controller)
-  state.loading = true
-  state.error = ""
+  let nextState = { ...state, request, loading: true, error: "" }
+  publishArchiveState(key, parentPath, nextState)
   const parameters = new URLSearchParams({ parent_path: parentPath, page_size: "200" })
   if (append && state.nextCursor) parameters.set("cursor", state.nextCursor)
   try {
     const result = await apiRequest<ArchiveBrowsePage>(`${archive.entries_url}?${parameters}`, {
       signal: controller.signal,
     })
-    if (generation !== archiveRequestGeneration || archive.id !== currentArchive.value?.id) return
-    state.entries = append ? [...state.entries, ...result.items] : result.items
-    state.nextCursor = result.next_cursor
+    if (request !== archiveBrowseCache.value.get(key)?.get(parentPath)?.request) return
+    nextState = { ...nextState, entries: append ? [...nextState.entries, ...result.items] : result.items, nextCursor: result.next_cursor }
+    publishArchiveState(key, parentPath, nextState)
   } catch (error) {
-    if (generation === archiveRequestGeneration && !isAbortError(error)) {
-      state.error = error instanceof ApiError ? error.message : "Unable to load archive contents"
+    if (request === archiveBrowseCache.value.get(key)?.get(parentPath)?.request && !isAbortError(error)) {
+      nextState = { ...nextState, error: error instanceof ApiError ? error.message : "Unable to load archive contents" }
+      publishArchiveState(key, parentPath, nextState)
     }
   } finally {
     archiveControllers.delete(controller)
-    if (generation === archiveRequestGeneration) state.loading = false
+    if (request === archiveBrowseCache.value.get(key)?.get(parentPath)?.request) {
+      publishArchiveState(key, parentPath, { ...nextState, loading: false })
+    }
   }
 }
 
@@ -1164,11 +1192,11 @@ onBeforeUnmount(() => {
               <span class="path-value">{{ entry.path }}</span>
             </button>
           </div>
-          <p v-if="archiveState(currentArchive.id, '').loading && !visibleTreeRows.length" class="muted">
+          <p v-if="archiveState(model.id, currentArchive.id, '').loading && !visibleTreeRows.length" class="muted">
             Loading archive contents…
           </p>
-          <p v-else-if="archiveState(currentArchive.id, '').error" class="form-error">
-            {{ archiveState(currentArchive.id, '').error }}
+          <p v-else-if="archiveState(model.id, currentArchive.id, '').error" class="form-error">
+            {{ archiveState(model.id, currentArchive.id, '').error }}
           </p>
           <p v-else-if="!visibleTreeRows.length && !archiveFilter.trim()" class="panel-copy">
             This archive has no indexed entries.
@@ -1212,10 +1240,10 @@ onBeforeUnmount(() => {
             </table>
           </div>
           <button
-            v-if="archiveState(currentArchive.id, '').nextCursor"
+            v-if="archiveState(model.id, currentArchive.id, '').nextCursor"
             class="secondary-button"
             type="button"
-            :disabled="archiveState(currentArchive.id, '').loading"
+            :disabled="archiveState(model.id, currentArchive.id, '').loading"
             @click="loadArchiveEntries('', true)"
           >Load more root entries</button>
         </template>
