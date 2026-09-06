@@ -60,6 +60,12 @@ class ArchiveEntryRead(BaseModel):
     modified_at: str | None
 
 
+class ArchiveBrowsePage(BaseModel):
+    items: list[ArchiveEntryRead]
+    next_cursor: str | None
+    parent_path: str | None
+
+
 class ArchiveRead(BaseModel):
     id: int
     filename: str
