@@ -159,3 +159,23 @@ def test_backup_permission_failure_creates_no_audit_event(tmp_path, monkeypatch)
             "/api/admin/backups/restore/1", json={"confirmation": "RESTORE"}
         ).status_code == 403
         assert _event_actions(sessions) == []
+
+
+def test_backup_deletion_is_audited_only_after_an_accepted_delete(tmp_path, monkeypatch) -> None:
+    with authenticated_test_client() as (client, sessions):
+        settings = Settings(data_dir=tmp_path / "data", backup_dir=tmp_path / "backups")
+        monkeypatch.setattr(backup_api, "get_settings", lambda: settings)
+        _add_user(sessions, "Admin", "admin")
+        with sessions() as session:
+            run = BackupRun(status="completed", trigger="manual", path=None)
+            session.add(run)
+            session.commit()
+            run_id = run.id
+        assert client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "correct horse battery staple"},
+        ).status_code == 200
+
+        assert client.delete(f"/api/admin/backups/{run_id}").status_code == 204
+        assert client.delete(f"/api/admin/backups/{run_id}").status_code == 404
+        assert _event_actions(sessions) == ["backup.deleted"]

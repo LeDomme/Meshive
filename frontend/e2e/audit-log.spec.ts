@@ -23,6 +23,31 @@ test("audit link and route require audit view plus all sources", async ({ page }
   await page.goto("/admin/audit"); await expect(page).not.toHaveURL(/\/admin\/audit/)
 })
 
+test("audit export carries the active filters and disables controls while running", async ({ page }) => {
+  await auth(page, ["audit.view"])
+  let exportUrl = ""
+  await page.route("**/api/admin/audit-events**", async route => {
+    const url = route.request().url()
+    if (url.includes("/export")) {
+      exportUrl = url
+      await new Promise(resolve => setTimeout(resolve, 100))
+      return route.fulfill({ contentType: "text/csv; charset=utf-8", body: "Timestamp,Actor,Event,Target\n" })
+    }
+    return route.fulfill({ json: { total: 0, items: [] } })
+  })
+  await page.goto("/admin/audit")
+  await page.getByLabel("Action").selectOption("role.updated")
+  await page.getByLabel("Actor").fill("Alice")
+  await page.getByLabel("From", { exact: true }).fill("2026-01-01T00:00")
+  await page.getByLabel("To", { exact: true }).fill("2026-01-02T00:00")
+  await page.getByRole("button", { name: "Export CSV" }).click()
+  await expect(page.getByRole("button", { name: "Exporting…" })).toBeDisabled()
+  await expect.poll(() => exportUrl).toContain("action=role.updated")
+  expect(exportUrl).toContain("actor=Alice")
+  expect(exportUrl).toContain("from_at=")
+  expect(exportUrl).toContain("to_at=")
+})
+
 test("audit log renders source and scan actions with readable labels", async ({ page }) => {
   await auth(page, ["audit.view"])
   await page.route("**/api/admin/audit-events**", route => route.fulfill({ json: { total: 2, items: [

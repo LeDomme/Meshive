@@ -5,8 +5,10 @@ from datetime import UTC, datetime
 from io import BytesIO
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete, select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -23,6 +25,7 @@ from meshive.auth.permissions import (
 )
 from meshive.database import Base, get_session
 from meshive.main import app
+from meshive.models.audit import AuditEvent
 from meshive.models.authorization import Role, RolePermission, UserLibrarySource
 from meshive.models.catalog import (
     Archive,
@@ -572,6 +575,9 @@ def test_admin_can_only_delete_missing_models() -> None:
         assert deleted.status_code == 204
         with sessions() as session:
             assert session.get(LibraryModel, missing_id) is None
+            events = list(session.scalars(select(AuditEvent)))
+            assert [event.action for event in events] == ["model.missing_deleted"]
+            assert events[0].library_source_id == source.id
             session.add_all(
                 [
                     LibraryModel(
@@ -1031,14 +1037,112 @@ def test_model_rescan_queues_a_targeted_scan(tmp_path, monkeypatch) -> None:
             session.commit()
             model_id = model.id
 
-        monkeypatch.setattr("meshive.services.scanner.dispatch_pending_scans", lambda: None)
+        dispatched = []
+        monkeypatch.setattr("meshive.api.catalog.dispatch_pending_scans", lambda: dispatched.append(True))
         response = client.post(f"/api/admin/models/{model_id}/rescan")
 
-    assert response.status_code == 202
-    assert response.json()["status"] == "pending"
-    assert response.json()["target_model_id"] == model_id
-    assert response.json()["trigger"] == "model_rescan"
-    assert response.json()["mode"] == "full"
+        assert response.status_code == 202
+        assert response.json()["status"] == "pending"
+        assert response.json()["target_model_id"] == model_id
+        assert response.json()["trigger"] == "model_rescan"
+        assert response.json()["mode"] == "full"
+        assert dispatched == [True]
+        with sessions() as session:
+            assert session.scalar(
+                select(ScanRun).where(ScanRun.target_model_id == model_id)
+            ) is not None
+            events = list(session.scalars(select(AuditEvent)))
+            assert [event.action for event in events] == ["model.rescan_queued"]
+
+
+def test_model_rescan_commits_queue_and_audit_before_dispatch(tmp_path, monkeypatch) -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(
+                name="Source",
+                root_path=tmp_path.as_posix(),
+                directory_pattern="{model}",
+            )
+            session.add(source)
+            session.flush()
+            model = LibraryModel(
+                library_source_id=source.id,
+                relative_path="Example",
+                name="Example",
+                status="available",
+            )
+            session.add(model)
+            session.commit()
+            model_id = model.id
+
+        dispatched: list[bool] = []
+        monkeypatch.setattr(
+            "meshive.api.catalog.dispatch_pending_scans",
+            lambda: dispatched.append(True),
+        )
+        response = client.post(f"/api/admin/models/{model_id}/rescan")
+
+        assert response.status_code == 202
+        assert dispatched == [True]
+        with sessions() as session:
+            assert session.scalar(
+                select(ScanRun).where(ScanRun.target_model_id == model_id)
+            ) is not None
+            assert [event.action for event in session.scalars(select(AuditEvent))] == [
+                "model.rescan_queued"
+            ]
+
+
+def test_model_rescan_commit_failure_persists_nothing_and_never_dispatches(
+    tmp_path, monkeypatch
+) -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(name="Source", root_path=tmp_path.as_posix(), directory_pattern="{model}")
+            session.add(source)
+            session.flush()
+            model = LibraryModel(library_source_id=source.id, relative_path="Example", name="Example", status="available")
+            session.add(model)
+            session.commit()
+            model_id = model.id
+
+        dispatched: list[bool] = []
+        monkeypatch.setattr("meshive.api.catalog.dispatch_pending_scans", lambda: dispatched.append(True))
+        monkeypatch.setattr(Session, "commit", lambda _self: (_ for _ in ()).throw(SQLAlchemyError("commit failed")))
+        with pytest.raises(SQLAlchemyError, match="commit failed"):
+            client.post(f"/api/admin/models/{model_id}/rescan")
+
+        assert dispatched == []
+        with sessions() as session:
+            assert session.scalar(select(ScanRun).where(ScanRun.target_model_id == model_id)) is None
+            assert list(session.scalars(select(AuditEvent))) == []
+
+
+def test_model_rescan_dispatch_failure_keeps_single_committed_event(
+    tmp_path, monkeypatch
+) -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(name="Source", root_path=tmp_path.as_posix(), directory_pattern="{model}")
+            session.add(source)
+            session.flush()
+            model = LibraryModel(library_source_id=source.id, relative_path="Example", name="Example", status="available")
+            session.add(model)
+            session.commit()
+            model_id = model.id
+
+        monkeypatch.setattr(
+            "meshive.api.catalog.dispatch_pending_scans",
+            lambda: (_ for _ in ()).throw(RuntimeError("dispatch failed")),
+        )
+        with pytest.raises(RuntimeError, match="dispatch failed"):
+            client.post(f"/api/admin/models/{model_id}/rescan")
+
+        with sessions() as session:
+            assert session.scalar(select(ScanRun).where(ScanRun.target_model_id == model_id)) is not None
+            assert [event.action for event in session.scalars(select(AuditEvent))] == [
+                "model.rescan_queued"
+            ]
 
 
 def test_model_image_rebuild_queues_a_targeted_rebuild(tmp_path, monkeypatch) -> None:
@@ -1465,3 +1569,19 @@ def test_admin_model_actions_are_scoped_by_source_and_permission(monkeypatch) ->
             assert session.get(LibraryModel, model_b_id) is not None
             assert session.get(LibraryModel, model_ids["missing-a"]) is None
             assert session.get(ModelImage, primary_b_id) is not None
+            events = list(session.scalars(select(AuditEvent)))
+            actions = [event.action for event in events]
+            assert actions.count("model.primary_image_set") == 2
+            assert actions.count("model.rescan_queued") == 1
+            assert actions.count("model.image_rebuild_queued") == 1
+            assert actions.count("model.images_reset") == 1
+            assert actions.count("model.missing_deleted") == 1
+            source_events = [
+                event
+                for event in events
+                if event.action.startswith("model.") and event.library_source_id is not None
+            ]
+            assert all(event.library_source_id in {source_a.id, source_b.id} for event in source_events)
+            serialized = " ".join(f"{event.target_label} {event.details}" for event in events)
+            assert "primary-a.jpg" not in serialized
+            assert "reset-a.jpg" not in serialized
