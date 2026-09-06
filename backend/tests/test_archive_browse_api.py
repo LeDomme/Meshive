@@ -193,6 +193,27 @@ def test_archive_browse_response_stays_bounded_for_large_archives() -> None:
         assert len(response.content) < 100_000
 
 
+def test_archive_browse_reports_missing_index_instead_of_an_empty_tree() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            model, archive = _archive(session, _source(session, "missing-index"))
+            archive.entry_count = 1
+            session.add(
+                ArchiveEntry(
+                    archive_id=archive.id,
+                    path="only.stl",
+                    name="only.stl",
+                    is_directory=False,
+                    size_bytes=1,
+                )
+            )
+            session.commit()
+
+        response = client.get(f"/api/models/{model.id}/archives/{archive.id}/entries")
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "browse index" in response.json()["detail"]
+
+
 def test_archive_browse_enforces_visibility_archive_ownership_and_permission() -> None:
     with catalog_client() as (client, sessions):
         with sessions() as session:

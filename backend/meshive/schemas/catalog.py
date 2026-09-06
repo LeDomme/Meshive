@@ -76,7 +76,7 @@ class ArchiveRead(BaseModel):
     uncompressed_size_bytes: int
     error_message: str | None
     download_url: str
-    entries: list[ArchiveEntryRead]
+    entries_url: str
 
 
 class ModelScanIssueRead(BaseModel):

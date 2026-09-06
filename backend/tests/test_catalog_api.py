@@ -180,7 +180,9 @@ def test_lists_searches_filters_and_downloads_models(tmp_path) -> None:
         assert detail.json()["archive_bundle_download_url"] == (
             f"/api/models/{model.id}/archives/download-all"
         )
-        assert detail.json()["archives"][1]["entries"][0]["path"] == "STL/model.stl"
+        assert detail.json()["archives"][1]["entries_url"] == (
+            f"/api/models/{model.id}/archives/{archive.id}/entries"
+        )
         download_url = detail.json()["archives"][1]["download_url"]
         partial_download = client.get(
             download_url, headers={"Range": "bytes=2-5"}
@@ -529,11 +531,11 @@ def test_media_and_download_routes_are_source_scoped(tmp_path, monkeypatch) -> N
         assert client.get(f"/api/models/{model_b.id}/archives/download-all").status_code == 200
         assert client.get(f"/api/models/{model_a.id}/images/{image_a.id}").status_code == 200
         assert client.get(f"/api/models/{model_a.id}/images/{image_b.id}").status_code == 404
-        assert client.get(f"/api/models/{model_a.id}").json()["archives"][0]["entries"]
+        assert "entries" not in client.get(f"/api/models/{model_a.id}").json()["archives"][0]
         app.dependency_overrides[get_current_user] = lambda: viewer
         assert client.get(f"/api/models/{model_a.id}/archives/{archive_a.id}/download").status_code == 403
         assert client.get(f"/api/models/{model_b.id}/archives/download-all").status_code == 403
-        assert client.get(f"/api/models/{model_a.id}").json()["archives"][0]["entries"] == []
+        assert "entries" not in client.get(f"/api/models/{model_a.id}").json()["archives"][0]
         app.dependency_overrides[get_current_user] = lambda: a_only
         assert client.get(f"/api/models/{model_b.id}/images/{image_b.id}").status_code == 404
         assert client.get(f"/api/models/{model_b.id}/thumbnail").status_code == 404
