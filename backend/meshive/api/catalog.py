@@ -257,29 +257,42 @@ def model_navigation(
     scope = visible_model_scope(access)
     if scope is not None:
         filters.append(scope)
-    models = list(
-        session.execute(
-            select(LibraryModel.id, LibraryModel.name, LibraryModel.variant)
-            .where(*filters)
-            .order_by(*_model_order(sort))
+    order = _model_order(sort)
+    ranked = (
+        select(
+            LibraryModel.id,
+            func.lag(LibraryModel.id).over(order_by=order).label("previous_id"),
+            func.lag(LibraryModel.name).over(order_by=order).label("previous_name"),
+            func.lag(LibraryModel.variant)
+            .over(order_by=order)
+            .label("previous_variant"),
+            func.lead(LibraryModel.id).over(order_by=order).label("next_id"),
+            func.lead(LibraryModel.name).over(order_by=order).label("next_name"),
+            func.lead(LibraryModel.variant).over(order_by=order).label("next_variant"),
         )
+        .where(*filters)
+        .subquery("ranked_models")
     )
-    current_index = next(
-        (index for index, row in enumerate(models) if row.id == model_id),
-        None,
-    )
-
-    def item_at(index: int) -> ModelNavigationItem | None:
-        if index < 0 or index >= len(models):
-            return None
-        row = models[index]
-        return ModelNavigationItem(id=row.id, name=row.name, variant=row.variant)
-
-    if current_index is None:
+    row = session.execute(
+        select(ranked).where(ranked.c.id == model_id)
+    ).one_or_none()
+    if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
     return ModelNavigation(
-        previous=item_at(current_index - 1),
-        next=item_at(current_index + 1),
+        previous=(
+            ModelNavigationItem(
+                id=row.previous_id,
+                name=row.previous_name,
+                variant=row.previous_variant,
+            )
+            if row.previous_id is not None
+            else None
+        ),
+        next=(
+            ModelNavigationItem(id=row.next_id, name=row.next_name, variant=row.next_variant)
+            if row.next_id is not None
+            else None
+        ),
     )
 
 

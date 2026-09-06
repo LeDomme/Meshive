@@ -3,6 +3,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from io import BytesIO
+from time import perf_counter
 from types import SimpleNamespace
 
 import pytest
@@ -1010,6 +1011,178 @@ def test_model_navigation_follows_catalogue_filters_and_sorting() -> None:
         assert boundary.status_code == 200
         assert boundary.json()["previous"] is None
         assert boundary.json()["next"]["id"] == models[1].id
+
+
+def test_model_navigation_matches_every_catalogue_sort_order() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(name="Navigation", root_path="/models", directory_pattern="{model}")
+            session.add(source)
+            session.flush()
+            models = [
+                LibraryModel(
+                    library_source_id=source.id,
+                    relative_path=f"model-{index}",
+                    name=name,
+                    variant=variant,
+                    creator=creator,
+                    status="available",
+                    first_seen_at=datetime(2025, 1, index + 1, tzinfo=UTC),
+                )
+                for index, (name, variant, creator) in enumerate(
+                    [
+                        ("Same", None, None),
+                        ("Same", "Alpha", "Zeta"),
+                        ("Same", "beta", "Alice"),
+                        ("Same", "beta", "Alice"),
+                        ("Zed", None, "Alice"),
+                    ]
+                )
+            ]
+            session.add_all(models)
+            session.flush()
+            session.add_all(
+                [
+                    Archive(
+                        model_id=model.id,
+                        filename=f"{model.id}.zip",
+                        relative_path=f"{model.relative_path}/{model.id}.zip",
+                        format="zip",
+                        size_bytes=1,
+                        modified_ns=(index + 1) * 10,
+                        status="ready",
+                        entry_count=0,
+                        uncompressed_size_bytes=1,
+                    )
+                    for index, model in enumerate(models)
+                ]
+            )
+            session.commit()
+
+        sorts = (
+            "meshive_newest",
+            "meshive_oldest",
+            "files_newest",
+            "files_oldest",
+            "name_asc",
+            "name_desc",
+            "creator_asc",
+            "creator_desc",
+        )
+        for sort in sorts:
+            catalogue = client.get("/api/models", params={"sort": sort, "page_size": 100})
+            assert catalogue.status_code == 200
+            ordered = catalogue.json()["items"]
+            for index in range(1, len(ordered) - 1):
+                navigation = client.get(
+                    f"/api/models/{ordered[index]['id']}/navigation", params={"sort": sort}
+                )
+                assert navigation.status_code == 200
+                assert navigation.json() == {
+                    "previous": {
+                        key: ordered[index - 1][key] for key in ("id", "name", "variant")
+                    },
+                    "next": {
+                        key: ordered[index + 1][key] for key in ("id", "name", "variant")
+                    },
+                }
+
+
+def test_model_navigation_supports_combined_fts_and_tag_filters() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(name="Navigation", root_path="/models", directory_pattern="{model}")
+            session.add(source)
+            session.flush()
+            models = [
+                LibraryModel(
+                    library_source_id=source.id,
+                    relative_path=f"model-{index}",
+                    name=name,
+                    creator="Creator",
+                    franchise="Filtered",
+                    status="available",
+                )
+                for index, name in enumerate(("Needle Alpha", "Needle Beta", "Needle Gamma"))
+            ]
+            session.add_all(models)
+            session.flush()
+            tag = Tag(name="Navigation tag")
+            session.add(tag)
+            session.flush()
+            session.add_all(
+                [ModelTag(model_id=model.id, tag_id=tag.id, is_direct=True) for model in models[:2]]
+            )
+            for model in models:
+                session.execute(
+                    text(
+                        "INSERT INTO model_search(model_id, name, variant, creator, franchise, series, collection, tags) "
+                        "VALUES (:id, :name, '', :creator, :franchise, '', '', '')"
+                    ),
+                    {
+                        "id": model.id,
+                        "name": model.name,
+                        "creator": model.creator,
+                        "franchise": model.franchise,
+                    },
+                )
+            session.commit()
+
+        params = {"search": "needle", "creator": "Creator", "tag_id": tag.id}
+        catalogue = client.get("/api/models", params=params)
+        assert [item["id"] for item in catalogue.json()["items"]] == [
+            models[0].id,
+            models[1].id,
+        ]
+        navigation = client.get(f"/api/models/{models[1].id}/navigation", params=params)
+        assert navigation.json() == {
+            "previous": {"id": models[0].id, "name": models[0].name, "variant": None},
+            "next": None,
+        }
+        assert client.get(f"/api/models/{models[2].id}/navigation", params=params).status_code == 404
+
+
+def test_model_navigation_keeps_large_results_in_sql() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(name="Large", root_path="/models", directory_pattern="{model}")
+            session.add(source)
+            session.flush()
+            models = [
+                LibraryModel(
+                    library_source_id=source.id,
+                    relative_path=f"model-{index}",
+                    name=f"Model {index:04}",
+                    status="available",
+                )
+                for index in range(4000)
+            ]
+            session.add_all(models)
+            session.commit()
+            target_id = models[2000].id
+
+        statements: list[str] = []
+
+        def capture_statement(*args, recorded: list[str] = statements) -> None:
+            recorded.append(args[2])
+
+        event.listen(sessions.kw["bind"], "before_cursor_execute", capture_statement)
+        started_at = perf_counter()
+        try:
+            response = client.get(f"/api/models/{target_id}/navigation")
+        finally:
+            elapsed_seconds = perf_counter() - started_at
+            event.remove(sessions.kw["bind"], "before_cursor_execute", capture_statement)
+
+        assert response.status_code == 200
+        assert response.json()["previous"]["id"] == target_id - 1
+        assert response.json()["next"]["id"] == target_id + 1
+        navigation_query = next(statement for statement in statements if "lag(" in statement.lower())
+        assert "lead(" in navigation_query.lower()
+        assert "FROM (SELECT" in navigation_query
+        assert "ranked_models.id = ?" in navigation_query
+        assert len(statements) == 2
+        assert elapsed_seconds < 5
 
 
 def test_filter_options_follow_other_selected_facets() -> None:
