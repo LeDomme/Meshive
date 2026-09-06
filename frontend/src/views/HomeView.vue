@@ -372,7 +372,7 @@ function detailRoute(modelId: number) {
   }
 }
 
-async function loadCatalogue(targetPage = 1) {
+async function loadCatalogue(targetPage = 1, scrollToTop = false) {
   loading.value = true
   errorMessage.value = ""
   const parameters = new URLSearchParams({
@@ -397,12 +397,20 @@ async function loadCatalogue(targetPage = 1) {
     } else {
       favoriteMemberships.value = {}
     }
+    if (scrollToTop) {
+      await nextTick()
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    }
   } catch (error) {
     errorMessage.value =
       error instanceof ApiError ? error.message : "Unable to load the catalogue"
   } finally {
     loading.value = false
   }
+}
+
+function goToPage(targetPage: number) {
+  void loadCatalogue(targetPage, true)
 }
 
 let filterRequest = 0
@@ -1090,7 +1098,7 @@ onMounted(async () => {
           :disabled="page.page <= 1"
           aria-label="Go to first page"
           title="First page"
-          @click="loadCatalogue(1)"
+          @click="goToPage(1)"
         >
           <span aria-hidden="true">&laquo;</span>
         </button>
@@ -1100,7 +1108,7 @@ onMounted(async () => {
           :disabled="page.page <= 1"
           aria-label="Go to previous page"
           title="Previous page"
-          @click="loadCatalogue(page.page - 1)"
+          @click="goToPage(page.page - 1)"
         >
           <span aria-hidden="true">&lsaquo;</span>
         </button>
@@ -1116,7 +1124,7 @@ onMounted(async () => {
             :disabled="item.page === page.page"
             :aria-current="item.page === page.page ? 'page' : undefined"
             :aria-label="`Go to page ${item.page}`"
-            @click="loadCatalogue(item.page)"
+            @click="goToPage(item.page)"
           >
             {{ item.page }}
           </button>
@@ -1134,7 +1142,7 @@ onMounted(async () => {
             :disabled="item.page === page.page"
             :aria-current="item.page === page.page ? 'page' : undefined"
             :aria-label="`Go to page ${item.page}`"
-            @click="loadCatalogue(item.page)"
+            @click="goToPage(item.page)"
           >
             {{ item.page }}
           </button>
@@ -1149,7 +1157,7 @@ onMounted(async () => {
           :disabled="page.page >= totalPages"
           aria-label="Go to next page"
           title="Next page"
-          @click="loadCatalogue(page.page + 1)"
+          @click="goToPage(page.page + 1)"
         >
           <span aria-hidden="true">&rsaquo;</span>
         </button>
@@ -1159,7 +1167,7 @@ onMounted(async () => {
           :disabled="page.page >= totalPages"
           aria-label="Go to last page"
           title="Last page"
-          @click="loadCatalogue(totalPages)"
+          @click="goToPage(totalPages)"
         >
           <span aria-hidden="true">&raquo;</span>
         </button>

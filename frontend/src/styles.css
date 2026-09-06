@@ -1629,6 +1629,12 @@ summary {
   line-height: 1.6;
 }
 
+/* Account panels use the same hierarchy as administration, with deliberately
+   roomier title-to-copy spacing for longer security explanations. */
+.account-shell .panel-heading .panel-copy {
+  margin: .45rem 0 0;
+}
+
 .account-layout {
   display: grid;
   grid-template-columns: minmax(15rem, .62fr) minmax(0, 1.38fr);
@@ -1654,7 +1660,7 @@ summary {
 .account-profile dl {
   display: grid;
   gap: 0.8rem;
-  margin: 1.25rem 0 0;
+  margin: 1.5rem 0 0;
 }
 
 .account-profile dl div {
@@ -1680,8 +1686,8 @@ summary {
 .account-form {
   display: grid;
   max-width: 38rem;
-  gap: 1rem;
-  margin-top: 1.25rem;
+  gap: 1.15rem;
+  margin-top: 1.5rem;
 }
 
 .account-form label {
