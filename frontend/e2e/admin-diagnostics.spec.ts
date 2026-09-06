@@ -19,6 +19,7 @@ test("admin diagnostics renders readable storage sizes", async ({ page }) => {
   })
 
   await page.goto("/admin/diagnostics")
+  await expect(page.getByText("Review application, storage and scheduler health.")).toBeVisible()
   await expect(page.getByRole("heading", { name: "Diagnostics", level: 1 })).toBeVisible()
   await expect(page.getByText("2 TB")).toBeVisible()
   await expect(page.getByText("1.5 GB")).toBeVisible()

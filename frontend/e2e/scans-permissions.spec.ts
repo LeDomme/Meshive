@@ -15,6 +15,7 @@ test("view-only operator sees scoped scan history without start controls", async
   await page.route("**/api/admin/library-sources/1/scans", route => route.fulfill({ json: [{ id: 4, library_source_id: 1, status: "completed", mode: "smart", created_at: "2026-01-01", models_found: 3, models_added: 1, models_updated: 0, models_missing: 0, error_message: null }] }))
   await page.route("**/api/admin/scans/queue", route => route.fulfill({ json: [] }))
   await page.goto("/admin/scans")
+  await expect(page.getByText("Start smart scans and review activity for the library sources you can access.")).toBeVisible()
   await expect(page.getByRole("heading", { name: "Source A" })).toBeVisible()
   await expect(page.getByText("1 recent scans")).toBeVisible()
   await expect(page.getByRole("button", { name: "Start scan" })).toHaveCount(0)

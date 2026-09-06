@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from "vue"
 import { apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
+import ColorPicker from "../../components/ColorPicker.vue"
 import TagChip from "../../components/TagChip.vue"
 import { useAuthStore } from "../../stores/auth"
 
@@ -83,7 +84,7 @@ onMounted(() => load().catch((error) => showError(error, "Unable to load tags"))
       <section class="panel tag-detail-panel">
         <form v-if="tagMode !== 'view'" class="tag-management-form" @submit.prevent="saveTag">
           <div class="panel-heading"><div><h2>{{ tagMode === 'create' ? 'Create tag' : 'Edit tag' }}</h2><p class="panel-copy">{{ tagMode === 'create' ? 'Give the tag a clear name and optional description.' : `Update “${selected?.name}”.` }}</p></div></div>
-          <fieldset><legend>Tag details</legend><label><span>Name</span><input v-model="tagForm.name" required maxlength="80" :disabled="busy('tag')"></label><label><span>Colour</span><input v-model="tagForm.color" type="color" :disabled="busy('tag')"></label><label><span>Description</span><textarea v-model="tagForm.description" maxlength="1000" :disabled="busy('tag')"></textarea></label></fieldset>
+          <fieldset><legend>Tag details</legend><label><span>Name</span><input v-model="tagForm.name" required maxlength="80" :disabled="busy('tag')"></label><ColorPicker v-model="tagForm.color" label="Colour" :disabled="busy('tag')"/><label><span>Description</span><textarea v-model="tagForm.description" maxlength="1000" :disabled="busy('tag')"></textarea></label></fieldset>
           <div class="user-actions"><button class="primary-button" :disabled="busyAction !== null" type="submit">{{ busy('tag') ? 'Saving…' : tagMode === 'create' ? 'Create tag' : 'Save changes' }}</button><button class="secondary-button" :disabled="busyAction !== null" type="button" @click="cancelTagEditor">Cancel</button></div>
         </form>
 
@@ -94,7 +95,7 @@ onMounted(() => load().catch((error) => showError(error, "Unable to load tags"))
             <div class="section-heading"><div><h2 id="assignment-rules-heading">Assignment rules</h2><p class="panel-copy">A rule assigns this tag when any selected target matches.</p></div></div>
             <form class="rule-management-form" @submit.prevent="saveRule">
               <fieldset><legend>{{ editingRule ? 'Edit assignment rule' : 'Add assignment rule' }}</legend>
-                <div class="rule-grid"><label><span>Match mode</span><select v-model="ruleForm.match_mode" :disabled="busyAction !== null"><option value="contains">Text contains</option><option value="regex">Regular expression</option><option value="path_relation">Folder path</option></select></label><label><span>Source scope</span><select v-model="ruleForm.library_source_id" :disabled="busyAction !== null"><option value="">All sources</option><option v-for="source in sources" :key="source.id" :value="String(source.id)">{{ source.name }}</option></select></label><label v-if="textMode" class="wide"><span>{{ ruleForm.match_mode === 'regex' ? 'Regular expression' : 'Text to match' }}</span><input v-model="ruleForm.pattern" required :disabled="busyAction !== null" :placeholder="ruleForm.match_mode === 'regex' ? '(_P|P\\.)[2-9]' : 'Search text'"><small v-if="ruleForm.match_mode === 'regex'">Case-insensitive RE2 search. Example: <code>(_P|P\.)[2-9]</code></small></label><label v-else class="wide"><span>Folder path</span><input v-model="ruleForm.path_value" required :disabled="busyAction !== null"><small>Matches the selected folder and the configured relation.</small></label><label v-if="!textMode"><span>Include</span><select v-model="ruleForm.path_relation" :disabled="busyAction !== null"><option value="self_or_descendant">Folder and subfolders</option><option value="direct_child">Direct children only</option></select></label><fieldset v-if="textMode" class="wide target-picker"><legend>Search targets</legend><label v-for="[target, label] in targetOptions" :key="target" class="checkbox-row"><input v-model="ruleForm.targets" type="checkbox" :value="target" :disabled="busyAction !== null"> {{ label }}</label><label v-if="ruleForm.targets.includes('model_relative_path')" class="checkbox-row"><input v-model="ruleForm.folder_segment" type="checkbox" :disabled="busyAction !== null"> Match individual folder names</label></fieldset><label class="checkbox-row enabled-choice"><input v-model="ruleForm.enabled" type="checkbox" :disabled="busyAction !== null"> Enabled</label></div>
+                <div class="rule-grid"><label><span>Match mode</span><select v-model="ruleForm.match_mode" :disabled="busyAction !== null"><option value="contains">Text contains</option><option value="regex">Regular expression</option><option value="path_relation">Folder path</option></select></label><label><span>Source scope</span><select v-model="ruleForm.library_source_id" :disabled="busyAction !== null"><option value="">All sources</option><option v-for="source in sources" :key="source.id" :value="String(source.id)">{{ source.name }}</option></select></label><label v-if="textMode" class="wide"><span>{{ ruleForm.match_mode === 'regex' ? 'Regular expression' : 'Text to match' }}</span><input v-model="ruleForm.pattern" required :disabled="busyAction !== null" :placeholder="ruleForm.match_mode === 'regex' ? '(_P|P\\.)[2-9]' : 'Search text'"><small v-if="ruleForm.match_mode === 'regex'">Case-insensitive RE2 search. Example: <code>(_P|P\.)[2-9]</code></small></label><label v-else class="wide"><span>Folder path</span><input v-model="ruleForm.path_value" required :disabled="busyAction !== null"><small>Matches the selected folder and the configured relation.</small></label><label v-if="!textMode"><span>Include</span><select v-model="ruleForm.path_relation" :disabled="busyAction !== null"><option value="self_or_descendant">Folder and subfolders</option><option value="direct_child">Direct children only</option></select></label><section v-if="textMode" class="wide target-picker" aria-labelledby="search-targets-heading"><h3 id="search-targets-heading">Search targets</h3><label v-for="[target, label] in targetOptions" :key="target" class="target-choice"><input v-model="ruleForm.targets" type="checkbox" :value="target" :disabled="busyAction !== null"><span>{{ label }}</span></label><label v-if="ruleForm.targets.includes('model_relative_path')" class="target-choice"><input v-model="ruleForm.folder_segment" type="checkbox" :disabled="busyAction !== null"><span>Match individual folder names</span></label></section><label class="checkbox-row enabled-choice"><input v-model="ruleForm.enabled" type="checkbox" :disabled="busyAction !== null"> Enabled</label></div>
                 <div class="user-actions"><button class="primary-button" :disabled="busyAction !== null" type="submit">{{ busy('rule') ? 'Saving…' : editingRule ? 'Save rule' : 'Add rule' }}</button><button v-if="textMode" class="secondary-button" :disabled="busyAction !== null" type="button" @click="previewRule">{{ busy('preview') ? 'Loading preview…' : 'Preview matches' }}</button><button v-if="editingRule" class="secondary-button" :disabled="busyAction !== null" type="button" @click="resetRule">Cancel edit</button></div>
               </fieldset>
             </form>
@@ -127,7 +128,13 @@ onMounted(() => load().catch((error) => showError(error, "Unable to load tags"))
 .rule-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.85rem; }
 .wide { grid-column:1 / -1; }
 .rule-grid small { color:var(--muted-text-color); }
-.target-picker { display:flex !important; flex-wrap:wrap; gap:.55rem 1.2rem; margin:0; padding:.8rem; }
+.target-picker { display:grid; grid-template-columns:repeat(auto-fit,minmax(13rem,1fr)); gap:.5rem; margin:0; padding:.85rem; border:1px solid var(--border-color); border-radius:.55rem; background:var(--muted-background); }
+.target-picker h3 { grid-column:1 / -1; margin:0 0 .15rem; font-size:.9rem; }
+.target-choice { display:flex !important; align-items:center; gap:.55rem; min-height:2.45rem; padding:.45rem .6rem; border:1px solid transparent; border-radius:.45rem; cursor:pointer; }
+.target-choice:hover { border-color:var(--accent-color); background:rgb(8 47 73 / 25%); }
+.target-choice:focus-within { outline:2px solid var(--accent-color); outline-offset:1px; }
+.target-choice:has(input:checked) { border-color:rgb(34 211 238 / 55%); background:rgb(8 47 73 / 35%); }
+.target-choice:has(input:disabled) { cursor:not-allowed; opacity:.6; }
 .enabled-choice { align-self:end; }
 .assignment-rules-section { margin-top:1.5rem; }
 .section-heading { margin-bottom:.5rem; }
@@ -146,5 +153,5 @@ onMounted(() => load().catch((error) => showError(error, "Unable to load tags"))
 .empty-state p { margin:.35rem 0 0; }
 .detail-empty { margin:0; }
 @media (max-width: 900px) { .rule-card { grid-template-columns:1fr; } .rule-actions { justify-content:flex-start; } }
-@media (max-width: 700px) { .rule-grid { grid-template-columns:1fr; } .wide { grid-column:auto; } .target-picker { display:grid !important; } .tag-detail-heading { gap:.8rem; } }
+@media (max-width: 700px) { .rule-grid { grid-template-columns:1fr; } .wide { grid-column:auto; } .target-picker { grid-template-columns:1fr; } .tag-detail-heading { gap:.8rem; } }
 </style>

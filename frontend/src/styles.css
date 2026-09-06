@@ -415,6 +415,26 @@ h1 {
 .admin-shell select:focus { border-color: var(--meshive-cyan); box-shadow: 0 0 0 3px rgb(54 231 255 / 14%); }
 .admin-shell select:disabled { cursor: not-allowed; opacity: .55; }
 
+.admin-shell input:not([type="checkbox"]):not([type="radio"]),
+.admin-shell textarea {
+  width: 100%;
+  min-height: 2.8rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #334155;
+  border-radius: 0.6rem;
+  outline: none;
+  color: #f8fafc;
+  background: #0b1220;
+  color-scheme: dark;
+  font: inherit;
+}
+
+.admin-shell textarea { min-height: 6.5rem; resize: vertical; }
+.admin-shell :is(input, textarea)::placeholder { color: #64748b; opacity: 1; }
+.admin-shell :is(input:not([type="checkbox"]):not([type="radio"]), textarea):hover:not(:disabled) { border-color: #475569; }
+.admin-shell :is(input:not([type="checkbox"]):not([type="radio"]), textarea):focus { border-color: var(--meshive-cyan); box-shadow: 0 0 0 3px rgb(54 231 255 / 14%); }
+.admin-shell :is(input, textarea):disabled { cursor: not-allowed; opacity: .55; }
+
 .diagnostics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
