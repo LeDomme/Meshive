@@ -34,3 +34,38 @@ test("clearing catalogue filters removes stale request parameters", async ({ pag
   await expect.poll(() => requests.some((url) => !url.includes("creator=") && url.includes("sort=name_asc"))).toBe(true)
   await expect(page).toHaveURL(/\?sort=name_asc$/)
 })
+
+test("catalogue pagination returns to the top after loading a new page", async ({ page }) => {
+  await page.addInitScript(() => {
+    ;(window as Window & { catalogueScrollCalls?: ScrollToOptions[] }).catalogueScrollCalls = []
+    window.scrollTo = (options?: ScrollToOptions | number) => {
+      if (typeof options === "object") {
+        ;(window as Window & { catalogueScrollCalls: ScrollToOptions[] }).catalogueScrollCalls.push(options)
+      }
+    }
+  })
+  await page.route("**/api/auth/me", route => route.fulfill({ json: admin }))
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
+  await page.route("**/api/models/filters**", route => route.fulfill({ json: filters }))
+  await page.route("**/api/models?**", route => {
+    const requestedPage = new URL(route.request().url()).searchParams.get("page")
+    const pageNumber = Number(requestedPage || "1")
+    return route.fulfill({
+      json: {
+        items: [{ ...model, id: pageNumber, name: `Page ${pageNumber} model` }],
+        total: 96,
+        page: pageNumber,
+        page_size: 48,
+      },
+    })
+  })
+
+  await page.goto("/")
+  await page.getByRole("button", { name: "Go to next page" }).click()
+
+  await expect(page.getByRole("heading", { name: "Page 2 model" })).toBeVisible()
+  await expect.poll(() => page.evaluate(() =>
+    (window as Window & { catalogueScrollCalls: ScrollToOptions[] }).catalogueScrollCalls,
+  )).toEqual([{ top: 0, behavior: "smooth" }])
+})

@@ -7,6 +7,8 @@ test("audit log is permission gated, readable, filterable and paginated", async 
   const requests: string[] = []
   await page.route("**/api/admin/audit-events**", route => { requests.push(route.request().url()); const pageNo = new URL(route.request().url()).searchParams.get("page"); return route.fulfill({ json: { total: 2, items: pageNo === "2" ? [{ id: 1, created_at: "2026-01-01T00:00:00Z", actor_username: "Alice", action: "user.updated", target_type: "user", target_label: "Bob" }] : [{ id: 2, created_at: "2026-01-02T00:00:00Z", actor_username: "Alice", action: "role.updated", target_type: "role", target_label: "Curator" }] } }) })
   await page.goto("/admin/audit")
+  await expect(page.getByLabel("Actor")).toHaveCSS("background-color", "rgb(11, 18, 32)")
+  await expect(page.getByLabel("From", { exact: true })).toHaveCSS("background-color", "rgb(11, 18, 32)")
   await expect(page.locator(".audit-row").getByText("Role updated")).toBeVisible()
   await expect(page.getByText("role.updated", { exact: true })).toHaveCount(0)
   await page.getByLabel("Action").selectOption("role.updated"); await page.getByLabel("Actor").fill("Alice"); await page.getByLabel("From", { exact: true }).fill("2026-01-01T00:00"); await page.getByLabel("To", { exact: true }).fill("2026-01-03T00:00"); await page.getByRole("button", { name: "Apply filters" }).click()
@@ -56,4 +58,14 @@ test("audit log renders metadata and tag actions with readable labels", async ({
   await expect(page.locator(".audit-row").getByText("Model tag added", { exact: true })).toBeVisible()
   await expect(page.locator(".audit-row").getByText("Automatic tag rule updated", { exact: true })).toBeVisible()
   await expect(page.getByText("automatic_tag_rule.updated", { exact: true })).toHaveCount(0)
+})
+
+test("audit log renders canonical tag-assignment actions with readable labels", async ({ page }) => {
+  await auth(page, ["audit.view"])
+  await page.route("**/api/admin/audit-events**", route => route.fulfill({ json: { total: 1, items: [
+    { id: 1, created_at: "2026-01-01T00:00:00Z", actor_username: "Alice", action: "tag_assignment_rule.re_evaluated", target_type: "tag_assignment_rule", target_label: "Tag assignment rule" },
+  ] } }))
+  await page.goto("/admin/audit")
+  await expect(page.locator(".audit-row").getByText("Tag assignment rule re-evaluated", { exact: true })).toBeVisible()
+  await expect(page.getByText("tag_assignment_rule.re_evaluated", { exact: true })).toHaveCount(0)
 })

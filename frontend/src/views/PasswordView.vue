@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue"
 import { RouterLink, useRouter } from "vue-router"
 import { ApiError, apiRequest } from "../api"
+import AccountMenu from "../components/AccountMenu.vue"
 import BrandLogo from "../components/BrandLogo.vue"
 import { useAuthStore } from "../stores/auth"
 
@@ -40,6 +41,7 @@ interface SessionRevocationResult {
 }
 
 const hasOtherSessions = computed(() => sessions.value.some((item) => !item.is_current))
+const roleLabel = computed(() => auth.user?.role_definition?.name ?? auth.user?.role ?? "")
 
 function asDate(value: string): Date {
   const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/.test(value)
@@ -182,23 +184,33 @@ onMounted(loadSessions)
 
 <template>
   <main class="account-shell">
-    <RouterLink v-if="!auth.user?.must_change_password" class="text-link" to="/">
-      ← Back to catalogue
-    </RouterLink>
-    <section class="account-card">
-      <header class="account-heading">
-        <BrandLogo class="account-brand-icon" />
-        <div>
-          <p class="eyebrow">Your Meshive account</p>
-          <h1>Account settings</h1>
+    <header class="account-page-header">
+      <div class="admin-brand">
+        <p class="eyebrow">Your Meshive account</p>
+        <div class="admin-title-row">
+          <BrandLogo />
+          <h1 class="admin-title">Account settings</h1>
         </div>
-      </header>
+      </div>
+      <nav v-if="!auth.user?.must_change_password" class="admin-nav" aria-label="Account navigation">
+        <RouterLink class="text-link" to="/">Back to Meshive</RouterLink>
+        <AccountMenu />
+      </nav>
+    </header>
+    <p class="account-intro">Manage your profile, recovery email, password and signed-in devices.</p>
 
-      <section class="account-profile" aria-labelledby="profile-heading">
-        <h2 id="profile-heading">Profile</h2>
+    <section class="account-layout">
+      <aside class="panel account-profile" aria-labelledby="profile-heading">
+        <div class="panel-heading">
+          <div>
+            <h2 id="profile-heading">Profile</h2>
+            <p class="panel-copy">Your current Meshive account details.</p>
+          </div>
+        </div>
+
         <dl>
           <div><dt>Username</dt><dd>{{ auth.user?.username }}</dd></div>
-          <div><dt>Role</dt><dd class="role-value">{{ auth.user?.role }}</dd></div>
+          <div><dt>Role</dt><dd class="role-value">{{ roleLabel }}</dd></div>
           <div>
             <dt>Recovery email</dt>
             <dd>
@@ -209,55 +221,36 @@ onMounted(loadSessions)
             </dd>
           </div>
         </dl>
-      </section>
+      </aside>
 
-      <section class="account-email" aria-labelledby="email-heading">
-        <h2 id="email-heading">Recovery email</h2>
-        <p class="panel-copy">
-          A verified address lets you reset a forgotten password. Changing it requires your current password.
-        </p>
-        <form class="login-form" @submit.prevent="saveRecoveryEmail">
-          <label><span>Email address</span><input v-model="recoveryEmail" type="email" autocomplete="email" required></label>
-          <label><span>Current password</span><input v-model="emailPassword" type="password" autocomplete="current-password" required></label>
-          <p v-if="emailError" class="form-error" role="alert">{{ emailError }}</p>
-          <p v-if="emailMessage" class="success-panel" role="status">{{ emailMessage }}</p>
-          <div class="account-email-actions">
-            <button class="primary-button" type="submit" :disabled="emailSubmitting">
-              {{ emailSubmitting ? "Saving…" : "Save and verify email" }}
-            </button>
-            <button
-              v-if="auth.user?.email && !auth.user.email_verified"
-              class="secondary-button"
-              type="button"
-              :disabled="emailSubmitting"
-              @click="resendVerification"
-            >
-              Resend verification
-            </button>
-          </div>
-        </form>
-      </section>
+      <div class="account-content">
+        <section class="panel account-email" aria-labelledby="email-heading">
+          <div class="panel-heading"><div><h2 id="email-heading">Recovery email</h2><p class="panel-copy">A verified address lets you reset a forgotten password. Changing it requires your current password.</p></div></div>
+          <form class="account-form" @submit.prevent="saveRecoveryEmail">
+            <label><span>Email address</span><input v-model="recoveryEmail" type="email" autocomplete="email" required></label>
+            <label><span>Current password</span><input v-model="emailPassword" type="password" autocomplete="current-password" required></label>
+            <p v-if="emailError" class="form-error" role="alert">{{ emailError }}</p>
+            <p v-if="emailMessage" class="success-panel" role="status">{{ emailMessage }}</p>
+            <div class="account-email-actions">
+              <button class="primary-button" type="submit" :disabled="emailSubmitting">{{ emailSubmitting ? "Saving…" : "Save and verify email" }}</button>
+              <button v-if="auth.user?.email && !auth.user.email_verified" class="secondary-button" type="button" :disabled="emailSubmitting" @click="resendVerification">Resend verification</button>
+            </div>
+          </form>
+        </section>
 
-      <section class="account-security" aria-labelledby="security-heading">
-        <h2 id="security-heading">Change password</h2>
-        <p class="panel-copy">
-          {{ auth.user?.must_change_password
-            ? "You must replace your initial password before continuing."
-            : "Choose a new password for your Meshive account." }}
-        </p>
-        <form class="login-form" @submit.prevent="submit">
-          <label><span>Current password</span><input v-model="currentPassword" type="password" autocomplete="current-password" required></label>
-          <label><span>New password</span><input v-model="newPassword" type="password" autocomplete="new-password" minlength="12" required></label>
-          <label><span>Confirm new password</span><input v-model="confirmation" type="password" autocomplete="new-password" minlength="12" required></label>
-          <p v-if="errorMessage" class="form-error">{{ errorMessage }}</p>
-          <p v-if="successMessage" class="success-panel" role="status">{{ successMessage }}</p>
-          <button class="primary-button" type="submit" :disabled="submitting">
-            {{ submitting ? "Changing password…" : "Change password" }}
-          </button>
-        </form>
-      </section>
+        <section class="panel account-security" aria-labelledby="security-heading">
+          <div class="panel-heading"><div><h2 id="security-heading">Change password</h2><p class="panel-copy">{{ auth.user?.must_change_password ? "You must replace your initial password before continuing." : "Choose a new password for your Meshive account." }}</p></div></div>
+          <form class="account-form" @submit.prevent="submit">
+            <label><span>Current password</span><input v-model="currentPassword" type="password" autocomplete="current-password" required></label>
+            <label><span>New password</span><input v-model="newPassword" type="password" autocomplete="new-password" minlength="12" required></label>
+            <label><span>Confirm new password</span><input v-model="confirmation" type="password" autocomplete="new-password" minlength="12" required></label>
+            <p v-if="errorMessage" class="form-error">{{ errorMessage }}</p>
+            <p v-if="successMessage" class="success-panel" role="status">{{ successMessage }}</p>
+            <button class="primary-button" type="submit" :disabled="submitting">{{ submitting ? "Changing password…" : "Change password" }}</button>
+          </form>
+        </section>
 
-      <section class="account-sessions" aria-labelledby="sessions-heading">
+        <section class="panel account-sessions" aria-labelledby="sessions-heading">
         <div class="account-section-heading">
           <div>
             <h2 id="sessions-heading">Active sessions</h2>
@@ -302,7 +295,8 @@ onMounted(loadSessions)
         </div>
         <p v-if="sessionError" class="form-error" role="alert">{{ sessionError }}</p>
         <p v-if="sessionMessage" class="success-panel" role="status">{{ sessionMessage }}</p>
-      </section>
+        </section>
+      </div>
     </section>
   </main>
 </template>

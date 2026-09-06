@@ -167,11 +167,9 @@ onBeforeUnmount(() => {
 <template>
   <main class="admin-shell scans-shell">
     <AdminHeader title="Scans" />
+    <p class="admin-intro">Start smart scans and review activity for the library sources you can access.</p>
     <section class="admin-panel scans-panel">
       <div class="panel-heading">
-        <p class="eyebrow">Library operations</p>
-        <h2>Source scans</h2>
-        <p>Start smart scans and review activity for the library sources you can access.</p>
         <p class="panel-note">Only sources included in your current access scope are shown.</p>
       </div>
       <p v-if="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>

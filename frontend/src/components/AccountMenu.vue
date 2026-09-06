@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { RouterLink, useRouter } from "vue-router"
 
 import { useAuthStore } from "../stores/auth"
@@ -7,6 +7,7 @@ import { useAuthStore } from "../stores/auth"
 const auth = useAuthStore()
 const router = useRouter()
 const menu = ref<HTMLDetailsElement | null>(null)
+const roleLabel = computed(() => auth.user?.role_definition?.name ?? auth.user?.role ?? "")
 
 function closeMenu() {
   menu.value?.removeAttribute("open")
@@ -46,7 +47,7 @@ async function logout() {
     <div class="account-menu-popover">
       <div class="account-menu-identity">
         <strong>{{ auth.user?.username }}</strong>
-        <span>{{ auth.user?.role }}</span>
+        <span>{{ roleLabel }}</span>
       </div>
       <RouterLink class="account-menu-item" to="/account" @click="closeMenu">
         Account settings

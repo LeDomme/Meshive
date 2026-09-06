@@ -50,3 +50,21 @@ test("administrators can open diagnostics from administration navigation", async
   await expect(page.getByRole("link", { name: "Diagnostics" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Diagnostics", level: 1 })).toBeVisible()
 })
+
+test("account settings use the assigned custom role and account navigation", async ({ page }) => {
+  const customRoleUser = {
+    ...user,
+    username: "Rule manager",
+    role_definition: { id: 7, name: "Library curator", is_system: false, is_superuser: false },
+  }
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/auth/me", route => route.fulfill({ json: customRoleUser }))
+  await page.route("**/api/auth/sessions", route => route.fulfill({ json: [] }))
+
+  await page.goto("/account")
+
+  await expect(page.getByRole("heading", { name: "Account settings", level: 1 })).toBeVisible()
+  await expect(page.getByLabel("Profile").getByText("Library curator", { exact: true })).toBeVisible()
+  await expect(page.getByText("Your Meshive account", { exact: true })).toBeVisible()
+  await expect(page.locator(".account-menu")).toBeVisible()
+})

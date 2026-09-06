@@ -21,3 +21,17 @@ test("favorite membership persists after a catalogue reload", async ({ page }) =
   await page.reload()
   await expect(page.getByRole("button", { name: "Later" })).toBeVisible()
 })
+
+test("favorite lists include the account menu and retain their personal-list layout", async ({ page }) => {
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
+  await page.route("**/api/favorite-lists", route => route.fulfill({ json: [] }))
+  await page.route("**/api/models/filters**", route => route.fulfill({ json: filters }))
+
+  await page.goto("/favorites")
+
+  await expect(page.getByRole("heading", { name: "Favorite lists", level: 1 })).toBeVisible()
+  await expect(page.locator(".account-menu")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Your lists", level: 2 })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Create list" })).toBeVisible()
+})

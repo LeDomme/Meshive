@@ -36,3 +36,14 @@ test("administration menu is hidden without permitted entries on a narrow viewpo
   await expect(page.getByText("Administration", { exact: true })).toHaveCount(0)
   await expect(page.locator(".account-menu")).toBeVisible()
 })
+
+test("catalogue keeps administration access in the account menu only", async ({ page }) => {
+  await mock(page)
+  await page.route("**/api/models/filters**", route => route.fulfill({ json: { models: [], creators: [], franchises: [], series: [], collections: [], sources: [], statuses: [], tags: [] } }))
+  await page.route("**/api/models?**", route => route.fulfill({ json: { items: [], total: 0, page: 1, page_size: 48 } }))
+  await page.goto("/")
+  await expect(page.locator(".catalogue-nav").getByRole("link", { name: "Administration" })).toHaveCount(0)
+  await expect(page.locator(".catalogue-nav").getByRole("link", { name: "Tags" })).toHaveCount(0)
+  await page.locator(".account-menu summary").click()
+  await expect(page.locator(".account-menu").getByText("Administration", { exact: true })).toBeVisible()
+})
