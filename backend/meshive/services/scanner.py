@@ -16,6 +16,7 @@ from meshive.config import get_settings
 from meshive.database import SessionLocal
 from meshive.models.catalog import (
     Archive,
+    ArchiveBrowseNode,
     ArchiveEntry,
     LibraryModel,
     ModelImage,
@@ -23,6 +24,7 @@ from meshive.models.catalog import (
     ScanRun,
 )
 from meshive.models.library_source import LibrarySource
+from meshive.services.archive_browse import rebuild_archive_browse_nodes
 from meshive.services.archive_images import (
     ArchiveImageError,
     archive_image_candidate_sort_key,
@@ -856,6 +858,9 @@ def _sync_archive(
         return True
 
     if archive is not None:
+        session.execute(
+            delete(ArchiveBrowseNode).where(ArchiveBrowseNode.archive_id == archive.id)
+        )
         session.execute(delete(ArchiveEntry).where(ArchiveEntry.archive_id == archive.id))
     else:
         archive = Archive(
@@ -926,6 +931,8 @@ def _sync_archive(
         )
         for entry in entries
     )
+    session.flush()
+    rebuild_archive_browse_nodes(session, archive.id)
     archive.entry_count = len(entries)
     archive.uncompressed_size_bytes = sum(
         entry.size_bytes or 0 for entry in entries if not entry.is_directory
@@ -958,6 +965,9 @@ def _sync_archives(
         ):
             remove_cached_file(get_settings().cache_dir, key.thumbnail_key)
             remove_cached_file(get_settings().cache_dir, key.cache_key)
+        session.execute(
+            delete(ArchiveBrowseNode).where(ArchiveBrowseNode.archive_id == archive.id)
+        )
         session.execute(delete(ArchiveEntry).where(ArchiveEntry.archive_id == archive.id))
         session.delete(archive)
 

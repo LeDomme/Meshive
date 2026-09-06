@@ -7,6 +7,7 @@ from meshive.config import get_settings
 from meshive.database import Base
 from meshive.models import (  # noqa: F401
     Archive,
+    ArchiveBrowseNode,
     ArchiveEntry,
     AuditEvent,
     FavoriteList,

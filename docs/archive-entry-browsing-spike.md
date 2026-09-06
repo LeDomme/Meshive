@@ -239,3 +239,17 @@ returning from search.
 current measured payload and memory growth justify it. Do not proceed with
 flat offset pagination or a frontend-only filter: either would lose implied
 folders or retain the current unbounded transfer.
+
+## Phase 1 implementation boundary
+
+Phase 1 introduces only `archive_browse_nodes`, its child-order index, the
+bounded Alembic backfill, and scanner/rescan maintenance. It deliberately adds
+no public entries endpoint and does not change the detail payload or tree UI.
+The migration is safe to rerun after interruption because every derived row is
+unique by `(archive_id, path)` and physical rows upsert that projection. It is
+also intentionally a derived-data boundary: downgrade drops browse nodes and
+their index but never changes `ArchiveEntry`, archives, sources, tags, images,
+or source files. Re-upgrade deterministically rebuilds the projection from the
+unchanged physical entries. This is a rollback limitation rather than data
+loss: a downgraded runtime has no browse-node table, while all authoritative
+archive-listing data remains available for a future upgrade.
