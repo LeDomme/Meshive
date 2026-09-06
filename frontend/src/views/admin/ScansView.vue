@@ -169,7 +169,6 @@ onBeforeUnmount(() => {
     <AdminHeader title="Scans" />
     <section class="admin-panel scans-panel">
       <div class="panel-heading">
-        <h2>Source scans</h2>
         <p>Start smart scans and review activity for the library sources you can access.</p>
         <p class="panel-note">Only sources included in your current access scope are shown.</p>
       </div>
