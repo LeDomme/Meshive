@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, delete, select, text
+from sqlalchemy import create_engine, delete, event, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -36,6 +36,7 @@ from meshive.models.catalog import (
     ScanRun,
 )
 from meshive.models.library_source import LibrarySource
+from meshive.models.tag import ModelTag, Tag
 from meshive.models.user import User
 from meshive.repositories.roles import get_system_role_for_legacy_role
 
@@ -262,6 +263,21 @@ def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
             ]
             session.add_all(models)
             session.flush()
+            visible_tag = Tag(name="alpha")
+            hidden_tag = Tag(name="hidden-tag")
+            session.add_all([visible_tag, hidden_tag])
+            session.flush()
+            session.add_all(
+                [
+                    ModelTag(
+                        model_id=models[0].id,
+                        tag_id=visible_tag.id,
+                        is_direct=True,
+                        is_assignment_rule=True,
+                    ),
+                    ModelTag(model_id=models[1].id, tag_id=hidden_tag.id, is_direct=True),
+                ]
+            )
             for model in models:
                 session.execute(
                     text(
@@ -344,6 +360,9 @@ def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
         assert response.status_code == 200
         assert response.json()["total"] == 1
         assert [item["name"] for item in response.json()["items"]] == ["Amber Model"]
+        assert response.json()["items"][0]["tags"] == [
+            {"id": visible_tag.id, "name": "alpha", "color": None, "description": None}
+        ]
         assert client.get("/api/models", params={"search": "blue"}).json()["total"] == 0
         assert client.get("/api/models", params={"page": 2, "page_size": 1}).json()["items"] == []
 
@@ -364,6 +383,93 @@ def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
         assert all(not facets[key] for key in ("models", "creators", "franchises", "sources"))
         assert client.get(f"/api/models/{models[0].id}").status_code == 404
         assert client.get(f"/api/models/{models[0].id}/navigation").status_code == 404
+
+
+def test_catalogue_tags_are_batched_sorted_and_empty_when_unassigned() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(name="Source", root_path="/models", directory_pattern="{model}")
+            session.add(source)
+            session.flush()
+            tagged = LibraryModel(
+                library_source_id=source.id,
+                relative_path="tagged",
+                name="Tagged",
+                status="available",
+            )
+            untagged = LibraryModel(
+                library_source_id=source.id,
+                relative_path="untagged",
+                name="Untagged",
+                status="available",
+            )
+            session.add_all([tagged, untagged])
+            session.flush()
+            tags = [Tag(name="alpha"), Tag(name="Alpha"), Tag(name="Beta")]
+            session.add_all(tags)
+            session.flush()
+            session.add_all(
+                [
+                    ModelTag(model_id=tagged.id, tag_id=tag.id, is_direct=True)
+                    for tag in tags
+                ]
+            )
+            session.commit()
+
+        response = client.get("/api/models", params={"sort": "name_asc"})
+
+        assert response.status_code == 200
+        items = {item["name"]: item for item in response.json()["items"]}
+        assert [tag["name"] for tag in items["Tagged"]["tags"]] == [
+            "alpha",
+            "Alpha",
+            "Beta",
+        ]
+        assert items["Untagged"]["tags"] == []
+
+
+def test_catalogue_tag_query_count_does_not_grow_with_page_size() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(name="Source", root_path="/models", directory_pattern="{model}")
+            session.add(source)
+            session.flush()
+            models = [
+                LibraryModel(
+                    library_source_id=source.id,
+                    relative_path=f"model-{index}",
+                    name=f"Model {index:03}",
+                    status="available",
+                )
+                for index in range(100)
+            ]
+            tags = [Tag(name=f"Tag {index:03}") for index in range(100)]
+            session.add_all([*models, *tags])
+            session.flush()
+            session.add_all(
+                [ModelTag(model_id=model.id, tag_id=tag.id, is_direct=True) for model, tag in zip(models, tags)]
+            )
+            session.commit()
+
+        engine = sessions.kw["bind"]
+        counts: dict[int, int] = {}
+        for page_size in (1, 48, 100):
+            statements: list[str] = []
+
+            def count_statement(*args, recorded: list[str] = statements) -> None:
+                recorded.append(args[2])
+
+            event.listen(engine, "before_cursor_execute", count_statement)
+            try:
+                response = client.get("/api/models", params={"page_size": page_size})
+            finally:
+                event.remove(engine, "before_cursor_execute", count_statement)
+            assert response.status_code == 200
+            assert len(response.json()["items"]) == page_size
+            counts[page_size] = len(statements)
+            assert sum("FROM model_tags" in statement for statement in statements) == 1
+
+        assert counts[100] - counts[1] <= 1
 
 
 def test_media_and_download_routes_are_source_scoped(tmp_path, monkeypatch) -> None:

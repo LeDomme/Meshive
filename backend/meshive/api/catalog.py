@@ -175,6 +175,8 @@ def list_models(
         .limit(page_size)
     )
 
+    rows = list(session.execute(statement))
+    tags_by_model = _model_tags_for_models(session, [row[0].id for row in rows])
     items = [
         ModelSummary(
             id=model.id,
@@ -195,7 +197,7 @@ def list_models(
                 if thumbnail_key
                 else None
             ),
-            tags=_model_tags(session, model.id),
+            tags=tags_by_model[model.id],
         )
         for (
             model,
@@ -205,7 +207,7 @@ def list_models(
             archive_count,
             thumbnail_image_id,
             thumbnail_key,
-        ) in session.execute(statement)
+        ) in rows
     ]
     return ModelPage(items=items, total=total, page=page, page_size=page_size)
 
@@ -1251,6 +1253,31 @@ def _model_tags(session: Session, model_id: int) -> list[TagRead]:
             .order_by(Tag.name.collate("NOCASE"))
         )
     ]
+
+
+def _model_tags_for_models(
+    session: Session, model_ids: list[int]
+) -> dict[int, list[TagRead]]:
+    """Return tags for catalogue page models with one scoped batch query."""
+    tags_by_model = {model_id: [] for model_id in model_ids}
+    if not model_ids:
+        return tags_by_model
+
+    for model_id, tag in session.execute(
+        select(ModelTag.model_id, Tag)
+        .join(Tag, Tag.id == ModelTag.tag_id)
+        .where(ModelTag.model_id.in_(model_ids))
+        .order_by(ModelTag.model_id, Tag.name.collate("NOCASE"), Tag.id)
+    ):
+        tags_by_model[model_id].append(
+            TagRead(
+                id=tag.id,
+                name=tag.name,
+                color=tag.color,
+                description=tag.description,
+            )
+        )
+    return tags_by_model
 
 
 def _safe_source_file(root_path: str, relative_path: str) -> Path | None:
