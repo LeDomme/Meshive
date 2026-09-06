@@ -121,10 +121,9 @@ onMounted(() => load().catch((error) => showError(error, "Unable to load tags"))
 .tag-card.selected { box-shadow:inset .25rem 0 var(--accent-color); }
 .tag-detail-panel { min-width:0; }
 .tag-detail-heading { padding-bottom:1rem; border-bottom:1px solid var(--border-color); }
-.tag-management-form fieldset, .rule-management-form fieldset { display:grid; gap:.9rem; margin:1rem 0; }
+.tag-management-form fieldset, .rule-management-form fieldset { display:grid; gap:.9rem; min-width:0; margin:1rem 0; padding:1rem; border:1px solid #1e3a5f; border-radius:.75rem; }
 .tag-management-form label, .rule-grid > label { display:grid; gap:.35rem; }
-.rule-management-form > fieldset { padding:1rem; border:1px solid var(--border-color); border-radius:.5rem; }
-.rule-management-form legend { padding:0 .35rem; font-weight:600; }
+.tag-management-form legend, .rule-management-form legend { padding:0 .3rem; color:#cbd5e1; font-weight:700; }
 .rule-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.85rem; }
 .wide { grid-column:1 / -1; }
 .rule-grid small { color:var(--muted-text-color); }
