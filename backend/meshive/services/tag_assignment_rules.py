@@ -221,13 +221,14 @@ def refresh_assignment_rule_tags(session: Session, model_ids: set[int]) -> tuple
         assignment.is_automatic = False
 
     added = removed = 0
+    new_assignments: list[dict[str, object]] = []
     for model_id, tag_ids in desired.items():
         for tag_id in tag_ids:
             assignment = assignments.get((model_id, tag_id))
             if assignment is None:
-                session.execute(insert(ModelTag).values(
-                    model_id=model_id, tag_id=tag_id, is_assignment_rule=True
-                ))
+                new_assignments.append(
+                    {"model_id": model_id, "tag_id": tag_id, "is_assignment_rule": True}
+                )
                 added += 1
             elif not assignment.is_assignment_rule:
                 assignment.is_assignment_rule = True
@@ -239,11 +240,12 @@ def refresh_assignment_rule_tags(session: Session, model_ids: set[int]) -> tuple
         removed += 1
         if not assignment.is_direct:
             session.delete(assignment)
+    _insert_in_batches(session, ModelTag, iter(new_assignments))
     return added, removed
 
 
-def _insert_in_batches(session: Session, model: type[TagAssignmentRuleMatch], rows: object) -> None:
-    batch: list[dict[str, int]] = []
+def _insert_in_batches(session: Session, model: type[object], rows: object) -> None:
+    batch: list[dict[str, object]] = []
     for row in rows:  # type: ignore[union-attr]
         batch.append(row)
         if len(batch) == 500:
