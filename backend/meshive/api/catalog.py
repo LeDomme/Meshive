@@ -429,6 +429,16 @@ def list_archive_entries(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
     require_access_permission(access, ARCHIVES_VIEW_ENTRIES)
 
+    if archive.entry_count and not session.scalar(
+        select(ArchiveBrowseNode.id)
+        .where(ArchiveBrowseNode.archive_id == archive_id)
+        .limit(1)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Archive browse index is unavailable; rescan the model to rebuild it",
+        )
+
     normalized_parent = canonical_archive_path(parent_path)
     normalized_search = (search or "").strip().casefold()
     mode = "search" if normalized_search else "browse"
@@ -565,7 +575,11 @@ def model_detail(
         .order_by(Archive.filename.collate("NOCASE"))
     ).all()
     archive_reads = []
-    archive_statistics_by_archive = _archive_statistics_by_archive(session, [archive.id for archive in archives])
+    archive_statistics_by_archive = (
+        _archive_statistics_by_archive(session, [archive.id for archive in archives])
+        if CATALOGUE_VIEW_MAINTENANCE in access.permission_keys
+        else {}
+    )
     for archive in archives:
         archive_reads.append(
             ArchiveRead(
