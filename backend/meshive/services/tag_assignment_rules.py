@@ -3,7 +3,7 @@
 from pathlib import PurePosixPath
 
 import re2
-from sqlalchemy import delete, select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
 from meshive.models.catalog import Archive, ArchiveEntry, LibraryModel
@@ -120,9 +120,10 @@ def evaluate_assignment_rule(session: Session, rule: TagAssignmentRule) -> set[i
     )
     if not rule.enabled or not models:
         return set(model_ids)
-    session.add_all(
-        TagAssignmentRuleMatch(tag_assignment_rule_id=rule.id, model_id=model_id)
-        for model_id in matched_model_ids
+    _insert_in_batches(
+        session,
+        TagAssignmentRuleMatch,
+        ({"tag_assignment_rule_id": rule.id, "model_id": model_id} for model_id in matched_model_ids),
     )
     return set(model_ids)
 
@@ -224,9 +225,9 @@ def refresh_assignment_rule_tags(session: Session, model_ids: set[int]) -> tuple
         for tag_id in tag_ids:
             assignment = assignments.get((model_id, tag_id))
             if assignment is None:
-                session.add(
-                    ModelTag(model_id=model_id, tag_id=tag_id, is_assignment_rule=True)
-                )
+                session.execute(insert(ModelTag).values(
+                    model_id=model_id, tag_id=tag_id, is_assignment_rule=True
+                ))
                 added += 1
             elif not assignment.is_assignment_rule:
                 assignment.is_assignment_rule = True
@@ -239,6 +240,17 @@ def refresh_assignment_rule_tags(session: Session, model_ids: set[int]) -> tuple
         if not assignment.is_direct:
             session.delete(assignment)
     return added, removed
+
+
+def _insert_in_batches(session: Session, model: type[TagAssignmentRuleMatch], rows: object) -> None:
+    batch: list[dict[str, int]] = []
+    for row in rows:  # type: ignore[union-attr]
+        batch.append(row)
+        if len(batch) == 500:
+            session.execute(insert(model), batch)
+            batch.clear()
+    if batch:
+        session.execute(insert(model), batch)
 
 
 def _matches_rule(
