@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import and_, column, delete, false, func, or_, select, table, text, update
+from sqlalchemy import and_, case, column, delete, false, func, or_, select, table, text, update
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
@@ -564,34 +564,9 @@ def model_detail(
         .where(Archive.model_id == model.id)
         .order_by(Archive.filename.collate("NOCASE"))
     ).all()
-    can_view_entries = ARCHIVES_VIEW_ENTRIES in access.permission_keys
     archive_reads = []
-    archive_image_files = 0
-    stl_files = 0
-    chitubox_files = 0
-    lychee_files = 0
+    archive_statistics_by_archive = _archive_statistics_by_archive(session, [archive.id for archive in archives])
     for archive in archives:
-        entries = (
-            session.scalars(
-                select(ArchiveEntry)
-                .where(ArchiveEntry.archive_id == archive.id)
-                .order_by(ArchiveEntry.path.collate("NOCASE"))
-            ).all()
-            if can_view_entries
-            else []
-        )
-        for entry in entries:
-            if entry.is_directory:
-                continue
-            extension = Path(entry.name).suffix.casefold()
-            if _is_exportable_archive_image_entry(entry):
-                archive_image_files += 1
-            elif extension == ".stl":
-                stl_files += 1
-            elif extension in {".ctb", ".chitubox"}:
-                chitubox_files += 1
-            elif extension in {".lys", ".lychee"}:
-                lychee_files += 1
         archive_reads.append(
             ArchiveRead(
                 id=archive.id,
@@ -605,26 +580,16 @@ def model_detail(
                 download_url=(
                     f"/api/models/{model.id}/archives/{archive.id}/download"
                 ),
-                entries=[
-                    ArchiveEntryRead(
-                        path=entry.path,
-                        name=entry.name,
-                        is_directory=entry.is_directory,
-                        size_bytes=entry.size_bytes,
-                        compressed_size_bytes=entry.compressed_size_bytes,
-                        modified_at=entry.modified_at,
-                    )
-                    for entry in entries
-                ],
+                entries_url=f"/api/models/{model.id}/archives/{archive.id}/entries",
             )
         )
     is_admin = getattr(current_user, "role", None) == "admin"
     archive_statistics = (
         ModelArchiveStatisticsRead(
-            image_files=archive_image_files,
-            stl_files=stl_files,
-            chitubox_files=chitubox_files,
-            lychee_files=lychee_files,
+            image_files=sum(item["image_files"] for item in archive_statistics_by_archive.values()),
+            stl_files=sum(item["stl_files"] for item in archive_statistics_by_archive.values()),
+            chitubox_files=sum(item["chitubox_files"] for item in archive_statistics_by_archive.values()),
+            lychee_files=sum(item["lychee_files"] for item in archive_statistics_by_archive.values()),
             exported_images=sum(
                 1 for image in images if image.storage_kind == "archive"
             ),
@@ -1267,6 +1232,41 @@ def _model_image_url(model_id: int, image: ModelImage) -> str:
     return f"/api/models/{model_id}/images/{image.id}?v={quote(version, safe='')}"
 
 
+
+
+def _archive_statistics_by_archive(
+    session: Session, archive_ids: list[int]
+) -> dict[int, dict[str, int]]:
+    """Return archive-file counters without materialising archive entries."""
+    if not archive_ids:
+        return {}
+    normalized_path = func.lower(ArchiveEntry.path)
+    is_file = ArchiveEntry.is_directory.is_(False)
+    image_path = and_(
+        is_file,
+        or_(*(normalized_path.like(f"%{extension}") for extension in SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS)),
+        normalized_path.not_like("/%"), normalized_path.not_like("@%"),
+        normalized_path.not_like(".%"), normalized_path.not_like("%/.%"),
+        *(normalized_path.not_like(f"%{marker}%") for marker in IGNORED_ARCHIVE_IMAGE_PATH_MARKERS),
+        *(expression for directory in IGNORED_ARCHIVE_IMAGE_PATH_PARTS for expression in (
+            normalized_path.not_like(f"{directory}/%"), normalized_path.not_like(f"%/{directory}/%"),
+        )),
+    )
+    rows = session.execute(
+        select(
+            ArchiveEntry.archive_id,
+            func.coalesce(func.sum(case((image_path, 1), else_=0)), 0).label("image_files"),
+            func.coalesce(func.sum(case((and_(is_file, normalized_path.like("%.stl")), 1), else_=0)), 0).label("stl_files"),
+            func.coalesce(func.sum(case((and_(is_file, or_(normalized_path.like("%.ctb"), normalized_path.like("%.chitubox"))), 1), else_=0)), 0).label("chitubox_files"),
+            func.coalesce(func.sum(case((and_(is_file, or_(normalized_path.like("%.lys"), normalized_path.like("%.lychee"))), 1), else_=0)), 0).label("lychee_files"),
+        ).where(ArchiveEntry.archive_id.in_(archive_ids)).group_by(ArchiveEntry.archive_id)
+    )
+    return {
+        row.archive_id: {
+            "image_files": row.image_files, "stl_files": row.stl_files,
+            "chitubox_files": row.chitubox_files, "lychee_files": row.lychee_files,
+        } for row in rows
+    }
 
 
 def _is_exportable_archive_image_entry(entry: ArchiveEntry) -> bool:

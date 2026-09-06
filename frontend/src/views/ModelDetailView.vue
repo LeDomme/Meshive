@@ -44,7 +44,7 @@ interface ModelArchive {
   uncompressed_size_bytes: number
   error_message: string | null
   download_url: string
-  entries: ArchiveEntry[]
+  entries_url: string
 }
 
 interface ModelScanIssue {
@@ -103,8 +103,20 @@ interface ArchiveTreeNode {
   name: string
   depth: number
   isDirectory: boolean
-  entry: ArchiveEntry | null
-  children: ArchiveTreeNode[]
+  entry: ArchiveEntry
+}
+
+interface ArchiveBrowsePage {
+  items: ArchiveEntry[]
+  next_cursor: string | null
+  parent_path: string | null
+}
+
+interface ArchiveBrowseState {
+  entries: ArchiveEntry[]
+  nextCursor: string | null
+  loading: boolean
+  error: string
 }
 
 type CatalogueFilterKey =
@@ -129,7 +141,11 @@ const pictureNotice = ref("")
 const rescanInProgress = ref(false)
 const archiveFilter = ref("")
 const selectedArchiveIndex = ref(0)
-const collapsedFolders = ref<Set<string>>(new Set())
+const expandedFolders = ref<Set<string>>(new Set())
+const archiveBrowseCache = ref(new Map<number, Map<string, ArchiveBrowseState>>())
+const archiveSearchResults = ref<ArchiveEntry[]>([])
+const archiveSearchLoading = ref(false)
+const archiveSearchError = ref("")
 const lightboxOpen = ref(false)
 const favoriteDialogOpen = ref(false)
 const favoriteMemberships = ref<FavoriteMembershipList[]>([])
@@ -167,86 +183,21 @@ const favoriteDialogTargets = computed(() =>
   model.value ? favoriteTargetsForModel(model.value) : [],
 )
 
-const archiveTree = computed(() => {
-  const root: ArchiveTreeNode = {
-    key: "",
-    name: "",
-    depth: -1,
-    isDirectory: true,
-    entry: null,
-    children: [],
-  }
-  const nodes = new Map<string, ArchiveTreeNode>([["", root]])
-
-  for (const entry of currentArchive.value?.entries ?? []) {
-    const parts = entry.path.replaceAll("\\", "/").split("/").filter(Boolean)
-    let parent = root
-    let path = ""
-    parts.forEach((part, index) => {
-      path = path ? `${path}/${part}` : part
-      let node = nodes.get(path)
-      const isLast = index === parts.length - 1
-      if (!node) {
-        node = {
-          key: path,
-          name: part,
-          depth: index,
-          isDirectory: !isLast || entry.is_directory,
-          entry: isLast ? entry : null,
-          children: [],
-        }
-        nodes.set(path, node)
-        parent.children.push(node)
-      } else if (isLast) {
-        node.entry = entry
-        node.isDirectory = entry.is_directory
-      }
-      parent = node
-    })
-  }
-
-  const sortNodes = (nodesToSort: ArchiveTreeNode[]) => {
-    nodesToSort.sort(
-      (left, right) =>
-        Number(right.isDirectory) - Number(left.isDirectory) ||
-        left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
-    )
-    nodesToSort.forEach((node) => sortNodes(node.children))
-  }
-  sortNodes(root.children)
-  return root.children
-})
-
 const visibleTreeRows = computed(() => {
-  const search = archiveFilter.value.trim().toLocaleLowerCase()
   const rows: ArchiveTreeNode[] = []
-
-  const hasMatch = (node: ArchiveTreeNode): boolean =>
-    node.key.toLocaleLowerCase().includes(search) ||
-    node.children.some((child) => hasMatch(child))
-
-  const visit = (nodes: ArchiveTreeNode[]) => {
-    for (const node of nodes) {
-      if (search && !hasMatch(node)) continue
-      rows.push(node)
-      if (
-        node.isDirectory &&
-        (search || !collapsedFolders.value.has(node.key))
-      ) {
-        visit(node.children)
+  const states = currentArchive.value ? archiveBrowseCache.value.get(currentArchive.value.id) : undefined
+  const visit = (parentPath: string, depth: number) => {
+    for (const entry of states?.get(parentPath)?.entries ?? []) {
+      rows.push({ key: entry.path, name: entry.name, depth, isDirectory: entry.is_directory, entry })
+      if (entry.is_directory && expandedFolders.value.has(entry.path)) {
+        visit(entry.path, depth + 1)
       }
     }
   }
-  visit(archiveTree.value)
+  visit("", 0)
   return rows
 })
 
-function toggleFolder(path: string) {
-  const next = new Set(collapsedFolders.value)
-  if (next.has(path)) next.delete(path)
-  else next.add(path)
-  collapsedFolders.value = next
-}
 
 function selectAdjacentImage(direction: -1 | 1) {
   const images = model.value?.images ?? []
@@ -424,7 +375,127 @@ async function rescanCurrentModel(forceImageRebuild = false) {
 function selectArchive(index: number) {
   selectedArchiveIndex.value = index
   archiveFilter.value = ""
-  collapsedFolders.value = new Set()
+  expandedFolders.value = new Set()
+  archiveSearchResults.value = []
+  archiveSearchError.value = ""
+  abortArchiveRequests()
+  void loadArchiveEntries("")
+}
+
+let archiveRequestGeneration = 0
+let archiveSearchGeneration = 0
+let archiveSearchTimer: number | undefined
+const archiveControllers = new Set<AbortController>()
+let archiveSearchController: AbortController | undefined
+
+function archiveState(archiveId: number, parentPath: string): ArchiveBrowseState {
+  let states = archiveBrowseCache.value.get(archiveId)
+  if (!states) {
+    states = new Map()
+    archiveBrowseCache.value.set(archiveId, states)
+  }
+  let state = states.get(parentPath)
+  if (!state) {
+    state = { entries: [], nextCursor: null, loading: false, error: "" }
+    states.set(parentPath, state)
+  }
+  return state
+}
+
+function abortArchiveRequests() {
+  archiveRequestGeneration += 1
+  archiveSearchGeneration += 1
+  archiveControllers.forEach((controller) => controller.abort())
+  archiveControllers.clear()
+  archiveSearchController?.abort()
+  archiveSearchController = undefined
+  if (archiveSearchTimer !== undefined) window.clearTimeout(archiveSearchTimer)
+}
+
+async function loadArchiveEntries(parentPath: string, append = false) {
+  const archive = currentArchive.value
+  if (!archive || !auth.can("archives.view_entries")) return
+  const state = archiveState(archive.id, parentPath)
+  if (state.loading || (!append && state.entries.length)) return
+  if (append && !state.nextCursor) return
+  const generation = ++archiveRequestGeneration
+  const controller = new AbortController()
+  archiveControllers.add(controller)
+  state.loading = true
+  state.error = ""
+  const parameters = new URLSearchParams({ parent_path: parentPath, page_size: "200" })
+  if (append && state.nextCursor) parameters.set("cursor", state.nextCursor)
+  try {
+    const result = await apiRequest<ArchiveBrowsePage>(`${archive.entries_url}?${parameters}`, {
+      signal: controller.signal,
+    })
+    if (generation !== archiveRequestGeneration || archive.id !== currentArchive.value?.id) return
+    state.entries = append ? [...state.entries, ...result.items] : result.items
+    state.nextCursor = result.next_cursor
+  } catch (error) {
+    if (generation === archiveRequestGeneration && !isAbortError(error)) {
+      state.error = error instanceof ApiError ? error.message : "Unable to load archive contents"
+    }
+  } finally {
+    archiveControllers.delete(controller)
+    if (generation === archiveRequestGeneration) state.loading = false
+  }
+}
+
+async function toggleFolder(path: string) {
+  const next = new Set(expandedFolders.value)
+  if (next.has(path)) {
+    next.delete(path)
+  } else {
+    next.add(path)
+    await loadArchiveEntries(path)
+  }
+  expandedFolders.value = next
+}
+
+async function showSearchPath(entry: ArchiveEntry) {
+  const archive = currentArchive.value
+  if (!archive) return
+  archiveFilter.value = ""
+  archiveSearchResults.value = []
+  const parts = entry.path.split("/").filter(Boolean)
+  let parent = ""
+  const next = new Set(expandedFolders.value)
+  for (const part of parts.slice(0, -1)) {
+    next.add(parent ? `${parent}/${part}` : part)
+    await loadArchiveEntries(parent)
+    parent = parent ? `${parent}/${part}` : part
+  }
+  await loadArchiveEntries(parent)
+  expandedFolders.value = next
+}
+
+async function searchArchiveEntries() {
+  const archive = currentArchive.value
+  const search = archiveFilter.value.trim()
+  const generation = ++archiveSearchGeneration
+  archiveSearchController?.abort()
+  archiveSearchResults.value = []
+  archiveSearchError.value = ""
+  if (!archive || !search || !auth.can("archives.view_entries")) return
+  const controller = new AbortController()
+  archiveSearchController = controller
+  archiveSearchLoading.value = true
+  try {
+    const result = await apiRequest<ArchiveBrowsePage>(
+      `${archive.entries_url}?${new URLSearchParams({ search, page_size: "200" })}`,
+      { signal: controller.signal },
+    )
+    if (generation === archiveSearchGeneration && archive.id === currentArchive.value?.id) {
+      archiveSearchResults.value = result.items
+    }
+  } catch (error) {
+    if (generation === archiveSearchGeneration && !isAbortError(error)) {
+      archiveSearchError.value = error instanceof ApiError ? error.message : "Unable to search archive contents"
+    }
+  } finally {
+    if (generation === archiveSearchGeneration) archiveSearchLoading.value = false
+  }
 }
 
 async function openLightbox() {
@@ -633,6 +704,9 @@ async function loadModel() {
   navigationRequest += 1
   favoriteMembershipsController?.abort()
   favoriteMembershipsRequest += 1
+  abortArchiveRequests()
+  archiveBrowseCache.value = new Map()
+  archiveSearchResults.value = []
   const controller = new AbortController()
   modelController = controller
   loading.value = true
@@ -648,6 +722,9 @@ async function loadModel() {
     model.value = detail
     availableTags.value = tags
     selectedImage.value = model.value.images[0] ?? null
+    selectedArchiveIndex.value = 0
+    expandedFolders.value = new Set()
+    void loadArchiveEntries("")
     await Promise.all([
       ...(auth.can("favorites.manage") ? [loadFavoriteMemberships(model.value.id)] : []),
       loadNavigation(model.value.id),
@@ -669,10 +746,16 @@ onMounted(() => {
 
 watch(() => route.params.id, () => void loadModel())
 
+watch(archiveFilter, () => {
+  if (archiveSearchTimer !== undefined) window.clearTimeout(archiveSearchTimer)
+  archiveSearchTimer = window.setTimeout(() => void searchArchiveEntries(), 250)
+})
+
 onBeforeUnmount(() => {
   modelController?.abort()
   navigationController?.abort()
   favoriteMembershipsController?.abort()
+  abortArchiveRequests()
   window.removeEventListener("keydown", handleKeydown)
   document.documentElement.style.overflow = ""
 })
@@ -1061,11 +1144,35 @@ onBeforeUnmount(() => {
         <p v-if="currentArchive?.error_message" class="form-error">
           {{ currentArchive.error_message }}
         </p>
-        <template v-if="auth.can('archives.view_entries') && currentArchive?.entries.length">
+        <template v-if="auth.can('archives.view_entries') && currentArchive">
           <label class="archive-search">
-            <span class="sr-only">Filter archive contents</span>
-            <input v-model="archiveFilter" type="search" placeholder="Filter archive contents…">
+            <span class="sr-only">Search archive contents</span>
+            <input v-model="archiveFilter" type="search" placeholder="Search archive contents…">
           </label>
+          <p v-if="archiveSearchLoading" class="muted">Searching archive…</p>
+          <p v-else-if="archiveSearchError" class="form-error">{{ archiveSearchError }}</p>
+          <div v-else-if="archiveFilter.trim()" class="archive-search-results">
+            <p v-if="!archiveSearchResults.length" class="panel-copy">No matching archive entries.</p>
+            <button
+              v-for="entry in archiveSearchResults"
+              :key="entry.path"
+              class="archive-search-result"
+              type="button"
+              @click="showSearchPath(entry)"
+            >
+              <span>{{ entry.is_directory ? "📁" : "📄" }}</span>
+              <span class="path-value">{{ entry.path }}</span>
+            </button>
+          </div>
+          <p v-if="archiveState(currentArchive.id, '').loading && !visibleTreeRows.length" class="muted">
+            Loading archive contents…
+          </p>
+          <p v-else-if="archiveState(currentArchive.id, '').error" class="form-error">
+            {{ archiveState(currentArchive.id, '').error }}
+          </p>
+          <p v-else-if="!visibleTreeRows.length && !archiveFilter.trim()" class="panel-copy">
+            This archive has no indexed entries.
+          </p>
           <div class="archive-table-wrap">
             <table class="archive-table">
               <thead>
@@ -1082,11 +1189,11 @@ onBeforeUnmount(() => {
                       v-if="node.isDirectory"
                       class="tree-toggle"
                       type="button"
-                      :aria-expanded="Boolean(archiveFilter.trim()) || !collapsedFolders.has(node.key)"
+                      :aria-expanded="expandedFolders.has(node.key)"
                       @click="toggleFolder(node.key)"
                     >
                       <span class="tree-chevron">
-                        {{ collapsedFolders.has(node.key) ? "▶" : "▼" }}
+                        {{ expandedFolders.has(node.key) ? "▼" : "▶" }}
                       </span>
                       <span>📁</span>
                       <span>{{ node.name }}</span>
@@ -1097,13 +1204,20 @@ onBeforeUnmount(() => {
                     </span>
                   </td>
                   <td>
-                    {{ node.isDirectory ? "—" : formatBytes(node.entry?.size_bytes ?? null) }}
+                    {{ node.isDirectory ? "—" : formatBytes(node.entry.size_bytes) }}
                   </td>
-                  <td>{{ node.entry?.modified_at || "—" }}</td>
+                  <td>{{ node.entry.modified_at || "—" }}</td>
                 </tr>
               </tbody>
             </table>
           </div>
+          <button
+            v-if="archiveState(currentArchive.id, '').nextCursor"
+            class="secondary-button"
+            type="button"
+            :disabled="archiveState(currentArchive.id, '').loading"
+            @click="loadArchiveEntries('', true)"
+          >Load more root entries</button>
         </template>
         <p v-else-if="currentArchive && !auth.can('archives.view_entries')" class="panel-copy">
           Archive contents are not available for your role.
