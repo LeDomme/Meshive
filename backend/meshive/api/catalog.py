@@ -1,3 +1,5 @@
+import base64
+import json
 import re
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal
@@ -5,7 +7,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import and_, column, delete, func, or_, select, table, text, update
+from sqlalchemy import and_, column, delete, false, func, or_, select, table, text, update
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
@@ -31,6 +33,7 @@ from meshive.config import get_settings
 from meshive.database import get_session
 from meshive.models.catalog import (
     Archive,
+    ArchiveBrowseNode,
     ArchiveEntry,
     LibraryModel,
     ModelImage,
@@ -41,6 +44,7 @@ from meshive.models.library_source import LibrarySource
 from meshive.models.tag import ModelTag, Tag
 from meshive.models.user import User
 from meshive.schemas.catalog import (
+    ArchiveBrowsePage,
     ArchiveEntryRead,
     ArchiveRead,
     CatalogueFilters,
@@ -58,6 +62,7 @@ from meshive.schemas.catalog import (
 from meshive.schemas.creator import CreatorMetadataLinkRead
 from meshive.schemas.scan import ScanRunRead
 from meshive.schemas.tag import TagRead
+from meshive.services.archive_browse import canonical_archive_path
 from meshive.services.archive_bundle import BundleArchive, stream_archive_bundle
 from meshive.services.archive_images import (
     IGNORED_ARCHIVE_IMAGE_PATH_MARKERS,
@@ -400,6 +405,109 @@ def catalogue_filters(
                 .order_by(LibrarySource.name.collate("NOCASE"))
             )
         ],
+    )
+
+
+@router.get("/{model_id}/archives/{archive_id}/entries", response_model=ArchiveBrowsePage)
+def list_archive_entries(
+    model_id: int,
+    archive_id: int,
+    parent_path: str = Query(default="", max_length=4096),
+    search: str | None = Query(default=None, max_length=200),
+    cursor: str | None = Query(default=None, max_length=2048),
+    page_size: int = Query(default=200, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ArchiveBrowsePage:
+    """Return one bounded page of derived archive browse nodes."""
+    access = get_access_context(session, current_user)
+    get_visible_model_or_404(session, access, model_id)
+    archive = session.scalar(
+        select(Archive).where(Archive.id == archive_id, Archive.model_id == model_id)
+    )
+    if archive is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found")
+    require_access_permission(access, ARCHIVES_VIEW_ENTRIES)
+
+    normalized_parent = canonical_archive_path(parent_path)
+    normalized_search = (search or "").strip().casefold()
+    mode = "search" if normalized_search else "browse"
+    cursor_values = _decode_archive_entries_cursor(
+        cursor,
+        mode=mode,
+        archive_id=archive_id,
+        parent_path=normalized_parent,
+        search=normalized_search,
+    )
+    statement = select(ArchiveBrowseNode).where(ArchiveBrowseNode.archive_id == archive_id)
+    if mode == "browse":
+        statement = statement.where(ArchiveBrowseNode.parent_path == normalized_parent)
+        if cursor_values:
+            statement = statement.where(
+                _browse_cursor_clause(
+                    bool(cursor_values["is_directory"]),
+                    str(cursor_values["name_sort_key"]),
+                    str(cursor_values["path"]),
+                )
+            )
+        statement = statement.order_by(
+            ArchiveBrowseNode.is_directory.desc(),
+            ArchiveBrowseNode.name_sort_key,
+            ArchiveBrowseNode.path,
+        )
+    else:
+        statement = statement.where(
+            or_(
+                func.instr(ArchiveBrowseNode.path_sort_key, normalized_search) > 0,
+                func.instr(ArchiveBrowseNode.name_sort_key, normalized_search) > 0,
+            )
+        )
+        if cursor_values:
+            statement = statement.where(
+                or_(
+                    ArchiveBrowseNode.path_sort_key > str(cursor_values["path_sort_key"]),
+                    and_(
+                        ArchiveBrowseNode.path_sort_key == str(cursor_values["path_sort_key"]),
+                        ArchiveBrowseNode.path > str(cursor_values["path"]),
+                    ),
+                )
+            )
+        statement = statement.order_by(
+            ArchiveBrowseNode.path_sort_key,
+            ArchiveBrowseNode.path,
+        )
+
+    nodes = list(session.scalars(statement.limit(page_size + 1)))
+    visible_nodes = nodes[:page_size]
+    next_cursor = None
+    if len(nodes) > page_size:
+        last_node = visible_nodes[-1]
+        next_cursor = _encode_archive_entries_cursor(
+            {
+                "archive_id": archive_id,
+                "mode": mode,
+                "parent_path": normalized_parent,
+                "search": normalized_search,
+                "is_directory": last_node.is_directory,
+                "name_sort_key": last_node.name_sort_key,
+                "path_sort_key": last_node.path_sort_key,
+                "path": last_node.path,
+            }
+        )
+    return ArchiveBrowsePage(
+        items=[
+            ArchiveEntryRead(
+                path=node.path,
+                name=node.name,
+                is_directory=node.is_directory,
+                size_bytes=node.size_bytes,
+                compressed_size_bytes=node.compressed_size_bytes,
+                modified_at=node.modified_at,
+            )
+            for node in visible_nodes
+        ],
+        next_cursor=next_cursor,
+        parent_path=None if mode == "search" else normalized_parent,
     )
 
 
@@ -1040,6 +1148,66 @@ def _delete_model_records(session: Session, model_ids: list[int]) -> list[str]:
     session.execute(delete(LibraryModel).where(LibraryModel.id.in_(model_ids)))
     session.commit()
     return cache_keys
+
+
+def _browse_cursor_clause(
+    is_directory: bool, name_sort_key: str, path: str
+):
+    return or_(
+        ArchiveBrowseNode.is_directory.is_(False) if is_directory else false(),
+        and_(
+            ArchiveBrowseNode.is_directory == is_directory,
+            or_(
+                ArchiveBrowseNode.name_sort_key > name_sort_key,
+                and_(
+                    ArchiveBrowseNode.name_sort_key == name_sort_key,
+                    ArchiveBrowseNode.path > path,
+                ),
+            ),
+        ),
+    )
+
+
+def _encode_archive_entries_cursor(values: dict[str, object]) -> str:
+    encoded = json.dumps(values, separators=(",", ":"), sort_keys=True).encode()
+    return base64.urlsafe_b64encode(encoded).decode().rstrip("=")
+
+
+def _decode_archive_entries_cursor(
+    cursor: str | None,
+    *,
+    mode: str,
+    archive_id: int,
+    parent_path: str,
+    search: str,
+) -> dict[str, object] | None:
+    if cursor is None:
+        return None
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        values = json.loads(base64.urlsafe_b64decode(padded).decode())
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid cursor") from error
+    expected = {
+        "archive_id": archive_id,
+        "mode": mode,
+        "parent_path": parent_path,
+        "search": search,
+    }
+    if not isinstance(values, dict) or any(values.get(key) != value for key, value in expected.items()):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid cursor")
+    if not isinstance(values.get("path"), str):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid cursor")
+    if mode == "browse":
+        valid = (
+            isinstance(values.get("is_directory"), bool)
+            and isinstance(values.get("name_sort_key"), str)
+        )
+    else:
+        valid = isinstance(values.get("path_sort_key"), str)
+    if not valid:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid cursor")
+    return values
 
 
 def _model_filters(
