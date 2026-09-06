@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
 
-import { ApiError, apiRequest } from "../api"
+import { ApiError, apiRequest, isAbortError } from "../api"
 import AccountMenu from "../components/AccountMenu.vue"
 import BrandLogo from "../components/BrandLogo.vue"
 import FavoriteSaveDialog from "../components/FavoriteSaveDialog.vue"
@@ -372,7 +372,18 @@ function detailRoute(modelId: number) {
   }
 }
 
+let catalogueController: AbortController | undefined
+let catalogueRequest = 0
+let filterController: AbortController | undefined
+let filterRequest = 0
+let favoriteMembershipsController: AbortController | undefined
+let favoriteMembershipsRequest = 0
+
 async function loadCatalogue(targetPage = 1, scrollToTop = false) {
+  const request = ++catalogueRequest
+  catalogueController?.abort()
+  const controller = new AbortController()
+  catalogueController = controller
   loading.value = true
   errorMessage.value = ""
   const parameters = new URLSearchParams({
@@ -391,21 +402,28 @@ async function loadCatalogue(targetPage = 1, scrollToTop = false) {
   if (targetPage === 1) delete locationQuery.page
   void router.replace({ query: locationQuery })
   try {
-    page.value = await apiRequest<ModelPage>(`/api/models?${parameters}`)
+    const result = await apiRequest<ModelPage>(`/api/models?${parameters}`, {
+      signal: controller.signal,
+    })
+    if (request !== catalogueRequest) return
+    page.value = result
     if (auth.can("favorites.manage")) {
       await loadFavoriteMemberships(page.value.items.map((model) => model.id))
     } else {
       favoriteMemberships.value = {}
     }
+    if (request !== catalogueRequest) return
     if (scrollToTop) {
       await nextTick()
       window.scrollTo({ top: 0, behavior: "smooth" })
     }
   } catch (error) {
-    errorMessage.value =
-      error instanceof ApiError ? error.message : "Unable to load the catalogue"
+    if (request === catalogueRequest && !isAbortError(error)) {
+      errorMessage.value =
+        error instanceof ApiError ? error.message : "Unable to load the catalogue"
+    }
   } finally {
-    loading.value = false
+    if (request === catalogueRequest) loading.value = false
   }
 }
 
@@ -413,7 +431,6 @@ function goToPage(targetPage: number) {
   void loadCatalogue(targetPage, true)
 }
 
-let filterRequest = 0
 type FacetKey =
   | "model"
   | "creator"
@@ -451,6 +468,9 @@ function reconcileFacets(result: CatalogueFilters) {
 
 async function loadFilterOptions() {
   const request = ++filterRequest
+  filterController?.abort()
+  const controller = new AbortController()
+  filterController = controller
   const parameters = new URLSearchParams()
   for (const [key, value] of Object.entries(query)) {
     if (key !== "sort" && value) parameters.set(key, value)
@@ -458,13 +478,14 @@ async function loadFilterOptions() {
   try {
     const result = await apiRequest<CatalogueFilters>(
       `/api/models/filters?${parameters}`,
+      { signal: controller.signal },
     )
     if (request === filterRequest) {
       filters.value = result
       reconcileFacets(result)
     }
   } catch (error) {
-    if (request === filterRequest) {
+    if (request === filterRequest && !isAbortError(error)) {
       errorMessage.value =
         error instanceof ApiError ? error.message : "Unable to load filters"
     }
@@ -632,8 +653,12 @@ function formatBytes(value: number | null) {
 }
 
 async function loadFavoriteMemberships(modelIds: number[]) {
+  const request = ++favoriteMembershipsRequest
+  favoriteMembershipsController?.abort()
+  const controller = new AbortController()
+  favoriteMembershipsController = controller
   if (!modelIds.length) {
-    favoriteMemberships.value = {}
+    if (request === favoriteMembershipsRequest) favoriteMemberships.value = {}
     return
   }
   const parameters = new URLSearchParams()
@@ -641,12 +666,17 @@ async function loadFavoriteMemberships(modelIds: number[]) {
   try {
     const result = await apiRequest<FavoriteModelMembership[]>(
       `/api/favorite-lists/model-memberships?${parameters}`,
+      { signal: controller.signal },
     )
-    favoriteMemberships.value = Object.fromEntries(
-      result.map((membership) => [membership.model_id, membership.lists]),
-    )
-  } catch {
-    favoriteMemberships.value = {}
+    if (request === favoriteMembershipsRequest) {
+      favoriteMemberships.value = Object.fromEntries(
+        result.map((membership) => [membership.model_id, membership.lists]),
+      )
+    }
+  } catch (error) {
+    if (request === favoriteMembershipsRequest && !isAbortError(error)) {
+      favoriteMemberships.value = {}
+    }
   }
 }
 
@@ -729,6 +759,13 @@ onMounted(async () => {
     loadFilterOptions(),
     loadCatalogue(Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1),
   ])
+})
+
+onBeforeUnmount(() => {
+  catalogueController?.abort()
+  filterController?.abort()
+  favoriteMembershipsController?.abort()
+  clearTimeout(filterTimer)
 })
 </script>
 

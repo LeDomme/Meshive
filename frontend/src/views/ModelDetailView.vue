@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
 
-import { ApiError, apiRequest } from "../api"
+import { ApiError, apiRequest, isAbortError } from "../api"
 import FavoriteSaveDialog from "../components/FavoriteSaveDialog.vue"
 import TagChip from "../components/TagChip.vue"
 import {
@@ -513,12 +513,32 @@ function navigateModel(target: ModelNavigationItem | null) {
   if (target) void router.push(navigationRoute(target.id))
 }
 
+let modelController: AbortController | undefined
+let modelRequest = 0
+let navigationController: AbortController | undefined
+let navigationRequest = 0
+let favoriteMembershipsController: AbortController | undefined
+let favoriteMembershipsRequest = 0
+
 async function loadNavigation(modelId: number) {
+  const request = ++navigationRequest
+  navigationController?.abort()
+  const controller = new AbortController()
+  navigationController = controller
   const parameters = navigationParameters()
   const suffix = parameters.size ? `?${parameters}` : ""
-  navigation.value = await apiRequest<ModelNavigation>(
-    `/api/models/${modelId}/navigation${suffix}`,
-  )
+  try {
+    const result = await apiRequest<ModelNavigation>(
+      `/api/models/${modelId}/navigation${suffix}`,
+      { signal: controller.signal },
+    )
+    if (request === navigationRequest) navigation.value = result
+  } catch (error) {
+    if (request === navigationRequest && !isAbortError(error)) {
+      errorMessage.value =
+        error instanceof ApiError ? error.message : "Unable to load navigation"
+    }
+  }
 }
 
 function favoriteButtonLabel() {
@@ -530,13 +550,22 @@ function favoriteButtonLabel() {
 }
 
 async function loadFavoriteMemberships(modelId: number) {
+  const request = ++favoriteMembershipsRequest
+  favoriteMembershipsController?.abort()
+  const controller = new AbortController()
+  favoriteMembershipsController = controller
   try {
     const result = await apiRequest<FavoriteModelMembership[]>(
       `/api/favorite-lists/model-memberships?model_ids=${modelId}`,
+      { signal: controller.signal },
     )
-    favoriteMemberships.value = result[0]?.lists ?? []
-  } catch {
-    favoriteMemberships.value = []
+    if (request === favoriteMembershipsRequest) {
+      favoriteMemberships.value = result[0]?.lists ?? []
+    }
+  } catch (error) {
+    if (request === favoriteMembershipsRequest && !isAbortError(error)) {
+      favoriteMemberships.value = []
+    }
   }
 }
 
@@ -585,7 +614,7 @@ async function addTag() {
     `/api/admin/models/${model.value.id}/tags/${selectedTagId.value}`,
     { method: "PUT" },
   )
-  model.value = await apiRequest<ModelDetail>(`/api/models/${route.params.id}`)
+  await loadModel()
   selectedTagId.value = ""
 }
 
@@ -594,19 +623,28 @@ async function removeTag(tag: Tag) {
   await apiRequest<void>(`/api/admin/models/${model.value.id}/tags/${tag.id}`, {
     method: "DELETE",
   })
-  model.value = await apiRequest<ModelDetail>(`/api/models/${route.params.id}`)
+  await loadModel()
 }
 
 async function loadModel() {
+  const request = ++modelRequest
+  modelController?.abort()
+  navigationController?.abort()
+  navigationRequest += 1
+  favoriteMembershipsController?.abort()
+  favoriteMembershipsRequest += 1
+  const controller = new AbortController()
+  modelController = controller
   loading.value = true
   errorMessage.value = ""
   navigation.value = null
   try {
     const modelId = String(route.params.id)
     const [detail, tags] = await Promise.all([
-      apiRequest<ModelDetail>(`/api/models/${modelId}`),
-      apiRequest<Tag[]>("/api/tags"),
+      apiRequest<ModelDetail>(`/api/models/${modelId}`, { signal: controller.signal }),
+      apiRequest<Tag[]>("/api/tags", { signal: controller.signal }),
     ])
+    if (request !== modelRequest) return
     model.value = detail
     availableTags.value = tags
     selectedImage.value = model.value.images[0] ?? null
@@ -615,10 +653,12 @@ async function loadModel() {
       loadNavigation(model.value.id),
     ])
   } catch (error) {
-    errorMessage.value =
-      error instanceof ApiError ? error.message : "Unable to load the model"
+    if (request === modelRequest && !isAbortError(error)) {
+      errorMessage.value =
+        error instanceof ApiError ? error.message : "Unable to load the model"
+    }
   } finally {
-    loading.value = false
+    if (request === modelRequest) loading.value = false
   }
 }
 
@@ -630,6 +670,9 @@ onMounted(() => {
 watch(() => route.params.id, () => void loadModel())
 
 onBeforeUnmount(() => {
+  modelController?.abort()
+  navigationController?.abort()
+  favoriteMembershipsController?.abort()
   window.removeEventListener("keydown", handleKeydown)
   document.documentElement.style.overflow = ""
 })
