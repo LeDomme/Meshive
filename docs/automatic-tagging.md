@@ -30,3 +30,16 @@ assignments. Repeated scans and re-evaluations are idempotent.
 Rules, match provenance, and derived assignments are stored in Meshive's
 SQLite database and are therefore included in normal backups. The mounted
 model library remains read-only.
+
+## Canonical tag-assignment rules
+
+Current tag administration uses **Tag assignment rules** as the canonical rule
+system. A rule belongs to one tag, may be limited to a library source or apply
+to all sources, and contains one or more configured targets. Administrators can
+preview the matching models before saving, then re-evaluate one rule or all
+rules after maintenance. Rule changes reconcile only Meshive's database tag
+assignments; they never alter an archive, image, folder, or other source file.
+
+The legacy folder and automatic-rule endpoints are retained only as read-only
+migration compatibility surfaces. Create and maintain new rules through the
+canonical assignment-rule interface.

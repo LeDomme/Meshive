@@ -5,6 +5,26 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-06
+### Added
+- Role-based access control with system and custom roles, granular permissions,
+  and all-sources or explicit source-scoped access.
+- Administration for library sources, manual and scheduled scan control, and
+  targeted model rescans and archive-image rebuilds within the granted scope.
+- An all-sources audit log with action, actor, and time-range filters plus a
+  capped CSV export.
+- Audit events for successful administration, source, scan, backup and restore,
+  metadata and tag, and direct model-maintenance actions.
+- Canonical tag-assignment rules with preview and re-evaluation support.
+
+### Security
+- Library source files and folders remain read-only: Meshive never changes,
+  renames, moves, deletes, or extracts files into a configured source.
+- Audit records have unlimited retention in this release. There is no automatic
+  audit cleanup and no audit-event deletion feature.
+- Administrators cannot revoke another user's sessions; consequently no audit
+  event exists for that unavailable operation.
+
 ## [1.5.2] - 2026-09-03
 ### Changed
 - Updated the Pillow and pydantic-settings production dependency ranges.
@@ -199,7 +219,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
-[Unreleased]: ../../compare/v1.5.2...HEAD
+[Unreleased]: ../../compare/v1.6.0...HEAD
+[1.6.0]: ../../compare/v1.5.2...v1.6.0
 [1.5.2]: ../../compare/v1.5.1...v1.5.2
 [1.5.1]: ../../compare/v1.5.0...v1.5.1
 [1.5.0]: ../../compare/v1.4.1...v1.5.0
