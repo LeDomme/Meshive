@@ -64,8 +64,9 @@ from meshive.services.archive_images import (
     IGNORED_ARCHIVE_IMAGE_PATH_PARTS,
     SUPPORTED_ARCHIVE_IMAGE_EXTENSIONS,
 )
+from meshive.services.audit import AuditAction, log_event
 from meshive.services.download_limiter import claim_download, release_download
-from meshive.services.scanner import queue_model_rescan
+from meshive.services.scanner import dispatch_pending_scans, queue_model_rescan
 from meshive.services.thumbnails import (
     ThumbnailError,
     remove_cached_file,
@@ -810,6 +811,8 @@ def set_primary_model_image(
     )
     image.is_primary = True
     image.is_primary_override = True
+    model = session.get(LibraryModel, model_id)
+    log_event(session, current_user, AuditAction.MODEL_PRIMARY_IMAGE_SET, "model", model.name, target_id=model.id, library_source_id=model.library_source_id)
     session.commit()
     return {"image_id": image.id}
 
@@ -826,7 +829,12 @@ def rescan_single_model(
 ) -> ScanRunRead:
     _require_visible_model_permission(session, current_user, model_id, MODELS_RESCAN)
     try:
-        return queue_model_rescan(session, model_id)
+        scan = queue_model_rescan(session, model_id, commit=False)
+        model = session.get(LibraryModel, model_id)
+        log_event(session, current_user, AuditAction.MODEL_RESCAN_QUEUED, "model", model.name, target_id=model.id, library_source_id=model.library_source_id)
+        session.commit()
+        dispatch_pending_scans()
+        return scan
     except LookupError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
@@ -843,7 +851,12 @@ def rebuild_single_model_images(
 ) -> ScanRunRead:
     _require_visible_model_permission(session, current_user, model_id, MODELS_REBUILD_IMAGES)
     try:
-        return queue_model_rescan(session, model_id, force_image_rebuild=True)
+        scan = queue_model_rescan(session, model_id, force_image_rebuild=True, commit=False)
+        model = session.get(LibraryModel, model_id)
+        log_event(session, current_user, AuditAction.MODEL_IMAGE_REBUILD_QUEUED, "model", model.name, target_id=model.id, library_source_id=model.library_source_id)
+        session.commit()
+        dispatch_pending_scans()
+        return scan
     except LookupError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
@@ -890,6 +903,8 @@ def reset_model_images(
     deleted = session.execute(
         delete(ModelImage).where(ModelImage.model_id == model_id)
     ).rowcount
+    model = session.get(LibraryModel, model_id)
+    log_event(session, current_user, AuditAction.MODEL_IMAGES_RESET, "model", model.name, target_id=model.id, library_source_id=model.library_source_id, details={"image_records_deleted": deleted or 0})
     session.commit()
     for key in cache_keys:
         remove_cached_file(get_settings().cache_dir, key)
@@ -912,6 +927,15 @@ def delete_all_missing_models(
             )
         )
     )
+    if model_ids:
+        log_event(
+            session,
+            current_user,
+            AuditAction.MODEL_MISSING_DELETED,
+            "model",
+            "Missing models",
+            details={"models_deleted": len(model_ids)},
+        )
     cache_keys = _delete_model_records(session, model_ids)
     for key in cache_keys:
         remove_cached_file(get_settings().cache_dir, key)
@@ -933,6 +957,15 @@ def delete_missing_model(
             detail="Only missing models can be deleted from the database",
         )
 
+    log_event(
+        session,
+        current_user,
+        AuditAction.MODEL_MISSING_DELETED,
+        "model",
+        model.name,
+        target_id=model.id,
+        library_source_id=model.library_source_id,
+    )
     cache_keys = _delete_model_records(session, [model.id])
     for key in cache_keys:
         remove_cached_file(get_settings().cache_dir, key)

@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+from sqlalchemy import select
+
 from meshive.auth.passwords import hash_password
 from meshive.auth.permissions import CATALOGUE_VIEW, ROLES_MANAGE, USERS_MANAGE
 from meshive.models.audit import AuditEvent
@@ -241,6 +243,84 @@ def test_audit_event_api_uses_utc_time_filters_and_stable_pagination() -> None:
         second = client.get("/api/admin/audit-events?page=2&page_size=2").json()["items"]
         assert not {item["id"] for item in first} & {item["id"] for item in second}
         assert [item["target_label"] for item in first] == ["new", "same two"]
+
+
+def test_audit_csv_export_uses_view_filters_and_safe_columns() -> None:
+    with _admin_client() as (client, sessions):
+        _add_admin(sessions)
+        with sessions() as session:
+            session.add_all(
+                [
+                    AuditEvent(
+                        actor_username='Alice, "Admin"',
+                        action="role.updated",
+                        target_type="role",
+                        target_label="A \"quoted\" role",
+                        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+                    ),
+                    AuditEvent(
+                        actor_username="Bob",
+                        action="user.updated",
+                        target_type="user",
+                        target_label="Excluded",
+                        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+                    ),
+                ]
+            )
+            session.commit()
+        assert client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "correct horse battery staple"},
+        ).status_code == 200
+
+        response = client.get(
+            "/api/admin/audit-events/export",
+            params={
+                "action": "role.updated",
+                "actor": "Alice",
+                "from_at": "2026-01-01T00:00:00Z",
+                "to_at": "2026-01-01T23:59:59Z",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/csv; charset=utf-8")
+        assert response.text.splitlines() == [
+            "Timestamp,Actor,Event,Target",
+            '2026-01-01T00:00:00,"Alice, ""Admin""",role updated,"role · A ""quoted"" role"',
+        ]
+        with sessions() as session:
+            exported = list(
+                session.scalars(
+                    select(AuditEvent).where(AuditEvent.action == "audit.exported")
+                )
+            )
+            assert len(exported) == 1
+            assert exported[0].details == {"row_count": 1, "truncated": False}
+
+
+def test_audit_csv_export_is_capped_and_requires_all_sources() -> None:
+    with _admin_client() as (client, sessions):
+        _add_admin(sessions)
+        with sessions() as session:
+            session.add_all(
+                AuditEvent(
+                    actor_username="Admin",
+                    action="role.updated",
+                    target_type="role",
+                    target_label=str(index),
+                )
+                for index in range(10_001)
+            )
+            session.commit()
+        assert client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "correct horse battery staple"},
+        ).status_code == 200
+        response = client.get("/api/admin/audit-events/export")
+        assert response.status_code == 200
+        assert len(response.text.splitlines()) == 10_002
+        assert response.text.splitlines()[-1] == ",,Export truncated,Maximum 10000 events"
 
 
 def test_last_system_superuser_cannot_be_demoted_or_deleted() -> None:

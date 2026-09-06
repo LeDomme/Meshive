@@ -157,7 +157,7 @@ def request_restore(
 
 
 @router.delete("/{run_id}", status_code=204)
-def delete_backup(run_id: int, session: SessionDependency) -> Response:
+def delete_backup(run_id: int, current_user: CurrentUser, session: SessionDependency) -> Response:
     run = session.get(BackupRun, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Backup record not found")
@@ -175,6 +175,14 @@ def delete_backup(run_id: int, session: SessionDependency) -> Response:
         run.error_message = None
     else:
         session.delete(run)
+    log_event(
+        session,
+        current_user,
+        AuditAction.BACKUP_DELETED,
+        "backup",
+        "Manual backup" if run.trigger == "manual" else "Scheduled backup",
+        target_id=run.id,
+    )
     session.commit()
     return Response(status_code=204)
 

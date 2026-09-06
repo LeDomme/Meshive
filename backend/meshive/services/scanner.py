@@ -87,6 +87,7 @@ def create_scan_run(
     *,
     trigger: str = "manual",
     mode: str,
+    commit: bool = True,
 ) -> ScanRun:
     scan = ScanRun(
         library_source_id=source_id,
@@ -107,8 +108,9 @@ def create_scan_run(
         issues_count=0,
     )
     session.add(scan)
-    session.commit()
-    session.refresh(scan)
+    if commit:
+        session.commit()
+        session.refresh(scan)
     return scan
 
 
@@ -117,6 +119,7 @@ def queue_model_rescan(
     model_id: int,
     *,
     force_image_rebuild: bool = False,
+    commit: bool = True,
 ) -> ScanRun:
     """Queue a targeted model scan behind any active source scan."""
     model = session.get(LibraryModel, model_id)
@@ -130,12 +133,14 @@ def queue_model_rescan(
         session,
         source.id,
         trigger="model_image_rebuild" if force_image_rebuild else "model_rescan",
-        mode="full",
+        mode="full", commit=False,
     )
     scan.target_model_id = model.id
     scan.target_model_name = model.name
-    session.commit()
-    dispatch_pending_scans()
+    if commit:
+        session.commit()
+        session.refresh(scan)
+        dispatch_pending_scans()
     return scan
 
 
