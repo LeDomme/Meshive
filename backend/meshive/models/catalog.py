@@ -4,10 +4,12 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    desc,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -87,6 +89,42 @@ class ArchiveEntry(Base):
     size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     compressed_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     crc: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    modified_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class ArchiveBrowseNode(Base):
+    """Derived tree node; ArchiveEntry remains the archive-listing authority."""
+
+    __tablename__ = "archive_browse_nodes"
+    __table_args__ = (
+        UniqueConstraint("archive_id", "path"),
+        UniqueConstraint("archive_entry_id"),
+        Index(
+            "ix_archive_browse_nodes_children",
+            "archive_id",
+            "parent_path",
+            desc("is_directory"),
+            "name_sort_key",
+            "path",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    archive_id: Mapped[int] = mapped_column(
+        ForeignKey("archives.id", ondelete="CASCADE"), index=True
+    )
+    path: Mapped[str] = mapped_column(Text)
+    parent_path: Mapped[str] = mapped_column(Text, default="")
+    name: Mapped[str] = mapped_column(String(1024))
+    name_sort_key: Mapped[str] = mapped_column(Text)
+    path_sort_key: Mapped[str] = mapped_column(Text)
+    depth: Mapped[int] = mapped_column(Integer)
+    is_directory: Mapped[bool] = mapped_column(Boolean, default=False)
+    archive_entry_id: Mapped[int | None] = mapped_column(
+        ForeignKey("archive_entries.id", ondelete="CASCADE"), nullable=True
+    )
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    compressed_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     modified_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
