@@ -16,6 +16,8 @@ directly or run behind an HTTPS reverse proxy such as Traefik.
   network storage.
 - Authenticate Docker with GHCR when the container image is private.
 - Generate a long random first-run setup token.
+- Create and validate a database backup before a production deployment or
+  upgrade. Keep it independently protected from the application data volume.
 
 The model mount must be read-only. Meshive never uploads, renames, deletes, or
 extracts source-library files.
@@ -135,7 +137,7 @@ address reports the running release.
 Expected response for this release:
 
 ```json
-{"status":"ok","version":"1.5.2"}
+{"status":"ok","version":"1.6.0"}
 ```
 
 Also verify login, source scanning, thumbnails, archive trees, individual and
@@ -143,7 +145,9 @@ bundle downloads, manual backup, scheduled backup, and one controlled restore.
 
 ## Upgrade
 
-1. Create a manual backup and confirm that it is listed as completed.
+1. Before changing the deployment, create a manual database backup and confirm
+   that it is listed as completed. This is required before a production
+   deployment or upgrade.
 2. Record the currently deployed image tag or digest.
 3. Read `CHANGELOG.md` for migration or configuration notes.
 4. Change `MESHIVE_IMAGE` to the new release tag and run:

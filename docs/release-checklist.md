@@ -13,6 +13,11 @@ Use this checklist for every stable Meshive release.
 - Validate both Compose examples and confirm the development-plan file is not
   tracked.
 - Build the runtime image and verify its health check.
+- Confirm the release documentation states that library-source files and
+  folders are never modified, and that a validated database backup is required
+  before production deployment.
+- Confirm the audit-retention and session-revocation limitations remain
+  documented accurately.
 
 ## Acceptance test
 

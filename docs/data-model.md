@@ -30,6 +30,12 @@ read-only library.
 - `FolderTagRule`: source-relative folder, tag, and recursive flag.
 - `ScanRun`: status and statistics for one source scan.
 - `ScanIssue`: structured warning or error produced by a scan.
+- `AuditEvent`: an append-only snapshot of an accepted administrative action,
+  with actor, action, safe target information, optional source association, and
+  non-sensitive operational details.
+- `TagAssignmentRule`, `TagAssignmentRuleTarget`, and
+  `TagAssignmentRuleMatch`: canonical tag rules, their selected targets, and
+  their evaluated matches.
 
 Creator links and metadata artwork are currently associated through normalized
 text keys. Meshive does not yet have normalized `Creator` or `Group` entities;
