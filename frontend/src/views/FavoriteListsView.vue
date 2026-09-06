@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue"
 import { RouterLink } from "vue-router"
 
 import { ApiError, apiRequest } from "../api"
+import AccountMenu from "../components/AccountMenu.vue"
 import BrandLogo from "../components/BrandLogo.vue"
 import SearchableFilter from "../components/SearchableFilter.vue"
 import type {
@@ -240,18 +241,21 @@ onMounted(async () => {
 
 <template>
   <main class="favorites-shell">
-    <RouterLink class="text-link" to="/">&larr; Back to catalogue</RouterLink>
-    <header class="favorites-header">
-      <div class="catalogue-brand">
+    <header class="account-page-header favorites-header">
+      <div class="admin-brand">
         <p class="eyebrow">Private to your account</p>
-        <div class="catalogue-title-row">
+        <div class="admin-title-row">
           <BrandLogo />
-          <h1 class="catalogue-title">Favorite lists</h1>
+          <h1 class="admin-title">Favorite lists</h1>
         </div>
       </div>
+      <nav class="admin-nav" aria-label="Favorite list navigation">
+        <RouterLink class="text-link" to="/">Back to Meshive</RouterLink>
+        <AccountMenu />
+      </nav>
     </header>
 
-    <p class="panel-copy">
+    <p class="favorites-intro">
       Organize models and catalogue categories into personal lists. Other users cannot see them.
     </p>
     <p v-if="errorMessage" class="form-error error-panel" role="alert">{{ errorMessage }}</p>

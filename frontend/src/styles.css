@@ -1607,67 +1607,54 @@ summary {
   border-top: 1px solid var(--meshive-border);
 }
 
-.account-shell {
-  width: min(100% - 2rem, 54rem);
+.account-shell,
+.favorites-shell {
+  width: min(100% - 2rem, 84rem);
   margin: 0 auto;
-  padding: 2rem 0 5rem;
+  padding: clamp(2rem, 5vw, 3.5rem) 0 6rem;
 }
 
-.account-card {
-  display: grid;
-  gap: 1.5rem;
-  margin-top: 1.5rem;
-  padding: clamp(1.5rem, 4vw, 2.5rem);
-  border: 1px solid var(--meshive-border);
-  border-radius: 1.25rem;
-  background: var(--meshive-panel);
-}
-
-.account-heading {
+.account-page-header {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  justify-content: space-between;
+  gap: 1.5rem;
 }
 
-.account-heading h1 {
-  margin: 0.25rem 0 0;
-  font-size: clamp(2rem, 6vw, 3.5rem);
+.account-intro,
+.favorites-intro {
+  max-width: 48rem;
+  margin: 1.25rem 0 2.5rem;
+  color: #94a3b8;
+  line-height: 1.6;
 }
 
-.account-brand-icon {
-  width: 3.6rem;
-  height: 5rem;
-  filter: drop-shadow(0 0 16px rgb(0 194 255 / 22%));
+.account-layout {
+  display: grid;
+  grid-template-columns: minmax(15rem, .62fr) minmax(0, 1.38fr);
+  gap: 1.5rem;
+  align-items: start;
 }
 
-.account-brand-icon img {
-  top: -1.4rem;
-  left: -1.8rem;
-  width: 7rem;
-  height: 7rem;
+.account-content {
+  display: grid;
+  gap: 1.5rem;
 }
 
-.account-profile,
-.account-email,
-.account-security,
-.account-sessions {
-  padding: 1.25rem;
-  border: 1px solid rgb(45 100 166 / 42%);
-  border-radius: 0.9rem;
-  background: rgb(5 17 38 / 45%);
+.account-profile {
+  position: sticky;
+  top: 1.5rem;
 }
 
 .account-profile h2,
 .account-email h2,
 .account-security h2,
-.account-sessions h2 {
-  margin-top: 0;
-}
+.account-sessions h2 { margin: 0; }
 
 .account-profile dl {
   display: grid;
   gap: 0.8rem;
-  margin-bottom: 0;
+  margin: 1.25rem 0 0;
 }
 
 .account-profile dl div {
@@ -1690,13 +1677,49 @@ summary {
   text-transform: capitalize;
 }
 
-.account-security .login-form {
-  max-width: 32rem;
+.account-form {
+  display: grid;
+  max-width: 38rem;
+  gap: 1rem;
+  margin-top: 1.25rem;
 }
 
-.account-email .login-form {
-  max-width: 32rem;
+.account-form label {
+  display: grid;
+  gap: .45rem;
+  color: #cbd5e1;
+  font-weight: 600;
 }
+
+/* Account settings deliberately share the administration form treatment. */
+.account-shell :is(button, input, select, textarea, summary):focus-visible,
+.favorites-shell :is(button, input, select, textarea, summary):focus-visible {
+  outline: 3px solid rgb(34 211 238 / 82%);
+  outline-offset: 2px;
+}
+
+.account-shell input:not([type="checkbox"]):not([type="radio"]),
+.favorites-shell input:not([type="checkbox"]):not([type="radio"]) {
+  width: 100%;
+  min-height: 2.8rem;
+  padding: .65rem .8rem;
+  border: 1px solid #334155;
+  border-radius: .6rem;
+  outline: none;
+  color: #f8fafc;
+  background: #0b1220;
+  color-scheme: dark;
+  font: inherit;
+}
+
+.account-shell input::placeholder,
+.favorites-shell input::placeholder { color: #64748b; opacity: 1; }
+.account-shell input:hover:not(:disabled),
+.favorites-shell input:hover:not(:disabled) { border-color: #475569; }
+.account-shell input:focus,
+.favorites-shell input:focus { border-color: var(--meshive-cyan); box-shadow: 0 0 0 3px rgb(54 231 255 / 14%); }
+.account-shell input:disabled,
+.favorites-shell input:disabled { cursor: not-allowed; opacity: .55; }
 
 .account-email-actions {
   display: flex;
@@ -2739,21 +2762,8 @@ summary {
   }
 }
 
-.favorites-shell {
-  width: min(100% - 2rem, 78rem);
-  margin: 0 auto;
-  padding: 2rem 0 5rem;
-}
-
 .favorites-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin: 1.5rem 0 0.75rem;
-}
-
-.favorites-header .catalogue-title {
-  font-size: clamp(2.5rem, 7vw, 5rem);
+  margin: 0;
 }
 
 .favorites-layout {
@@ -3637,6 +3647,14 @@ summary {
     grid-template-columns: 1fr;
   }
 
+  .account-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .account-profile {
+    position: static;
+  }
+
   .favorite-create-row,
   .favorite-dialog-actions,
   .favorite-rename-form,
@@ -3661,6 +3679,7 @@ summary {
   }
 
   .admin-header,
+  .account-page-header,
   .source-row {
     align-items: flex-start;
     flex-direction: column;
