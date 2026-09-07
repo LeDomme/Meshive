@@ -1,6 +1,7 @@
 import argparse
 import getpass
 import json
+import os
 import sqlite3
 import sys
 from datetime import datetime
@@ -169,7 +170,14 @@ def _migrate_restored_database_to_head() -> None:
     The entrypoint runs the same upgrade afterwards for ordinary startup; that
     second invocation is harmless and keeps its existing startup contract.
     """
-    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    configured_path = os.environ.get("MESHIVE_ALEMBIC_CONFIG")
+    if configured_path:
+        config_path = Path(configured_path)
+    else:
+        # Source checkouts keep alembic.ini beside the package parent. Images
+        # set MESHIVE_ALEMBIC_CONFIG explicitly, avoiding site-packages paths.
+        config_path = Path(__file__).resolve().parents[1] / "alembic.ini"
+    config = Config(str(config_path))
     command.upgrade(config, "head")
 
 
