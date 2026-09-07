@@ -103,6 +103,11 @@ Database backup and container-based restore procedures are documented in
 Per-source scan scheduling is documented in
 [`docs/automatic-scans.md`](docs/automatic-scans.md).
 
+Roles, permissions, and source-scoped access are documented in
+[`docs/access-management.md`](docs/access-management.md). The administrator
+audit log and CSV export are documented in
+[`docs/audit-log.md`](docs/audit-log.md).
+
 Private per-user favorite lists are documented in
 [`docs/favorite-lists.md`](docs/favorite-lists.md).
 

@@ -10,6 +10,7 @@ services:
     environment:
       PUID: ${PUID:-10001}
       PGID: ${PGID:-10001}
+      MESHIVE_FIX_PERMISSIONS: ${MESHIVE_FIX_PERMISSIONS:-auto}
       MESHIVE_ENVIRONMENT: ${MESHIVE_ENVIRONMENT:-development}
       MESHIVE_SETUP_TOKEN: ${MESHIVE_SETUP_TOKEN:-}
     ports:

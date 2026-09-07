@@ -53,13 +53,14 @@ def test_archive_image_limits_have_conservative_defaults() -> None:
     assert settings.archive_image_webp_method == 4
 
 
-def test_container_runtime_paths_have_defaults_without_compose_overrides() -> None:
+def test_application_defaults_remain_development_friendly() -> None:
     settings = Settings(_env_file=None)
 
-    assert settings.data_dir == Path("/app/data")
-    assert settings.cache_dir == Path("/app/cache")
-    assert settings.backup_dir == Path("/backups")
-    assert settings.frontend_dist == Path("/app/frontend")
+    assert settings.environment == "development"
+    assert settings.data_dir == Path("data")
+    assert settings.cache_dir == Path("cache")
+    assert settings.backup_dir == Path("backups")
+    assert settings.frontend_dist == Path("../frontend/dist")
     assert settings.allowed_library_root == Path("/models")
 
 

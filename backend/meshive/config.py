@@ -10,12 +10,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "Meshive"
     environment: Literal["development", "production"] = "development"
-    # Stable runtime-container paths; every value remains overridable through
-    # its MESHIVE_* setting for advanced deployments.
-    data_dir: Path = Path("/app/data")
-    cache_dir: Path = Path("/app/cache")
-    backup_dir: Path = Path("/backups")
-    frontend_dist: Path = Path("/app/frontend")
+    # Development-friendly defaults. The Docker image supplies its stable
+    # container paths through environment variables instead.
+    data_dir: Path = Path("./data")
+    cache_dir: Path = Path("./cache")
+    backup_dir: Path = Path("./backups")
+    frontend_dist: Path = Path("../frontend/dist")
     allowed_library_root: Path = Path("/models")
     database_url: str | None = None
     session_cookie_name: str = "meshive_session"

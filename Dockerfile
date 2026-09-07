@@ -13,7 +13,12 @@ LABEL org.opencontainers.image.source="https://github.com/ledomme/meshive" \
       org.opencontainers.image.licenses="AGPL-3.0-only"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    MESHIVE_ENVIRONMENT=production \
+    MESHIVE_DATA_DIR=/app/data \
+    MESHIVE_CACHE_DIR=/app/cache \
+    MESHIVE_BACKUP_DIR=/backups \
+    MESHIVE_FRONTEND_DIST=/app/frontend
 
 RUN sed -i 's/Components: main$/Components: main non-free/' \
       /etc/apt/sources.list.d/debian.sources \

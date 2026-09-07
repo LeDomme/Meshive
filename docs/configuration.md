@@ -17,11 +17,11 @@ generate or migrate.
 | Variable | Default | Purpose and when to change it |
 | --- | --- | --- |
 | `MESHIVE_APP_NAME` | `Meshive` | Application name used in responses and UI metadata; normally never change. |
-| `MESHIVE_ENVIRONMENT` | `development` | Use `production` behind HTTPS; it enables secure cookies. The standalone example intentionally remains development for direct trusted HTTP. |
-| `MESHIVE_DATA_DIR` | `/app/data` | SQLite database and restore state. Change only with a matching writable mount. |
-| `MESHIVE_CACHE_DIR` | `/app/cache` | Regenerable thumbnails and archive-image cache. Change only with a writable mount. |
-| `MESHIVE_BACKUP_DIR` | `/backups` | Backup destination; use a separately protected writable mount. |
-| `MESHIVE_FRONTEND_DIST` | `/app/frontend` | Built frontend files; normally never change. |
+| `MESHIVE_ENVIRONMENT` | `development` | Use `production` behind HTTPS; it enables secure cookies. The Docker image defaults to `production`, while the standalone example intentionally overrides to development for direct trusted HTTP. |
+| `MESHIVE_DATA_DIR` | `./data` | SQLite database and restore state. The Docker image defaults this to `/app/data`; change only with a matching writable mount. |
+| `MESHIVE_CACHE_DIR` | `./cache` | Regenerable thumbnails and archive-image cache. The Docker image defaults this to `/app/cache`. |
+| `MESHIVE_BACKUP_DIR` | `./backups` | Backup destination. The Docker image defaults this to `/backups`; use a separately protected writable mount. |
+| `MESHIVE_FRONTEND_DIST` | `../frontend/dist` | Built frontend files. The Docker image defaults this to `/app/frontend`. |
 | `MESHIVE_ALLOWED_LIBRARY_ROOT` | `/models` | Read-only root beneath which library sources may be configured. Change only with a read-only source mount. |
 | `MESHIVE_DATABASE_URL` | SQLite in `MESHIVE_DATA_DIR` | Advanced database-location override. One process only may access a SQLite database. |
 
