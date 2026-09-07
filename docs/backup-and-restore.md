@@ -56,8 +56,8 @@ Administrators can select **Restore** beside a completed backup and confirm the
 operation by entering `RESTORE`. Meshive validates the backup, stores a restore
 request in its data volume, and shuts down cleanly. On the next container start,
 the entrypoint restores the database and migrates it to the current Alembic
-schema before current-schema audit logic is used. This supports the tested 1.6.1
-and older 1.5.x-era backups.
+schema before current-schema audit logic is used. This has been tested with a
+1.6.1 backup and an older Meshive backup.
 
 The container must use a restart policy such as `restart: unless-stopped`.
 During the restart, the page waits for Meshive to become available again and
