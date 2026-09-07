@@ -16,6 +16,14 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Kept the hardened container, PUID/PGID permission handling, and
   standalone/Traefik security behaviour unchanged.
 
+### Fixed
+
+- Migrated restored databases to the current schema before current-schema
+  restore audit logic runs.
+- Corrected Alembic configuration lookup for restores in the packaged Docker image.
+- Finalized failed restore results without leaving a restart-loop restore marker.
+- Reconciled available backup records with files in the configured backup directory.
+
 ## [1.6.1] - 2026-09-06
 ### Changed
 - Removed catalogue tag N+1 queries and moved model navigation fully into SQL.
