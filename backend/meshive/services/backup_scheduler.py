@@ -142,6 +142,23 @@ def sync_backup_history(session: Session) -> int:
             session.delete(run)
             changed = True
 
+        # Filesystem availability is authoritative for the normal backup list.
+        # Keep scheduled deleted markers because _is_due relies on them to avoid
+        # replaying an already handled occurrence.
+        for run in list(session.scalars(select(BackupRun).where(BackupRun.path.is_not(None)))):
+            path = Path(run.path).resolve()
+            available = (root == path or root in path.parents) and path.is_file()
+            if available:
+                continue
+            if run.trigger == "scheduled":
+                run.status = "deleted"
+                run.path = None
+                run.size_bytes = None
+                run.error_message = None
+            else:
+                session.delete(run)
+            changed = True
+
         if not root.is_dir():
             if changed:
                 session.commit()

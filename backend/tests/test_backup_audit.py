@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from sqlalchemy import select
@@ -142,6 +143,44 @@ def test_restore_audits_success_and_failure_without_sensitive_details(
             events = session.query(AuditEvent).order_by(AuditEvent.id).all()
             assert all(event.target_label == "Database restore" for event in events)
             assert all(event.details is None for event in events)
+
+
+def test_pending_restore_migrates_before_current_schema_audit_and_finalizes_marker(
+    tmp_path, monkeypatch
+) -> None:
+    settings = Settings(data_dir=tmp_path / "data")
+    settings.data_dir.mkdir(parents=True)
+    marker = settings.data_dir / "restore-request.json"
+    marker.write_text(json.dumps({"path": str(tmp_path / "older.zip"), "audit_started_at": "2026-01-01T00:00:00"}))
+    order: list[str] = []
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli, "restore_backup", lambda *_args, **_kwargs: order.append("restore"))
+    monkeypatch.setattr(cli, "_migrate_restored_database_to_head", lambda: order.append("migrate"))
+    monkeypatch.setattr(cli, "_restore_start_is_present", lambda *_args: False)
+    monkeypatch.setattr(cli, "_record_restore_audit", lambda *_args, **_kwargs: order.append("audit"))
+
+    cli._restore_pending()
+
+    assert order == ["restore", "migrate", "audit", "audit"]
+    assert not marker.exists()
+    assert json.loads((settings.data_dir / "restore-result.json").read_text())["status"] == "completed"
+
+
+def test_pending_restore_migration_failure_writes_result_and_removes_marker(tmp_path, monkeypatch) -> None:
+    settings = Settings(data_dir=tmp_path / "data")
+    settings.data_dir.mkdir(parents=True)
+    marker = settings.data_dir / "restore-request.json"
+    marker.write_text(json.dumps({"path": str(tmp_path / "older.zip")}))
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli, "restore_backup", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli, "_migrate_restored_database_to_head", lambda: (_ for _ in ()).throw(RuntimeError("migration failed")))
+
+    cli._restore_pending()
+
+    assert not marker.exists()
+    result = json.loads((settings.data_dir / "restore-result.json").read_text())
+    assert result["status"] == "failed"
+    assert result["error"] == "migration failed"
 
 
 def test_backup_permission_failure_creates_no_audit_event(tmp_path, monkeypatch) -> None:

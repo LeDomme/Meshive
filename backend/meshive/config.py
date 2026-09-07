@@ -10,6 +10,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "Meshive"
     environment: Literal["development", "production"] = "development"
+    # Development-friendly defaults. The Docker image supplies its stable
+    # container paths through environment variables instead.
     data_dir: Path = Path("./data")
     cache_dir: Path = Path("./cache")
     backup_dir: Path = Path("./backups")

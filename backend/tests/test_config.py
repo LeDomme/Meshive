@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -49,6 +51,32 @@ def test_archive_image_limits_have_conservative_defaults() -> None:
     assert settings.archive_image_detail_size == 1600
     assert settings.archive_image_detail_max_bytes == 384 * 1024
     assert settings.archive_image_webp_method == 4
+
+
+def test_application_defaults_remain_development_friendly() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.environment == "development"
+    assert settings.data_dir == Path("data")
+    assert settings.cache_dir == Path("cache")
+    assert settings.backup_dir == Path("backups")
+    assert settings.frontend_dist == Path("../frontend/dist")
+    assert settings.allowed_library_root == Path("/models")
+
+
+def test_runtime_path_environment_overrides_remain_supported(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MESHIVE_DATA_DIR", "/srv/data")
+    monkeypatch.setenv("MESHIVE_CACHE_DIR", "/srv/cache")
+    monkeypatch.setenv("MESHIVE_BACKUP_DIR", "/srv/backups")
+    monkeypatch.setenv("MESHIVE_FRONTEND_DIST", "/srv/frontend")
+    monkeypatch.setenv("MESHIVE_ALLOWED_LIBRARY_ROOT", "/srv/models")
+    settings = Settings(_env_file=None)
+
+    assert settings.data_dir == Path("/srv/data")
+    assert settings.cache_dir == Path("/srv/cache")
+    assert settings.backup_dir == Path("/srv/backups")
+    assert settings.frontend_dist == Path("/srv/frontend")
+    assert settings.allowed_library_root == Path("/srv/models")
 
 
 def test_complete_smtp_configuration_enables_email_delivery() -> None:

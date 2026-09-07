@@ -5,6 +5,17 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-09-07
+
+### Changed
+
+- Simplified the Docker Compose deployment examples by relying on Meshive's
+  built-in configuration defaults.
+- Consolidated advanced runtime configuration documentation and removed
+  duplicated default settings from standard deployments.
+- Kept the hardened container, PUID/PGID permission handling, and
+  standalone/Traefik security behaviour unchanged.
+
 ## [1.6.1] - 2026-09-06
 ### Changed
 - Removed catalogue tag N+1 queries and moved model navigation fully into SQL.
@@ -226,7 +237,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
-[Unreleased]: ../../compare/v1.6.1...HEAD
+[Unreleased]: ../../compare/v1.6.2...HEAD
+[1.6.2]: ../../compare/v1.6.1...v1.6.2
 [1.6.1]: ../../compare/v1.6.0...v1.6.1
 [1.6.0]: ../../compare/v1.5.2...v1.6.0
 [1.5.2]: ../../compare/v1.5.1...v1.5.2
