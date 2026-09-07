@@ -1,6 +1,6 @@
 # Production deployment
 
-Meshive 1.0 is distributed as one container image. It expects a local writable
+Meshive 1.6.2 is distributed as one container image. It expects a local writable
 SQLite data volume, a disposable thumbnail cache, a separate backup target,
 and one or more read-only model-library mounts. The supported runtime topology
 uses exactly one Meshive application process. It can publish a host port
@@ -37,7 +37,8 @@ The entrypoint starts with the minimal capabilities needed to prepare writable
 volume ownership, then runs migrations and Meshive as `PUID:PGID`. Configure
 those variables instead of overriding the container `user`. Only one Meshive
 container may use a given SQLite data volume at a time. Supported environment
-variables and limits are listed in [`.env.example`](../.env.example).
+variables and limits are listed in the central
+[configuration reference](configuration.md).
 
 The Compose examples retain `CAP_KILL` after dropping all other capabilities so
 their `tini` PID-1 init process can forward shutdown signals to Meshive running
@@ -76,12 +77,9 @@ the target host instead of copying values from another installation:
 | `MESHIVE_BACKUP_VOLUME` | Existing external volume for independent backups |
 | `MESHIVE_SETUP_TOKEN` | Newly generated, high-entropy one-time secret |
 | `PUID` / `PGID` | Numeric identity permitted to read the model storage |
-| `MESHIVE_FIX_PERMISSIONS` | `auto` normally; `always` for one-time recursive repair; `never` for externally managed mounts |
 | `MESHIVE_ENVIRONMENT` | `development` for direct HTTP; `production` behind HTTPS |
 | `MESHIVE_PORT` | Host port for the standalone example |
 | `MESHIVE_HOST` | Public DNS name for the Traefik example |
-| `MESHIVE_PUBLIC_URL` | Public base URL used in optional recovery emails |
-| `MESHIVE_SMTP_*` | Optional SMTP account and TLS mode for password recovery |
 | `TRAEFIK_NETWORK` | Existing reverse-proxy container network |
 | `TRAEFIK_ENTRYPOINTS` | HTTPS entrypoint configured on the proxy |
 | `TRAEFIK_CERT_RESOLVER` | Certificate resolver configured on the proxy |
@@ -107,6 +105,18 @@ volume must already exist.
 
 Container-management interfaces can import either Compose file. Meshive has no
 dependency on a particular management interface.
+
+The Compose files intentionally inject only deployment essentials. To override
+an application default, add it beneath the selected service's `environment:`
+section (not only to `.env`, which Compose does not inject automatically):
+
+```yaml
+environment:
+  MESHIVE_ARCHIVE_IMAGE_THREADS: 2
+  MESHIVE_FIX_PERMISSIONS: never
+```
+
+See [Configuration](configuration.md) for every supported runtime variable.
 
 ## First run
 
@@ -135,7 +145,7 @@ address reports the running release.
 Expected response for this release:
 
 ```json
-{"status":"ok","version":"1.5.2"}
+{"status":"ok","version":"1.6.2"}
 ```
 
 Also verify login, source scanning, thumbnails, archive trees, individual and
@@ -167,7 +177,7 @@ Never start an older release against a database whose schema it does not
 support.
 
 See [`backup-and-restore.md`](backup-and-restore.md) for web and container-based
-recovery procedures and [`.env.example`](../.env.example) for all supported
+recovery procedures and [Configuration](configuration.md) for all supported
 runtime limits.
 
 The tag workflow also creates the GitHub Release. Repository Actions settings
