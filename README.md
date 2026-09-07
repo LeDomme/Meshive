@@ -15,7 +15,7 @@ HTTP range requests for large files and resumable transfers.
 
 ## Project status
 
-Meshive 1.6.0 is the current stable release series. The application is intended
+Meshive 1.6.2 is the current stable release series. The application is intended
 for a single self-hosted instance and is designed for multi-terabyte,
 read-only model libraries. Architecture and operating procedures live in the
 [`docs`](docs/) directory.
@@ -78,7 +78,9 @@ docker compose up -d
 port. [`compose.traefik.yaml`](compose.traefik.yaml) is a complete alternative
 for an existing Traefik network and does not publish a host port. Deployment,
 volume, and reverse-proxy details are covered by the
-[`production deployment guide`](docs/production-deployment.md).
+[`production deployment guide`](docs/production-deployment.md). The complete
+runtime-variable reference, including advanced overrides, is in
+[`docs/configuration.md`](docs/configuration.md).
 
 The direct HTTP example is intended for a trusted network or evaluation. Use
 HTTPS and production mode whenever Meshive is exposed beyond that boundary.
@@ -86,7 +88,7 @@ HTTPS and production mode whenever Meshive is exposed beyond that boundary.
 To build the image locally instead, run `docker build -t meshive:local .` and
 set `MESHIVE_IMAGE=meshive:local` in `.env` before starting Compose.
 
-Stable deployments should use a concrete semantic tag such as `1.4.0` or an
+Stable deployments should use a concrete semantic tag such as `1.6.2` or an
 immutable digest. `latest` is updated only by a stable version tag. The `edge`
 tag follows successful builds from `main` and is intended for testing upcoming
 changes rather than production deployments.
@@ -100,11 +102,6 @@ Database backup and container-based restore procedures are documented in
 
 Per-source scan scheduling is documented in
 [`docs/automatic-scans.md`](docs/automatic-scans.md).
-
-Roles, permissions, and source-scoped access are documented in
-[`docs/access-management.md`](docs/access-management.md). The administrator
-audit log and CSV export are documented in
-[`docs/audit-log.md`](docs/audit-log.md).
 
 Private per-user favorite lists are documented in
 [`docs/favorite-lists.md`](docs/favorite-lists.md).
@@ -149,6 +146,8 @@ docker compose -f compose.traefik.yaml up -d
 On a fresh installation, configure a long random `MESHIVE_SETUP_TOKEN` and open
 Meshive in a browser. The first-run page creates and signs in the initial
 administrator. It is permanently disabled as soon as the first user exists.
+Remove `MESHIVE_SETUP_TOKEN` from the deployment and recreate the container
+afterwards; it is no longer needed once the first administrator exists.
 
 Failed logins are limited to five attempts per normalized username within 60
 seconds; initial setup failures use a separate global limit. The defaults can
