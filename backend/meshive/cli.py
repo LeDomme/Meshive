@@ -7,7 +7,9 @@ from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import delete, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from alembic import command
+from alembic.config import Config
 
 from meshive.auth.action_tokens import delete_user_action_tokens
 from meshive.auth.passwords import hash_password
@@ -92,6 +94,11 @@ def _restore_pending() -> None:
     run_id: int | None = None
     audit_event_id: int | None = None
     is_audited_request = False
+    payload: dict[str, object] = {
+        "status": "failed",
+        "backup": backup_path,
+        "error": "Restore did not complete",
+    }
     try:
         request = json.loads(marker.read_text(encoding="utf-8"))
         if not isinstance(request, dict) or not isinstance(request.get("path"), str):
@@ -112,6 +119,7 @@ def _restore_pending() -> None:
             Path(backup_path),
             confirmed_stopped=True,
         )
+        _migrate_restored_database_to_head()
         if is_audited_request and not _restore_start_is_present(audit_event_id):
             _record_restore_audit(
                 actor_user_id,
@@ -133,9 +141,9 @@ def _restore_pending() -> None:
             "safety_backup": str(safety) if safety else None,
         }
         print(f"Restore completed from {backup_path}.")
-    except (OSError, RuntimeError, sqlite3.Error, TypeError, ValueError) as error:
+    except Exception as error:
         if is_audited_request:
-            _record_restore_audit(
+            _try_record_restore_audit(
                 actor_user_id,
                 actor_username,
                 run_id,
@@ -148,8 +156,33 @@ def _restore_pending() -> None:
         }
         print(f"Restore failed: {error}", file=sys.stderr)
     finally:
-        result.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-        marker.unlink(missing_ok=True)
+        try:
+            result.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        finally:
+            marker.unlink(missing_ok=True)
+
+
+def _migrate_restored_database_to_head() -> None:
+    """Bring a restored, potentially older database to the current schema.
+
+    This must run before SessionLocal or audit models touch the restored file.
+    The entrypoint runs the same upgrade afterwards for ordinary startup; that
+    second invocation is harmless and keeps its existing startup contract.
+    """
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    command.upgrade(config, "head")
+
+
+def _try_record_restore_audit(
+    actor_user_id: int | None,
+    actor_username: str,
+    run_id: int | None,
+    action: str,
+) -> None:
+    try:
+        _record_restore_audit(actor_user_id, actor_username, run_id, action)
+    except (OSError, RuntimeError, sqlite3.Error, SQLAlchemyError) as error:
+        print(f"Could not record restore audit event: {error}", file=sys.stderr)
 
 
 def _record_restore_audit(
