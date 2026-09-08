@@ -782,6 +782,7 @@ onBeforeUnmount(() => {
       <nav class="catalogue-nav" aria-label="Account"><AccountMenu /></nav>
     </header>
 
+    <section class="catalogue-controls panel" aria-label="Catalogue controls">
     <div class="catalogue-filters">
       <div
         class="catalogue-search"
@@ -976,16 +977,16 @@ onBeforeUnmount(() => {
       </div>
       <div class="catalogue-meta-actions">
         <template v-if="batchSelectionMode">
-          <button v-if="selectedModelCount && auth.can('models.rescan')" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('rescan')">
+          <button v-if="auth.can('models.rescan')" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress || !selectedModelCount" @click="runSelectedModelAction('rescan')">
             Rescan selected
           </button>
-          <button v-if="selectedModelCount && auth.can('models.rebuild_images')" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('rebuild-images')">
+          <button v-if="auth.can('models.rebuild_images')" class="danger-button compact-button" type="button" :disabled="batchActionInProgress || !selectedModelCount" @click="runSelectedModelAction('rebuild-images')">
             Rebuild selected images
           </button>
-          <button v-if="selectedModelCount && auth.can('models.reset_images')" class="danger-button compact-button" type="button" :disabled="batchActionInProgress" @click="runSelectedModelAction('reset-images')">
+          <button v-if="auth.can('models.reset_images')" class="danger-button compact-button" type="button" :disabled="batchActionInProgress || !selectedModelCount" @click="runSelectedModelAction('reset-images')">
             Reset selected pictures
           </button>
-          <button v-if="selectedModelCount" class="text-button" type="button" :disabled="batchActionInProgress" @click="clearModelSelection">Clear selection</button>
+          <button class="text-button" type="button" :disabled="batchActionInProgress || !selectedModelCount" @click="clearModelSelection">Clear selection</button>
         </template>
         <button
           v-if="canRunBatchActions && page.items.length"
@@ -1007,6 +1008,7 @@ onBeforeUnmount(() => {
       </div>
       <p v-if="loading">Loading…</p>
     </div>
+    </section>
 
     <p v-if="errorMessage" class="form-error error-panel" role="alert">
       {{ errorMessage }}
