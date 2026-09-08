@@ -1858,9 +1858,6 @@ summary {
   flex-wrap: wrap;
   gap: 0.75rem;
   padding: 1rem;
-  border: 1px solid var(--meshive-border);
-  border-radius: 1rem;
-  background: var(--meshive-panel);
 }
 
 .catalogue-filters > .searchable-filter {
@@ -2109,7 +2106,21 @@ summary {
 .catalogue-meta {
   justify-content: space-between;
   min-height: 3.5rem;
+  padding: 0.75rem 1rem 1rem;
+  border-top: 1px solid var(--meshive-border);
   color: #94a3b8;
+}
+
+.catalogue-controls {
+  padding: 0;
+  position: relative;
+  z-index: 1;
+  margin-bottom: 1.25rem;
+  overflow: visible;
+}
+
+.catalogue-selection {
+  background: rgb(8 47 73 / 22%);
 }
 
 .catalogue-meta p {
@@ -2155,6 +2166,10 @@ summary {
   .catalogue-meta {
     flex-wrap: wrap;
     gap: 0.65rem;
+  }
+
+  .detail-topbar {
+    align-items: center;
   }
 }
 
@@ -2512,9 +2527,16 @@ summary {
   padding: 2rem 0 6rem;
 }
 
+.detail-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
 .detail-back {
   display: inline-block;
-  margin-bottom: 2rem;
 }
 
 .detail-header,

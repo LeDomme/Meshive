@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
 
 import { ApiError, apiRequest, isAbortError } from "../api"
+import AccountMenu from "../components/AccountMenu.vue"
 import FavoriteSaveDialog from "../components/FavoriteSaveDialog.vue"
 import TagChip from "../components/TagChip.vue"
 import {
@@ -820,10 +821,13 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="detail-shell">
-    <RouterLink
-      class="text-link detail-back"
-      :to="{ name: 'home', query: route.query }"
-    >← Back to catalogue</RouterLink>
+    <div class="detail-topbar">
+      <RouterLink
+        class="text-link detail-back"
+        :to="{ name: 'home', query: route.query }"
+      >← Back to catalogue</RouterLink>
+      <nav aria-label="Account"><AccountMenu /></nav>
+    </div>
 
     <p v-if="loading" class="muted">Loading…</p>
     <p v-else-if="errorMessage && !model" class="form-error error-panel" role="alert">

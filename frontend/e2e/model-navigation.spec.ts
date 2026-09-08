@@ -16,4 +16,7 @@ test("next model preserves catalogue context for navigation and back link", asyn
   await page.getByRole("button", { name: "Next model" }).click()
   await expect(page).toHaveURL(/\/models\/2\?creator=Ada&sort=creator_desc$/)
   await expect(page.getByRole("link", { name: "Back to catalogue" })).toHaveAttribute("href", "/?creator=Ada&sort=creator_desc")
+  await expect(page.getByLabel("Open account navigation")).toBeVisible()
+  await page.getByLabel("Open account navigation").click()
+  await expect(page.getByRole("link", { name: "Account settings" })).toBeVisible()
 })
