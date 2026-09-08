@@ -5,6 +5,25 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-09-09
+
+### Changed
+
+- Catalogue controls now integrate model count, selection mode, and bulk
+  actions in one stable toolbar, while filter menus remain overlay popovers.
+- Model detail pages now provide the same global navigation menu as the rest of
+  Meshive.
+
+### Fixed
+
+- Adding or removing model tags no longer resets the selected gallery image,
+  lightbox, scroll position, or catalogue navigation context.
+
+### Maintenance
+
+- Added guarded cleanup for old GHCR development images while preserving
+  protected image tags and their referenced OCI manifests.
+
 ## [1.6.2] - 2026-09-07
 
 ### Changed
@@ -245,7 +264,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
-[Unreleased]: ../../compare/v1.6.2...HEAD
+[Unreleased]: ../../compare/v1.6.3...HEAD
+[1.6.3]: ../../compare/v1.6.2...v1.6.3
 [1.6.2]: ../../compare/v1.6.1...v1.6.2
 [1.6.1]: ../../compare/v1.6.0...v1.6.1
 [1.6.0]: ../../compare/v1.5.2...v1.6.0

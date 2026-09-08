@@ -1,7 +1,7 @@
 # HTTPS deployment behind an existing Traefik reverse proxy.
 services:
   meshive:
-    image: ${MESHIVE_IMAGE:-ghcr.io/ledomme/meshive:1.6.2}
+    image: ${MESHIVE_IMAGE:-ghcr.io/ledomme/meshive:1.6.3}
     container_name: meshive
     restart: unless-stopped
     init: true
