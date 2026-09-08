@@ -162,23 +162,37 @@ def manifest_dependencies(manifest: dict[str, Any]) -> list[str]:
 
 
 def protected_graph(versions: Iterable[Version], image: str) -> tuple[set[int], set[str]]:
+    versions = list(versions)
+    package_digests = {digest(version.digest) for version in versions}
     protected_versions: set[int] = set()
-    discovered: set[str] = set()
+    protected_digests: set[str] = set()
+    inspected: set[str] = set()
     pending: list[str] = []
     for version in versions:
         if not requires_graph_protection(version):
             continue
         protected_versions.add(version.id)
+        protected_digests.add(digest(version.digest))
         pending.append(version.digest)
         for tag in version.tags:
             pending.extend(manifest_dependencies(inspect_manifest(image, tag)))
     while pending:
         item = digest(pending.pop())
-        if item in discovered:
+        protected_digests.add(item)
+        if item in inspected:
             continue
-        discovered.add(item)
-        pending.extend(manifest_dependencies(inspect_manifest(image, item)))
-    return protected_versions, discovered
+        inspected.add(item)
+        try:
+            pending.extend(manifest_dependencies(inspect_manifest(image, item)))
+        except DiscoveryError:
+            if item in package_digests:
+                raise
+            print(
+                f"WARN: protected OCI descriptor {item} is no longer inspectable "
+                "and is not an active package version; keeping the digest protected "
+                "and stopping traversal at this node.",
+            )
+    return protected_versions, protected_digests
 
 
 def safe_to_delete(version: Version, protected_digests: set[str], cutoff: dt.datetime) -> bool:

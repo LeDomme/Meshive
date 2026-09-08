@@ -19,9 +19,13 @@ provenance/SBOM structure exposes those dependencies through
 `docker buildx imagetools inspect --raw`; no unverified OCI Referrers API call
 is required.
 
-Discovery is fail-closed: an incomplete Packages API response or required
-manifest lookup prevents every deletion. The final version is re-read before a
-delete to avoid races with a new release or tag.
+Discovery is fail-closed: an incomplete Packages API response or a required
+manifest lookup for an active package version prevents every deletion. Old
+protected OCI indexes can contain stale child descriptors which no longer exist
+as package versions or registry manifests. Those descriptors remain protected,
+but do not block cleanup because they cannot be deleted through the Packages
+API. The final version is re-read before a delete to avoid races with a new
+release or tag.
 
 The workflow uses only `GITHUB_TOKEN`. In the package's **Settings → Manage
 Actions access**, grant `LeDomme/Meshive` **Admin** access to
