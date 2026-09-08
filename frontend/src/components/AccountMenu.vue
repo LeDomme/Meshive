@@ -40,7 +40,7 @@ async function logout() {
 
 <template>
   <details ref="menu" class="account-menu">
-    <summary class="account-menu-trigger">
+    <summary class="account-menu-trigger" aria-label="Open account navigation">
       <span>{{ auth.user?.username }}</span>
       <span class="account-menu-icon" aria-hidden="true">☰</span>
     </summary>
