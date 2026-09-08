@@ -12,7 +12,8 @@ whose tags are exclusively `pr-*` and/or `sha-*`, plus genuinely orphaned
 untagged versions of the same age.
 
 `latest`, `edge`, and numeric SemVer tags (`1`, `1.6`, `1.6.4`) are retained.
-Unknown tags are retained too. The workflow inspects the protected OCI graph,
+Unknown tags are retained too. Every tagged root that is not exclusively
+`pr-*`/`sha-*` protects its complete OCI graph. The workflow inspects that graph,
 including child manifests and `subject` digests. The current Meshive Buildx
 provenance/SBOM structure exposes those dependencies through
 `docker buildx imagetools inspect --raw`; no unverified OCI Referrers API call

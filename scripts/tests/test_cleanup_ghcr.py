@@ -36,6 +36,32 @@ class CandidateTests(unittest.TestCase):
     def test_unknown_tag_is_protected(self):
         self.assertEqual(self.selected([version(1, ["testing"], 8)]), set())
 
+    def test_unknown_tag_root_protects_untagged_child(self):
+        root = version(1, ["testing"], 8)
+        child = version(2, [], 8)
+        manifests = {
+            "testing": {"manifests": [{"digest": child.digest}]},
+            root.digest: {"manifests": []},
+            child.digest: {"manifests": []},
+        }
+        with mock.patch.object(cleanup, "inspect_manifest", side_effect=lambda _, ref: manifests[ref]):
+            _, protected = cleanup.protected_graph([root], "ghcr.io/ledomme/meshive")
+        self.assertIn(child.digest, protected)
+        self.assertEqual(self.selected([root, child], protected), set())
+
+    def test_unknown_tag_with_sha_tag_protects_the_complete_graph(self):
+        root = version(1, ["testing", "sha-abc"], 8)
+        child = version(2, [], 8)
+        manifests = {
+            "testing": {"manifests": [{"digest": child.digest}]},
+            "sha-abc": {"manifests": [{"digest": child.digest}]},
+            root.digest: {"manifests": []},
+            child.digest: {"manifests": []},
+        }
+        with mock.patch.object(cleanup, "inspect_manifest", side_effect=lambda _, ref: manifests[ref]):
+            _, protected = cleanup.protected_graph([root], "ghcr.io/ledomme/meshive")
+        self.assertTrue({root.digest, child.digest}.issubset(protected))
+
     def test_old_dev_tags_are_candidates(self):
         self.assertEqual(self.selected([version(1, ["sha-abc", "pr-150"], 8)]), {1})
 
@@ -70,6 +96,20 @@ class CandidateTests(unittest.TestCase):
 
     def test_final_recheck_rejects_new_release_tag(self):
         self.assertFalse(cleanup.safe_to_delete(version(1, ["1.6.4"], 8), set(), CUTOFF))
+
+    def test_protected_dev_digest_is_never_a_candidate_or_deleted(self):
+        development = version(1, ["sha-abc"], 8)
+        self.assertEqual(self.selected([development], {development.digest}), set())
+        self.assertFalse(cleanup.safe_to_delete(development, {development.digest}, CUTOFF))
+
+    def test_unreferenced_pure_dev_tags_remain_candidates(self):
+        self.assertEqual(self.selected([version(1, ["sha-abc", "pr-123"], 8)]), {1})
+
+    def test_unknown_tag_graph_failure_is_fail_closed(self):
+        root = version(1, ["nightly-custom"], 8)
+        with mock.patch.object(cleanup, "inspect_manifest", side_effect=cleanup.DiscoveryError("broken manifest")):
+            with self.assertRaises(cleanup.DiscoveryError):
+                cleanup.protected_graph([root], "ghcr.io/ledomme/meshive")
 
     def test_dry_run_does_not_call_delete(self):
         current = version(1, ["sha-abc"], 8)

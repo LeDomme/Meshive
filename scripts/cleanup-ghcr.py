@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 DEV_TAG = re.compile(r"^(?:pr-|sha-)")
-SEMVER_TAG = re.compile(r"^\d+(?:\.\d+){0,2}$")
 
 
 class DiscoveryError(RuntimeError):
@@ -38,12 +37,13 @@ def digest(value: str) -> str:
     return value if value.startswith("sha256:") else f"sha256:{value}"
 
 
-def is_protected_tag(tag: str) -> bool:
-    return tag in {"latest", "edge"} or bool(SEMVER_TAG.fullmatch(tag))
-
-
 def is_dev_version(version: Version) -> bool:
     return bool(version.tags) and all(DEV_TAG.match(tag) for tag in version.tags)
+
+
+def requires_graph_protection(version: Version) -> bool:
+    """Every tagged root except a purely pr-/sha- development image is durable."""
+    return bool(version.tags) and not is_dev_version(version)
 
 
 def is_old(version: Version, cutoff: dt.datetime) -> bool:
@@ -60,6 +60,8 @@ def resolve_dry_run(event_name: str, requested_dry_run: bool, schedule_delete_en
 def candidates(versions: Iterable[Version], protected_digests: set[str], cutoff: dt.datetime) -> tuple[list[Version], list[Version], int]:
     dev, orphaned, young = [], [], 0
     for version in versions:
+        if digest(version.digest) in protected_digests:
+            continue
         if not is_old(version, cutoff):
             young += 1
             continue
@@ -67,8 +69,7 @@ def candidates(versions: Iterable[Version], protected_digests: set[str], cutoff:
             if is_dev_version(version):
                 dev.append(version)
             continue  # Protected and unknown tags are always retained.
-        if digest(version.digest) not in protected_digests:
-            orphaned.append(version)
+        orphaned.append(version)
     return dev, orphaned, young
 
 
@@ -165,12 +166,11 @@ def protected_graph(versions: Iterable[Version], image: str) -> tuple[set[int], 
     discovered: set[str] = set()
     pending: list[str] = []
     for version in versions:
-        protected_tags = [tag for tag in version.tags if is_protected_tag(tag)]
-        if not protected_tags:
+        if not requires_graph_protection(version):
             continue
         protected_versions.add(version.id)
         pending.append(version.digest)
-        for tag in protected_tags:
+        for tag in version.tags:
             pending.extend(manifest_dependencies(inspect_manifest(image, tag)))
     while pending:
         item = digest(pending.pop())
@@ -182,6 +182,8 @@ def protected_graph(versions: Iterable[Version], image: str) -> tuple[set[int], 
 
 
 def safe_to_delete(version: Version, protected_digests: set[str], cutoff: dt.datetime) -> bool:
+    if digest(version.digest) in protected_digests:
+        return False
     if not is_old(version, cutoff):
         return False
     if version.tags:
