@@ -111,6 +111,43 @@ class CandidateTests(unittest.TestCase):
             with self.assertRaises(cleanup.DiscoveryError):
                 cleanup.protected_graph([root], "ghcr.io/ledomme/meshive")
 
+    def test_real_stale_attestation_descriptor_is_protected_without_blocking(self):
+        root = version(1, ["1.0"], 8)
+        stale = "sha256:efab01cca01bd46498ae22c1fd29a149ad8487ed5aa25afb24bce55227894436"
+        traversable = "sha256:" + "e" * 64
+        child = "sha256:" + "f" * 64
+        manifests = {
+            "1.0": {"manifests": [
+                {"digest": stale, "annotations": {"vnd.docker.reference.type": "attestation-manifest"}},
+                {"digest": traversable},
+            ]},
+            root.digest: {"manifests": []},
+            traversable: {"manifests": [{"digest": child}]},
+            child: {"manifests": []},
+        }
+        def inspect(_, reference):
+            if reference == stale:
+                raise cleanup.DiscoveryError("stale descriptor")
+            return manifests[reference]
+        with mock.patch.object(cleanup, "inspect_manifest", side_effect=inspect):
+            _, protected = cleanup.protected_graph([root], "ghcr.io/ledomme/meshive")
+        self.assertTrue({root.digest, stale, traversable, child}.issubset(protected))
+
+    def test_uninspectable_active_package_descriptor_is_fail_closed(self):
+        root = version(1, ["1.0"], 8)
+        active_child = version(2, [], 8)
+        manifests = {
+            "1.0": {"manifests": [{"digest": active_child.digest}]},
+            root.digest: {"manifests": []},
+        }
+        def inspect(_, reference):
+            if reference == active_child.digest:
+                raise cleanup.DiscoveryError("active descriptor unavailable")
+            return manifests[reference]
+        with mock.patch.object(cleanup, "inspect_manifest", side_effect=inspect):
+            with self.assertRaises(cleanup.DiscoveryError):
+                cleanup.protected_graph([root, active_child], "ghcr.io/ledomme/meshive")
+
     def test_dry_run_does_not_call_delete(self):
         current = version(1, ["sha-abc"], 8)
         api = mock.Mock(get_version=mock.Mock(return_value=current))
