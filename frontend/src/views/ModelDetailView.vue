@@ -135,6 +135,7 @@ const auth = useAuthStore()
 const model = ref<ModelDetail | null>(null)
 const availableTags = ref<Tag[]>([])
 const selectedTagId = ref("")
+const tagMutationInProgress = ref(false)
 const loading = ref(true)
 const errorMessage = ref("")
 const selectedImage = ref<ModelImage | null>(null)
@@ -708,21 +709,49 @@ async function handleFavoriteClick() {
 }
 
 async function addTag() {
-  if (!auth.can("models.tags") || !model.value || !selectedTagId.value) return
-  await apiRequest<void>(
-    `/api/admin/models/${model.value.id}/tags/${selectedTagId.value}`,
-    { method: "PUT" },
-  )
-  await loadModel()
-  selectedTagId.value = ""
+  if (
+    !auth.can("models.tags")
+    || !model.value
+    || !selectedTagId.value
+    || tagMutationInProgress.value
+  ) return
+  const modelId = model.value.id
+  const tagId = selectedTagId.value
+  errorMessage.value = ""
+  tagMutationInProgress.value = true
+  try {
+    await apiRequest<void>(`/api/admin/models/${modelId}/tags/${tagId}`, {
+      method: "PUT",
+    })
+    await refreshModelTags(modelId)
+    selectedTagId.value = ""
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError ? error.message : "Unable to add the tag"
+  } finally {
+    tagMutationInProgress.value = false
+  }
 }
 
 async function removeTag(tag: Tag) {
-  if (!auth.can("models.tags") || !model.value) return
-  await apiRequest<void>(`/api/admin/models/${model.value.id}/tags/${tag.id}`, {
-    method: "DELETE",
-  })
-  await loadModel()
+  if (!auth.can("models.tags") || !model.value || tagMutationInProgress.value) return
+  const modelId = model.value.id
+  errorMessage.value = ""
+  tagMutationInProgress.value = true
+  try {
+    await apiRequest<void>(`/api/admin/models/${modelId}/tags/${tag.id}`, {
+      method: "DELETE",
+    })
+    await refreshModelTags(modelId)
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError ? error.message : "Unable to remove the tag"
+  } finally {
+    tagMutationInProgress.value = false
+  }
+}
+
+async function refreshModelTags(modelId: number) {
+  const detail = await apiRequest<ModelDetail>(`/api/models/${modelId}`)
+  if (model.value?.id === modelId) model.value.tags = detail.tags
 }
 
 async function loadModel() {
@@ -797,11 +826,14 @@ onBeforeUnmount(() => {
     >← Back to catalogue</RouterLink>
 
     <p v-if="loading" class="muted">Loading…</p>
-    <p v-else-if="errorMessage" class="form-error error-panel" role="alert">
+    <p v-else-if="errorMessage && !model" class="form-error error-panel" role="alert">
       {{ errorMessage }}
     </p>
 
-    <template v-else-if="model">
+    <template v-if="model">
+      <p v-if="errorMessage" class="form-error error-panel" role="alert">
+        {{ errorMessage }}
+      </p>
       <header class="detail-header">
         <div>
           <p class="eyebrow">{{ model.source_name }}</p>
@@ -1083,6 +1115,7 @@ onBeforeUnmount(() => {
                     v-if="auth.can('models.tags')"
                     type="button"
                     :aria-label="`Remove ${tag.name} tag`"
+                    :disabled="tagMutationInProgress"
                     @click="removeTag(tag)"
                   >×</button>
                 </TagChip>
@@ -1096,13 +1129,13 @@ onBeforeUnmount(() => {
             class="tag-assignment model-fact-tag-assignment"
             @submit.prevent="addTag"
           >
-            <select v-model="selectedTagId" required aria-label="Tag to add">
+            <select v-model="selectedTagId" required aria-label="Tag to add" :disabled="tagMutationInProgress">
               <option value="">Add tag…</option>
               <option v-for="tag in availableTags" :key="tag.id" :value="String(tag.id)">
                 {{ tag.name }}
               </option>
             </select>
-            <button class="secondary-button" type="submit">Add</button>
+            <button class="secondary-button" type="submit" :disabled="tagMutationInProgress">Add</button>
           </form>
         </aside>
       </section>
