@@ -67,7 +67,7 @@ jobs:
           fi
           python3 scripts/cleanup-ghcr.py "${cleanup_args[@]}"
 
-      - name: Explain package access failures
+      - name: Explain cleanup failure
         if: failure()
         run: |
-          echo "::error::GHCR cleanup needs this repository to have Admin access in the package's Settings → Manage Actions access. No PAT fallback is used."
+          echo "::error::GHCR cleanup failed. See the previous step for the actual error. Package access requirements are documented in docs/ghcr-cleanup.md."
