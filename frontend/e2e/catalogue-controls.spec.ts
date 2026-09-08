@@ -8,6 +8,13 @@ async function documentY(page: Page, selector: string) {
   return page.locator(selector).evaluate((element) => element.getBoundingClientRect().top + window.scrollY)
 }
 
+async function filterControlsBottom(page: Page) {
+  return page.locator(".catalogue-filters").evaluate((row) => Math.max(
+    ...[...row.querySelectorAll<HTMLElement>(".searchable-filter-trigger, .secondary-button")]
+      .map((control) => control.getBoundingClientRect().bottom + window.scrollY),
+  ))
+}
+
 test("catalogue controls contain selection status and bulk actions", async ({ page }) => {
   await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
   await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
@@ -29,8 +36,11 @@ test("catalogue controls contain selection status and bulk actions", async ({ pa
   const gridDocumentY = await documentY(page, ".model-grid")
   const filtersBefore = await filterRow.boundingBox()
   const footerBefore = await footer.boundingBox()
+  const dividerDocumentY = await documentY(page, ".catalogue-meta")
+  const filterBottomDocumentY = await filterControlsBottom(page)
   expect(gridBefore?.y).toBeGreaterThan((controlsBefore?.y ?? 0) + (controlsBefore?.height ?? 0) + 15)
   expect(footerBefore?.y).toBeGreaterThanOrEqual((filtersBefore?.y ?? 0) + (filtersBefore?.height ?? 0))
+  expect(dividerDocumentY).toBeGreaterThanOrEqual(filterBottomDocumentY + 10)
   await expect(footer).toHaveCSS("border-top-width", "1px")
   await controls.getByRole("button", { name: "Library source" }).click()
   const dropdown = page.locator(".searchable-filter-panel")
@@ -48,9 +58,11 @@ test("catalogue controls contain selection status and bulk actions", async ({ pa
   const selectionGridY = await documentY(page, ".model-grid")
   const selectionFilters = await filterRow.boundingBox()
   const selectionFooter = await footer.boundingBox()
+  const selectionDividerDocumentY = await documentY(page, ".catalogue-meta")
   expect(selectionControls?.height).toBe(controlsBefore?.height)
   expect(selectionGridY).toBe(gridDocumentY)
   expect(selectionFilters?.y).toBe(filtersBefore?.y)
+  expect(selectionDividerDocumentY).toBe(dividerDocumentY)
   expect(selectionFooter?.y).toBeGreaterThanOrEqual((selectionFilters?.y ?? 0) + (selectionFilters?.height ?? 0))
   await expect(controls.locator(".catalogue-selection")).toBeVisible()
   await expect(controls).toContainText("1 model")
