@@ -1,0 +1,58 @@
+name: Cleanup GHCR images
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report candidates without deleting package versions
+        required: false
+        default: true
+        type: boolean
+  schedule:
+    - cron: "23 3 * * *"
+
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Discover and clean old development images
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          cleanup_args=(--owner "${{ github.repository_owner }}" --package meshive --image "${{ github.repository_owner }}/meshive")
+          if [ "$DRY_RUN" = true ]; then
+            cleanup_args+=(--dry-run)
+          else
+            cleanup_args+=(--no-dry-run)
+          fi
+          python3 scripts/cleanup-ghcr.py "${cleanup_args[@]}"
+
+      - name: Explain package access failures
+        if: failure()
+        run: |
+          echo "::error::GHCR cleanup needs this repository to have Admin access in the package's Settings → Manage Actions access. No PAT fallback is used."
