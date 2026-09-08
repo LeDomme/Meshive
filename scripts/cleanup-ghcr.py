@@ -145,10 +145,18 @@ def inspect_manifest(image: str, reference: str) -> dict[str, Any]:
 
 def manifest_dependencies(manifest: dict[str, Any]) -> list[str]:
     """Buildx currently exposes platform and attestation children in manifests."""
-    dependencies = [item["digest"] for item in manifest.get("manifests", []) if isinstance(item, dict) and isinstance(item.get("digest"), str)]
-    subject = manifest.get("subject", {})
-    if isinstance(subject, dict) and isinstance(subject.get("digest"), str):
-        dependencies.append(subject["digest"])
+    children = manifest.get("manifests", [])
+    if not isinstance(children, list):
+        raise DiscoveryError("OCI manifest children were not a list")
+    if not all(isinstance(item, dict) and isinstance(item.get("digest"), str) for item in children):
+        raise DiscoveryError("OCI manifest child descriptor was incomplete")
+    dependencies = [item["digest"] for item in children]
+    if "subject" not in manifest:
+        return dependencies
+    subject = manifest["subject"]
+    if not isinstance(subject, dict) or not isinstance(subject.get("digest"), str):
+        raise DiscoveryError("OCI manifest subject descriptor was incomplete")
+    dependencies.append(subject["digest"])
     return dependencies
 
 

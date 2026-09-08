@@ -62,6 +62,12 @@ class CandidateTests(unittest.TestCase):
             with self.assertRaises(cleanup.DiscoveryError):
                 cleanup.protected_graph([protected], "ledomme/meshive")
 
+    def test_incomplete_manifest_descriptor_is_fail_closed(self):
+        protected = version(1, ["edge"], 8)
+        with mock.patch.object(cleanup, "inspect_manifest", return_value={"manifests": [{"platform": "linux"}]}):
+            with self.assertRaises(cleanup.DiscoveryError):
+                cleanup.protected_graph([protected], "ledomme/meshive")
+
     def test_final_recheck_rejects_new_release_tag(self):
         self.assertFalse(cleanup.safe_to_delete(version(1, ["1.6.4"], 8), set(), CUTOFF))
 
