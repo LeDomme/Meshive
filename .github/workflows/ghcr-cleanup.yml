@@ -41,11 +41,19 @@ jobs:
       - name: Discover and clean old development images
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_DRY_RUN: ${{ inputs.dry_run }}
+          SCHEDULE_DELETE_ENABLED: ${{ vars.GHCR_CLEANUP_DELETE_ENABLED }}
         run: |
           set -euo pipefail
           cleanup_args=(--owner "${{ github.repository_owner }}" --package meshive --image "${{ github.repository_owner }}/meshive")
-          if [ "$DRY_RUN" = true ]; then
+          if [ "$EVENT_NAME" = schedule ]; then
+            dry_run=true
+            if [ "$SCHEDULE_DELETE_ENABLED" = true ]; then dry_run=false; fi
+          else
+            dry_run="$REQUESTED_DRY_RUN"
+          fi
+          if [ "$dry_run" = true ]; then
             cleanup_args+=(--dry-run)
           else
             cleanup_args+=(--no-dry-run)

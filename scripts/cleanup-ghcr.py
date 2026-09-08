@@ -10,8 +10,6 @@ import os
 import re
 import subprocess
 import sys
-import urllib.error
-import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Iterable
@@ -50,6 +48,13 @@ def is_dev_version(version: Version) -> bool:
 
 def is_old(version: Version, cutoff: dt.datetime) -> bool:
     return version.created_at < cutoff
+
+
+def resolve_dry_run(event_name: str, requested_dry_run: bool, schedule_delete_enabled: str | None) -> bool:
+    """Scheduled deletion requires an explicit repository-variable opt-in."""
+    if event_name == "schedule":
+        return schedule_delete_enabled != "true"
+    return requested_dry_run
 
 
 def candidates(versions: Iterable[Version], protected_digests: set[str], cutoff: dt.datetime) -> tuple[list[Version], list[Version], int]:
@@ -138,22 +143,16 @@ def inspect_manifest(image: str, reference: str) -> dict[str, Any]:
     return parsed
 
 
-def referrers(image: str, subject: str, token: str) -> list[str]:
-    """Return OCI referrer descriptors; an unsupported/failed endpoint is unsafe."""
-    url = f"https://ghcr.io/v2/{image}/referrers/{subject}"
-    request = urllib.request.Request(url, headers={"Accept": "application/vnd.oci.image.index.v1+json", "Authorization": f"Bearer {token}"})
-    try:
-        with urllib.request.urlopen(request) as response:
-            raw = json.loads(response.read())
-    except (urllib.error.HTTPError, urllib.error.URLError, json.JSONDecodeError) as error:
-        raise DiscoveryError(f"Unable to discover OCI referrers for {subject}") from error
-    manifests = raw.get("manifests") if isinstance(raw, dict) else None
-    if not isinstance(manifests, list) or not all(isinstance(item.get("digest"), str) for item in manifests if isinstance(item, dict)):
-        raise DiscoveryError(f"OCI referrers response for {subject} was incomplete")
-    return [item["digest"] for item in manifests]
+def manifest_dependencies(manifest: dict[str, Any]) -> list[str]:
+    """Buildx currently exposes platform and attestation children in manifests."""
+    dependencies = [item["digest"] for item in manifest.get("manifests", []) if isinstance(item, dict) and isinstance(item.get("digest"), str)]
+    subject = manifest.get("subject", {})
+    if isinstance(subject, dict) and isinstance(subject.get("digest"), str):
+        dependencies.append(subject["digest"])
+    return dependencies
 
 
-def protected_graph(versions: Iterable[Version], image: str, token: str) -> tuple[set[int], set[str]]:
+def protected_graph(versions: Iterable[Version], image: str) -> tuple[set[int], set[str]]:
     protected_versions: set[int] = set()
     discovered: set[str] = set()
     pending: list[str] = []
@@ -164,19 +163,13 @@ def protected_graph(versions: Iterable[Version], image: str, token: str) -> tupl
         protected_versions.add(version.id)
         pending.append(version.digest)
         for tag in protected_tags:
-            manifest = inspect_manifest(image, tag)
-            pending.extend(item["digest"] for item in manifest.get("manifests", []) if isinstance(item, dict) and isinstance(item.get("digest"), str))
-            subject = manifest.get("subject", {})
-            if isinstance(subject, dict) and isinstance(subject.get("digest"), str):
-                pending.append(subject["digest"])
+            pending.extend(manifest_dependencies(inspect_manifest(image, tag)))
     while pending:
         item = digest(pending.pop())
         if item in discovered:
             continue
         discovered.add(item)
-        manifest = inspect_manifest(image, item)
-        pending.extend(child["digest"] for child in manifest.get("manifests", []) if isinstance(child, dict) and isinstance(child.get("digest"), str))
-        pending.extend(referrers(image, item, token))
+        pending.extend(manifest_dependencies(inspect_manifest(image, item)))
     return protected_versions, discovered
 
 
@@ -223,7 +216,7 @@ def main() -> int:
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=arguments.retention_days)
     api = GitHubPackages(arguments.owner, arguments.package, token)
     versions = api.list_versions()
-    protected_versions, protected_digests = protected_graph(versions, arguments.image, token)
+    protected_versions, protected_digests = protected_graph(versions, arguments.image)
     dev, orphaned, young = candidates(versions, protected_digests, cutoff)
     deleted = delete_candidates(api, [*dev, *orphaned], protected_digests, cutoff, arguments.dry_run)
     write_summary(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null"), total_package_versions=len(versions), protected_tagged_versions=len(protected_versions), protected_oci_digests=len(protected_digests), old_dev_candidates=len(dev), orphaned_untagged_candidates=len(orphaned), young_skipped_versions=young, deleted_versions=deleted, dry_run=arguments.dry_run)

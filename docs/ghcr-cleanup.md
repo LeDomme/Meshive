@@ -2,17 +2,24 @@
 
 `Cleanup GHCR images` runs daily and can be run manually from **Actions**. Its
 manual default is a dry-run; select `dry_run: false` only after reviewing the
-candidate list. Scheduled runs delete only package versions older than seven
-days whose tags are exclusively `pr-*` and/or `sha-*`, plus genuinely orphaned
+candidate list. Scheduled runs are dry-runs until the repository variable
+`GHCR_CLEANUP_DELETE_ENABLED` is explicitly set to `true`. The safe rollout is:
+merge the workflow, run a manual dry-run, review it, optionally perform one
+manual real cleanup, then enable scheduled deletion with that variable.
+
+Once enabled, scheduled runs delete only package versions older than seven days
+whose tags are exclusively `pr-*` and/or `sha-*`, plus genuinely orphaned
 untagged versions of the same age.
 
 `latest`, `edge`, and numeric SemVer tags (`1`, `1.6`, `1.6.4`) are retained.
 Unknown tags are retained too. The workflow inspects the protected OCI graph,
-including child manifests and OCI referrers used for Buildx provenance/SBOM, so
-their untagged package versions are not treated as orphaned.
+including child manifests and `subject` digests. The current Meshive Buildx
+provenance/SBOM structure exposes those dependencies through
+`docker buildx imagetools inspect --raw`; no unverified OCI Referrers API call
+is required.
 
-Discovery is fail-closed: an incomplete Packages API response, manifest, or
-referrer lookup prevents every deletion. The final version is re-read before a
+Discovery is fail-closed: an incomplete Packages API response or required
+manifest lookup prevents every deletion. The final version is re-read before a
 delete to avoid races with a new release or tag.
 
 The workflow uses only `GITHUB_TOKEN`. In the package's **Settings → Manage
