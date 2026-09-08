@@ -970,7 +970,11 @@ onBeforeUnmount(() => {
       <button :style="{ order: 100 }" class="secondary-button" type="button" @click="clearFilters">Clear</button>
     </div>
 
-    <div class="catalogue-meta">
+    <div
+      class="catalogue-meta"
+      :class="{ 'catalogue-selection': batchSelectionMode }"
+      :aria-label="batchSelectionMode ? 'Model selection controls' : undefined"
+    >
       <div class="catalogue-meta-summary">
         <p>{{ page.total }} {{ page.total === 1 ? "model" : "models" }}</p>
         <span v-if="batchSelectionMode && selectedModelCount" class="batch-selection-count">{{ selectedModelCount }} selected</span>

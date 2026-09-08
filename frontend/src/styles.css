@@ -2112,11 +2112,18 @@ summary {
 
 .catalogue-controls {
   padding: 0;
-  overflow: hidden;
+  position: relative;
+  z-index: 1;
+  margin-bottom: 1.25rem;
+  overflow: visible;
 }
 
-.catalogue-controls:has(.catalogue-meta-actions > .active) .catalogue-meta {
+.catalogue-selection {
   border-top: 1px solid var(--meshive-border);
+  min-height: 4.5rem;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  background: rgb(8 47 73 / 22%);
 }
 
 .catalogue-meta p {
