@@ -214,7 +214,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--owner", required=True)
     parser.add_argument("--package", required=True)
-    parser.add_argument("--image", required=True, help="Registry repository without ghcr.io/, e.g. ledomme/meshive")
+    parser.add_argument("--image", required=True, help="Full registry image reference, e.g. ghcr.io/ledomme/meshive")
     parser.add_argument("--dry-run", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--retention-days", type=int, default=7)
     arguments = parser.parse_args()

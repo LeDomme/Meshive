@@ -77,6 +77,18 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(cleanup.delete_candidates(api, [current], set(), CUTOFF, True), 0)
         api.delete.assert_not_called()
 
+    def test_manifest_inspection_uses_full_registry_reference_for_tag_and_digest(self):
+        image = "ghcr.io/ledomme/meshive"
+        digest = "sha256:" + "d" * 64
+        completed = mock.Mock(stdout="{}")
+        with mock.patch.object(cleanup.subprocess, "run", return_value=completed) as run:
+            cleanup.inspect_manifest(image, "1.6.4")
+            cleanup.inspect_manifest(image, digest)
+        self.assertEqual(run.call_args_list, [
+            mock.call(["docker", "buildx", "imagetools", "inspect", "--raw", f"{image}:1.6.4"], check=True, capture_output=True, text=True),
+            mock.call(["docker", "buildx", "imagetools", "inspect", "--raw", f"{image}@{digest}"], check=True, capture_output=True, text=True),
+        ])
+
 
 class WorkflowSafetyTests(unittest.TestCase):
     def test_schedule_without_enablement_is_a_dry_run(self):
