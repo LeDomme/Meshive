@@ -19,4 +19,31 @@ async function applyMerge() { if (!profile.value || !mergeSourceId.value || !pre
 async function undoMerge(id: number) { await apiRequest(`/api/admin/creator-profiles/merges/${id}/undo`, { method: "POST" }); await load(); emit("changed") }
 watch(() => props.profileId, () => void load(), { immediate: true })
 </script>
-<template><section v-if="profile" class="creator-metadata-section"><h4>Profile</h4><p v-if="error" class="form-error">{{ error }}</p><form class="source-form" @submit.prevent="save"><label>Display name<input v-model="name" required></label><label>Description<textarea v-model="description" /></label><button class="secondary-button">Save profile</button></form><h4>Aliases</h4><ul><li v-for="item in profile.aliases" :key="item.id">{{ item.alias }} <button v-if="item.normalized_alias !== profile.normalized_name" class="text-button" @click="removeAlias(item)">Remove</button></li></ul><form class="inline-form" @submit.prevent="addAlias"><input v-model="alias" placeholder="Add alias"><button>Add alias</button></form><h4>Merge</h4><select v-model.number="mergeSourceId"><option :value="null">Choose source profile</option><option v-for="item in candidates" :key="item.id" :value="item.id">{{ item.display_name }}</option></select><button :disabled="!mergeSourceId" @click="getPreview">Preview merge</button><div v-if="preview"><p>{{ preview.favorite_count }} favorites; {{ preview.duplicate_favorite_count }} duplicates; {{ preview.duplicate_link_ids.length }} duplicate links.</p><p v-if="preview.link_conflicts.length || preview.artwork_conflict" class="form-error">Conflicts need an explicit choice.</p><button class="danger-button" @click="applyMerge">Apply merge</button></div><div v-for="merge in history" :key="merge.id"><span>{{ merge.source_display_name }} merged into {{ profile.display_name }}</span><button v-if="!merge.undone_at" class="secondary-button" @click="undoMerge(merge.id)">Undo merge</button></div></section></template>
+<template>
+  <section v-if="profile" class="creator-metadata-section creator-profile-section">
+    <h4>Profile</h4>
+    <p v-if="error" class="form-error">{{ error }}</p>
+    <form class="source-form" @submit.prevent="save">
+      <label>Display name<input v-model="name" required></label>
+      <label>Description<textarea v-model="description" /></label>
+      <div class="row-actions"><button class="secondary-button">Save profile</button></div>
+    </form>
+    <h4>Aliases</h4>
+    <div class="creator-alias-list"><span v-for="item in profile.aliases" :key="item.id" class="creator-alias-chip">{{ item.alias }} <button v-if="item.normalized_alias !== profile.normalized_name" class="text-button" @click="removeAlias(item)">Remove</button></span></div>
+    <form class="inline-form creator-inline-form" @submit.prevent="addAlias"><input v-model="alias" placeholder="Add alias"><button class="secondary-button">Add alias</button></form>
+    <h4>Merge</h4>
+    <div class="creator-inline-form"><select v-model.number="mergeSourceId"><option :value="null">Choose source profile</option><option v-for="item in candidates" :key="item.id" :value="item.id">{{ item.display_name }}</option></select><button class="secondary-button" :disabled="!mergeSourceId" @click="getPreview">Preview merge</button></div>
+    <div v-if="preview" class="merge-preview"><p>{{ preview.favorite_count }} favorites; {{ preview.duplicate_favorite_count }} duplicates; {{ preview.duplicate_link_ids.length }} duplicate links.</p><p v-if="preview.link_conflicts.length || preview.artwork_conflict" class="form-error">Conflicts need an explicit choice.</p><button class="danger-button" @click="applyMerge">Apply merge</button></div>
+    <div class="merge-history"><div v-for="merge in history" :key="merge.id" class="merge-history-row"><span>{{ merge.source_display_name }} merged into {{ profile.display_name }}</span><button v-if="!merge.undone_at" class="secondary-button" @click="undoMerge(merge.id)">Undo merge</button></div></div>
+  </section>
+</template>
+
+<style scoped>
+.creator-alias-list, .creator-inline-form, .merge-history-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.creator-alias-list { margin: .5rem 0; }
+.creator-alias-chip { display: inline-flex; align-items: center; gap: .35rem; padding: .25rem .5rem; border: 1px solid var(--meshive-border); border-radius: .5rem; }
+.creator-inline-form { margin: .5rem 0 1rem; }
+.creator-inline-form input, .creator-inline-form select { min-width: min(100%, 16rem); }
+.merge-history { display: grid; gap: .5rem; margin-top: .75rem; }
+@media (max-width: 600px) { .creator-inline-form > * { width: 100%; } }
+</style>

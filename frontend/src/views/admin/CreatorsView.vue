@@ -539,7 +539,10 @@ onMounted(loadMetadata)
           Select a catalogue entry to edit its metadata.
         </p>
       </template>
+      <CreatorProfilesView
+        :profile-id="selectedCreatorProfileId"
+        @changed="loadMetadata"
+      />
     </section>
-    <CreatorProfilesView :profile-id="selectedCreatorProfileId" @changed="loadMetadata" />
 </main>
 </template>
