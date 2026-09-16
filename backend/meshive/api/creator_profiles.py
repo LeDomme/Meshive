@@ -1,5 +1,7 @@
 """Source-aware management endpoints for stable Creator Profiles."""
 
+import json
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -17,13 +19,14 @@ from meshive.auth.permissions import METADATA_MANAGE
 from meshive.creators import normalize_creator_name
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
-from meshive.models.creator import CreatorAlias, CreatorLink, CreatorProfile
+from meshive.models.creator import CreatorAlias, CreatorLink, CreatorMerge, CreatorProfile
 from meshive.models.favorite import FavoriteListItem
 from meshive.models.user import User
 from meshive.schemas.creator import (
     CreatorAliasRead,
     CreatorAliasWrite,
     CreatorMergeApplyRequest,
+    CreatorMergeHistoryRead,
     CreatorMergePreviewRead,
     CreatorMergePreviewRequest,
     CreatorProfileRead,
@@ -418,6 +421,27 @@ def merge_apply(
         raise HTTPException(status_code=409, detail="Artwork conflict needs an explicit resolution")
     try:
         source_ids = [s.id for s in sources]
+        target_artwork_before = target.artwork_id
+        snapshots: dict[int, dict[str, object]] = {}
+        for source in sources:
+            snapshots[source.id] = {
+                "source": {
+                    "display_name": source.display_name,
+                    "normalized_name": source.normalized_name,
+                    "is_active": source.is_active,
+                    "merged_into_id": source.merged_into_id,
+                    "artwork_id": source.artwork_id,
+                },
+                "target_artwork_before": target_artwork_before,
+                "models": list(
+                    session.scalars(
+                        select(LibraryModel.id).where(LibraryModel.creator_profile_id == source.id)
+                    )
+                ),
+                "aliases": [],
+                "links": [],
+                "favorites": [],
+            }
         if payload.artwork_resolution and payload.artwork_resolution.startswith("source:"):
             target.artwork_id = next(
                 s.artwork_id for s in sources if f"source:{s.id}" == payload.artwork_resolution
@@ -425,30 +449,28 @@ def merge_apply(
         session.query(LibraryModel).filter(LibraryModel.creator_profile_id.in_(source_ids)).update(
             {LibraryModel.creator_profile_id: target.id}, synchronize_session=False
         )
-        canonical_source_aliases = {source.normalized_name for source in sources}
-        transferable_aliases: list[tuple[str, str]] = []
-        for alias in list(
-            session.scalars(
-                select(CreatorAlias).where(CreatorAlias.creator_profile_id.in_(source_ids))
+        for source in sources:
+            source_aliases = list(
+                session.scalars(
+                    select(CreatorAlias).where(CreatorAlias.creator_profile_id == source.id)
+                )
             )
-        ):
-            # A source canonical alias cannot be moved while its profile still
-            # owns the canonical key (the database identity guard rightly
-            # rejects that transient state). It is recreated after deletion.
-            if (
-                alias.normalized_alias in canonical_source_aliases
-                or alias.normalized_alias == target.normalized_name
-                or session.scalar(
+            snapshot = snapshots[source.id]
+            # Free the source canonical identity before moving its canonical alias.
+            source_normalized = source.normalized_name
+            source.normalized_name = f"merged:{source.id}:{source_normalized}"
+            source.is_active = False
+            source.merged_into_id = target.id
+            for alias in source_aliases:
+                existing = session.scalar(
                     select(CreatorAlias.id).where(
                         CreatorAlias.creator_profile_id == target.id,
                         CreatorAlias.normalized_alias == alias.normalized_alias,
                     )
                 )
-            ):
-                session.delete(alias)
-            else:
-                transferable_aliases.append((alias.alias, alias.normalized_alias))
-                session.delete(alias)
+                if existing is None:
+                    snapshot["aliases"].append(alias.id)
+                    alias.creator_profile_id = target.id
         for link in list(
             session.scalars(
                 select(CreatorLink).where(CreatorLink.creator_profile_id.in_(source_ids))
@@ -457,6 +479,7 @@ def merge_apply(
             if link.id in preview.duplicate_link_ids or choices.get(link.id) == "keep_target":
                 session.delete(link)
             else:
+                source_id = link.creator_profile_id
                 if choices.get(link.id) == "keep_source":
                     other_id = next(
                         int(c["target_link_id"])
@@ -466,6 +489,7 @@ def merge_apply(
                     session.delete(session.get(CreatorLink, other_id))
                 link.creator_profile_id = target.id
                 link.creator_name = target.display_name
+                snapshots[source_id]["links"].append(link.id)
         favorites = list(
             session.scalars(
                 select(FavoriteListItem).where(FavoriteListItem.creator_profile_id.in_(source_ids))
@@ -480,36 +504,21 @@ def merge_apply(
         )
         for favorite in favorites:
             if favorite.favorite_list_id in target_lists:
-                session.delete(favorite)
+                continue
             else:
+                source_id = favorite.creator_profile_id
+                snapshots[source_id]["favorites"].append(favorite.id)
                 favorite.creator_profile_id = target.id
                 favorite.entity_key = f"creator:{target.normalized_name}"
                 favorite.label = target.display_name
         for source in sources:
-            session.delete(source)
-        session.flush()
-        for alias_name, alias_normalized in transferable_aliases:
             session.add(
-                CreatorAlias(
-                    creator_profile_id=target.id,
-                    alias=alias_name,
-                    normalized_alias=alias_normalized,
+                CreatorMerge(
+                    target_profile_id=target.id,
+                    source_profile_id=source.id,
+                    snapshot=json.dumps(snapshots[source.id]),
                 )
             )
-        for source in sources:
-            if source.normalized_name != target.normalized_name and not session.scalar(
-                select(CreatorAlias.id).where(
-                    CreatorAlias.creator_profile_id == target.id,
-                    CreatorAlias.normalized_alias == source.normalized_name,
-                )
-            ):
-                session.add(
-                    CreatorAlias(
-                        creator_profile_id=target.id,
-                        alias=source.display_name,
-                        normalized_alias=source.normalized_name,
-                    )
-                )
         log_event(
             session,
             current_user,
@@ -528,5 +537,88 @@ def merge_apply(
         session.rollback()
         raise HTTPException(
             status_code=409, detail="Merge conflicts with existing creator metadata"
+        )
+    return _read(session, target)
+
+
+@router.get("/{profile_id}/merge-history", response_model=list[CreatorMergeHistoryRead])
+def merge_history(
+    profile_id: int, session: SessionDependency, access: ManageAccess
+) -> list[CreatorMergeHistoryRead]:
+    profile = _profile_or_404(session, profile_id)
+    _assert_manageable(session, access, [profile])
+    merges = list(
+        session.scalars(
+            select(CreatorMerge)
+            .where(CreatorMerge.target_profile_id == profile.id)
+            .order_by(CreatorMerge.created_at.desc(), CreatorMerge.id.desc())
+        )
+    )
+    result = []
+    for merge in merges:
+        snapshot = json.loads(merge.snapshot)
+        result.append(
+            CreatorMergeHistoryRead(
+                id=merge.id,
+                source_profile_id=merge.source_profile_id,
+                source_display_name=snapshot["source"]["display_name"],
+                target_profile_id=merge.target_profile_id,
+                created_at=merge.created_at.isoformat(),
+                undone_at=merge.undone_at.isoformat() if merge.undone_at else None,
+            )
+        )
+    return result
+
+
+@router.post("/merges/{merge_id}/undo", response_model=CreatorProfileRead)
+def undo_merge(
+    merge_id: int, session: SessionDependency, current_user: CurrentUser, access: ManageAccess
+) -> CreatorProfileRead:
+    merge = session.get(CreatorMerge, merge_id)
+    if merge is None or merge.undone_at is not None:
+        raise HTTPException(status_code=404, detail="Active creator merge not found")
+    target = _profile_or_404(session, merge.target_profile_id)
+    source = _profile_or_404(session, merge.source_profile_id)
+    _assert_manageable(session, access, [target, source])
+    snapshot = json.loads(merge.snapshot)
+    try:
+        for model_id in snapshot["models"]:
+            model = session.get(LibraryModel, model_id)
+            if model and model.creator_profile_id == target.id:
+                model.creator_profile_id = source.id
+        for alias_id in snapshot["aliases"]:
+            alias = session.get(CreatorAlias, alias_id)
+            if alias and alias.creator_profile_id == target.id:
+                alias.creator_profile_id = source.id
+        for link_id in snapshot["links"]:
+            link = session.get(CreatorLink, link_id)
+            if link and link.creator_profile_id == target.id:
+                link.creator_profile_id = source.id
+                link.creator_name = snapshot["source"]["display_name"]
+        for favorite_id in snapshot["favorites"]:
+            favorite = session.get(FavoriteListItem, favorite_id)
+            if favorite and favorite.creator_profile_id == target.id:
+                favorite.creator_profile_id = source.id
+        original = snapshot["source"]
+        source.normalized_name = original["normalized_name"]
+        source.is_active = original["is_active"]
+        source.merged_into_id = original["merged_into_id"]
+        if target.artwork_id == source.artwork_id:
+            target.artwork_id = snapshot["target_artwork_before"]
+        merge.undone_at = datetime.now(UTC)
+        log_event(
+            session,
+            current_user,
+            AuditAction.CREATOR_MERGE_UNDONE,
+            "creator_merge",
+            source.display_name,
+            target_id=merge.id,
+            details={"target_profile_id": target.id, "source_profile_id": source.id},
+        )
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=409, detail="Undo conflicts with creator changes made after the merge"
         )
     return _read(session, target)

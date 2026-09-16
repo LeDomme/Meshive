@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from "vue"
 import { ApiError, apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
 import SearchableFilter from "../../components/SearchableFilter.vue"
+import CreatorProfilesView from "./CreatorProfilesView.vue"
 
 type MetadataEntityType = "creator" | "franchise" | "collection"
 type CreatorLinkKind =
@@ -527,5 +528,6 @@ onMounted(loadMetadata)
         </p>
       </template>
     </section>
-  </main>
+    <CreatorProfilesView />
+</main>
 </template>

@@ -120,6 +120,15 @@ class CreatorMergePreviewRead(BaseModel):
     artwork_conflict: bool
 
 
+class CreatorMergeHistoryRead(BaseModel):
+    id: int
+    source_profile_id: int
+    source_display_name: str
+    target_profile_id: int
+    created_at: str
+    undone_at: str | None = None
+
+
 class CreatorLinkFields(BaseModel):
     kind: CreatorLinkKind
     label: str | None = Field(default=None, max_length=80)

@@ -12,6 +12,7 @@ class AuditAction:
     CREATOR_ALIAS_ADDED = "creator_alias.added"
     CREATOR_ALIAS_REMOVED = "creator_alias.removed"
     CREATOR_PROFILES_MERGED = "creator_profiles.merged"
+    CREATOR_MERGE_UNDONE = "creator_merge.undone"
     ROLE_CREATED = "role.created"
     ROLE_UPDATED = "role.updated"
     ROLE_DELETED = "role.deleted"

@@ -39,7 +39,7 @@ from meshive.models.catalog import (
     ModelImage,
     ScanIssue,
 )
-from meshive.models.creator import CreatorLink, CreatorProfile
+from meshive.models.creator import CreatorAlias, CreatorLink, CreatorProfile
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import ModelTag, Tag
 from meshive.models.user import User
@@ -1246,7 +1246,15 @@ def _model_filters(
                 .where(text("model_search MATCH :fts_query"))
                 .params(fts_query=fts_query)
             )
-            filters.append(LibraryModel.id.in_(matching_ids))
+        alias_profile_ids = select(CreatorAlias.creator_profile_id).where(
+            CreatorAlias.normalized_alias.like(f"%{search.strip().casefold()}%")
+        )
+        filters.append(
+            or_(
+                LibraryModel.id.in_(matching_ids),
+                LibraryModel.creator_profile_id.in_(alias_profile_ids),
+            )
+        )
     if model_name:
         filters.append(LibraryModel.name == model_name)
     if creator:
