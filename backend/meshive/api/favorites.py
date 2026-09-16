@@ -340,6 +340,15 @@ def _new_item(
                     detail="Creator Profile not found",
                 )
             profile = resolve_creator_profile(session, canonical)
+        if profile.artwork_id is None:
+            legacy_artwork = session.scalar(
+                select(MetadataArtwork).where(
+                    MetadataArtwork.entity_type == "creator",
+                    MetadataArtwork.entity_key == profile.normalized_name,
+                )
+            )
+            if legacy_artwork is not None:
+                profile.artwork_id = legacy_artwork.id
         scope = visible_model_scope(access)
         if scope is not None and session.scalar(
             select(LibraryModel.id)
