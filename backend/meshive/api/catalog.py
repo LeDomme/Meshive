@@ -39,7 +39,7 @@ from meshive.models.catalog import (
     ModelImage,
     ScanIssue,
 )
-from meshive.models.creator import CreatorLink
+from meshive.models.creator import CreatorLink, CreatorProfile
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import ModelTag, Tag
 from meshive.models.user import User
@@ -48,6 +48,7 @@ from meshive.schemas.catalog import (
     ArchiveEntryRead,
     ArchiveRead,
     CatalogueFilters,
+    CreatorProfileFilterOption,
     FilterOption,
     ModelArchiveStatisticsRead,
     ModelDetail,
@@ -371,6 +372,24 @@ def catalogue_filters(
         creators=_text_filter_options(
             session, LibraryModel.creator, facet_filters("creator")
         ),
+        creator_profiles=[
+            CreatorProfileFilterOption(
+                id=profile_id,
+                display_name=display_name,
+                count=count,
+            )
+            for profile_id, display_name, count in session.execute(
+                select(
+                    CreatorProfile.id,
+                    CreatorProfile.display_name,
+                    func.count(LibraryModel.id),
+                )
+                .join(LibraryModel, LibraryModel.creator_profile_id == CreatorProfile.id)
+                .where(*facet_filters("creator_profile_id"))
+                .group_by(CreatorProfile.id, CreatorProfile.display_name)
+                .order_by(CreatorProfile.display_name.collate("NOCASE"))
+            )
+        ],
         franchises=_text_filter_options(
             session, LibraryModel.franchise, facet_filters("franchise")
         ),

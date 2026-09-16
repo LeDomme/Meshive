@@ -413,11 +413,19 @@ def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
         )
         assert scoped_profile.status_code == 200
         assert scoped_profile.json()["total"] == 1
+        creator = client.get(f"/api/creators/{shared_profile.id}")
+        assert creator.status_code == 200
+        assert creator.json()["id"] == shared_profile.id
+        assert creator.json()["display_name"] == "Shared Creator"
+        assert creator.json()["model_count"] == 1
         assert client.get("/api/models", params={"page": 2, "page_size": 1}).json()["items"] == []
 
         facets = client.get("/api/models/filters").json()
         assert facets["models"] == [{"value": "Amber Model", "count": 1}]
         assert facets["creators"] == [{"value": "Creator A", "count": 1}]
+        assert facets["creator_profiles"] == [
+            {"id": shared_profile.id, "display_name": "Shared Creator", "count": 1}
+        ]
         assert facets["franchises"] == [{"value": "Franchise A", "count": 1}]
         assert facets["sources"] == [{"id": source_a.id, "name": "Source A", "count": 1}]
         assert client.get(f"/api/models/{models[1].id}").status_code == 404
@@ -432,6 +440,8 @@ def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
         assert all(not facets[key] for key in ("models", "creators", "franchises", "sources"))
         assert client.get(f"/api/models/{models[0].id}").status_code == 404
         assert client.get(f"/api/models/{models[0].id}/navigation").status_code == 404
+        assert client.get(f"/api/creators/{shared_profile.id}").status_code == 404
+        assert client.get("/api/creators/999999").status_code == 404
 
 
 def test_catalogue_tags_are_batched_sorted_and_empty_when_unassigned() -> None:

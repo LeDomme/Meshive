@@ -58,6 +58,7 @@ interface SourceOption {
 interface CatalogueFilters {
   models: FilterOption[]
   creators: FilterOption[]
+  creator_profiles: Array<{ id: number; display_name: string; count: number }>
   franchises: FilterOption[]
   series: FilterOption[]
   collections: FilterOption[]
@@ -132,6 +133,7 @@ const batchSelectionMode = ref(false)
 const filters = ref<CatalogueFilters>({
   models: [],
   creators: [],
+  creator_profiles: [],
   franchises: [],
   series: [],
   collections: [],
@@ -143,6 +145,7 @@ const defaultQuery = {
   search: "",
   model: "",
   creator: "",
+  creator_profile_id: "",
   franchise: "",
   series: "",
   collection: "",
@@ -206,6 +209,42 @@ const sourceOptions = computed(() =>
     count: item.count,
   })),
 )
+const creatorFilterValue = computed(() =>
+  query.creator_profile_id
+    ? `profile:${query.creator_profile_id}`
+    : query.creator ? `legacy:${query.creator}` : "",
+)
+const creatorFilterOptions = computed(() => [
+  ...(filters.value.creator_profiles ?? []).map((item) => ({
+    value: `profile:${item.id}`,
+    label: item.display_name,
+    count: item.count,
+  })),
+  ...((filters.value.creator_profiles ?? []).length === 0
+    ? filters.value.creators.map((item) => ({
+      value: `legacy:${item.value}`,
+      label: item.label ?? item.value,
+      count: item.count,
+    }))
+    : []),
+  ...(query.creator ? [{
+    value: `legacy:${query.creator}`,
+    label: query.creator,
+  }] : []),
+])
+function setCreatorFilter(value: string) {
+  if (value.startsWith("profile:")) {
+    query.creator_profile_id = value.slice("profile:".length)
+    query.creator = ""
+  } else if (value.startsWith("legacy:")) {
+    query.creator = value.slice("legacy:".length)
+    query.creator_profile_id = ""
+  } else {
+    query.creator = ""
+    query.creator_profile_id = ""
+  }
+  facetChanged("creator")
+}
 const tagOptions = computed(() =>
   filters.value.tags.map((tag) => ({ value: String(tag.id), label: tag.name })),
 )
@@ -457,6 +496,13 @@ function reconcileFacets(result: CatalogueFilters) {
     source_id: new Set(result.sources.map((item) => String(item.id))),
     tag_id: new Set(result.tags.map((item) => String(item.id))),
     status: new Set(result.statuses.map((item) => item.value)),
+  }
+  if (
+    lastChangedFacet !== "creator" &&
+    query.creator_profile_id &&
+    !(result.creator_profiles ?? []).some((item) => String(item.id) === query.creator_profile_id)
+  ) {
+    query.creator_profile_id = ""
   }
   for (const key of Object.keys(validValues) as FacetKey[]) {
     if (key !== lastChangedFacet && query[key] && !validValues[key].has(query[key])) {
@@ -852,12 +898,12 @@ onBeforeUnmount(() => {
         @dragover.prevent="previewFilterDrop('creator')"
         @drop="dropFilter('creator', $event)"
         @dragend="endFilterDrag"
-        v-model="query.creator"
+        :model-value="creatorFilterValue"
         label="Creator"
         all-label="All creators"
         search-placeholder="Search creators"
-        :options="filters.creators"
-        @change="facetChanged('creator')"
+        :options="creatorFilterOptions"
+        @update:model-value="setCreatorFilter"
       />
 
       <SearchableFilter

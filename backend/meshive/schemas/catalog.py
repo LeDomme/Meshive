@@ -122,6 +122,12 @@ class FilterOption(BaseModel):
     count: int = Field(ge=0)
 
 
+class CreatorProfileFilterOption(BaseModel):
+    id: int
+    display_name: str
+    count: int = Field(ge=0)
+
+
 class SourceFilterOption(BaseModel):
     id: int
     name: str
@@ -131,6 +137,7 @@ class SourceFilterOption(BaseModel):
 class CatalogueFilters(BaseModel):
     models: list[FilterOption]
     creators: list[FilterOption]
+    creator_profiles: list[CreatorProfileFilterOption]
     franchises: list[FilterOption]
     series: list[FilterOption]
     collections: list[FilterOption]

@@ -6,6 +6,7 @@ import { ApiError, apiRequest, isAbortError } from "../api"
 import AccountMenu from "../components/AccountMenu.vue"
 import FavoriteSaveDialog from "../components/FavoriteSaveDialog.vue"
 import TagChip from "../components/TagChip.vue"
+import CreatorCard from "../components/CreatorCard.vue"
 import {
   favoriteTargetsForModel,
   type FavoriteListSummary,
@@ -67,6 +68,7 @@ interface ModelDetail {
   name: string
   variant: string | null
   creator: string | null
+  creator_profile_id: number | null
   creator_links: Array<{
     id: number
     kind: string
@@ -1028,21 +1030,6 @@ onBeforeUnmount(() => {
                 </RouterLink>
               </dd>
             </template>
-            <template v-if="model.creator_links.length">
-              <dt>Creator links</dt>
-              <dd class="model-fact-external-links">
-                <a
-                  v-for="link in model.creator_links"
-                  :key="link.id"
-                  class="model-fact-link"
-                  :href="link.url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {{ link.label }} <span aria-hidden="true">↗</span>
-                </a>
-              </dd>
-            </template>
             <template v-if="model.franchise">
               <dt>Franchise</dt>
               <dd>
@@ -1127,7 +1114,8 @@ onBeforeUnmount(() => {
               <span v-else class="muted">None</span>
             </dd>
             <dt>Folder</dt><dd class="path-value">{{ model.relative_path }}</dd>
-          </dl>
+        </dl>
+        <CreatorCard v-if="model.creator_profile_id" :creator-profile-id="model.creator_profile_id" />
           <form
             v-if="auth.can('models.tags') && availableTags.length"
             class="tag-assignment model-fact-tag-assignment"
