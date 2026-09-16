@@ -220,11 +220,10 @@ const creatorFilterOptions = computed(() => [
     label: item.display_name,
     count: item.count,
   })),
-  ...filters.value.creators.map((item) => ({
-    value: `legacy:${item.value}`,
-    label: item.label ?? item.value,
-    count: item.count,
-  })),
+  ...(query.creator ? [{
+    value: `legacy:${query.creator}`,
+    label: query.creator,
+  }] : []),
 ])
 function setCreatorFilter(value: string) {
   if (value.startsWith("profile:")) {

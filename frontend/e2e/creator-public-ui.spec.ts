@@ -26,8 +26,10 @@ test("creator card wraps safely and navigates to the stable profile catalogue fi
   await expect(card.locator("img")).toHaveAttribute("src", "/favorite-fallbacks/favorite-creator.webp")
   await expect(card.getByText("An exceptionally long creator name that must always stay inside this compact card")).toBeVisible()
   await expect(card.getByRole("link", { name: "View all" })).toHaveAttribute("href", "/?creator_profile_id=42")
+  await expect(card.getByRole("link", { name: "View all" })).toHaveCSS("text-decoration-line", "none")
   await expect(card.locator(".creator-artwork")).toHaveAttribute("href", "/?creator_profile_id=42")
   await expect(card.getByRole("link", { name: "An exceptionally long creator name that must always stay inside this compact card" })).toHaveAttribute("href", "/?creator_profile_id=42")
+  await expect(card.getByRole("link", { name: "An exceptionally long creator name that must always stay inside this compact card" })).toHaveCSS("text-decoration-line", "none")
   await expect(card.locator(".creator-card-links")).toHaveCount(1)
   await expect(card.locator(".creator-card-links a")).toHaveCount(3)
   await expect(card.locator(".creator-card-links a").first()).toHaveCSS("text-decoration-line", "none")
@@ -45,7 +47,7 @@ test("profile-ID catalogue filters show the profile name and can be cleared", as
   await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
   await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
   await page.route("**/api/models/filters**", route => route.fulfill({ json: {
-    models: [], creators: [{ value: "Legacy Alias", count: 1 }],
+    models: [], creators: [{ value: "Canonical Creator", count: 2 }],
     creator_profiles: [{ id: 42, display_name: "Canonical Creator", count: 2 }],
     franchises: [], series: [], collections: [], sources: [], statuses: [], tags: [],
   } }))
@@ -57,6 +59,9 @@ test("profile-ID catalogue filters show the profile name and can be cleared", as
   await expect(creatorFilter).toContainText("Canonical Creator")
   await expect(page.getByText("Alias model")).toBeVisible()
   await creatorFilter.click()
+  await expect(page.getByRole("option", { name: "Canonical Creator" })).toHaveCount(1)
   await page.getByRole("option", { name: "All creators" }).click()
   await expect(page).not.toHaveURL(/creator_profile_id=/)
+  await page.goto("/?creator=Legacy%20Alias&sort=name_asc")
+  await expect(page.getByRole("button", { name: "Creator" })).toContainText("Legacy Alias")
 })
