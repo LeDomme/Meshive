@@ -1,16 +1,17 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from meshive.auth.access import require_global_permission
 from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import METADATA_MANAGE
+from meshive.creators import normalize_creator_name, resolve_creator_profile
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
-from meshive.models.creator import CreatorLink
+from meshive.models.creator import CreatorAlias, CreatorLink, CreatorProfile
 from meshive.models.user import User
 from meshive.schemas.creator import (
     CreatorLinkCreate,
@@ -48,6 +49,7 @@ def _link_label(kind: CreatorLinkKind, custom_label: str | None) -> str:
 def _link_read(link: CreatorLink) -> CreatorMetadataLinkRead:
     return CreatorMetadataLinkRead(
         id=link.id,
+        creator_profile_id=link.creator_profile_id,
         kind=link.kind,
         label=link.label,
         url=link.url,
@@ -119,14 +121,28 @@ def create_creator_link(
     current_user: CurrentUser,
     session: SessionDependency,
 ) -> CreatorMetadataLinkRead:
-    canonical_name = _canonical_creator_name(session, payload.creator_name)
-    if canonical_name is None:
+    profile = session.get(CreatorProfile, payload.creator_profile_id) if payload.creator_profile_id else session.scalar(
+        select(CreatorProfile)
+        .outerjoin(CreatorAlias, CreatorAlias.creator_profile_id == CreatorProfile.id)
+        .where(
+            or_(
+                CreatorProfile.normalized_name == normalize_creator_name(payload.creator_name or ""),
+                CreatorAlias.normalized_alias == normalize_creator_name(payload.creator_name or ""),
+            )
+        )
+    )
+    if profile is None and payload.creator_name is not None:
+        canonical_name = _canonical_creator_name(session, payload.creator_name)
+        if canonical_name is not None:
+            profile = resolve_creator_profile(session, canonical_name)
+    if profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Creator not found",
+            detail="Creator Profile not found",
         )
     creator_link = CreatorLink(
-        creator_name=canonical_name,
+        creator_profile_id=profile.id,
+        creator_name=profile.display_name,
         kind=payload.kind,
         label=_link_label(payload.kind, payload.label),
         url=str(payload.url),

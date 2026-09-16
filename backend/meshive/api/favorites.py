@@ -2,7 +2,7 @@ import unicodedata
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,8 +15,10 @@ from meshive.auth.access import (
 from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import FAVORITES_MANAGE
 from meshive.auth.sessions import utc_now
+from meshive.creators import resolve_creator_profile
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel, ModelImage
+from meshive.models.creator import CreatorProfile
 from meshive.models.favorite import FavoriteList, FavoriteListItem
 from meshive.models.metadata import MetadataArtwork
 from meshive.models.tag import ModelTag, Tag
@@ -285,6 +287,11 @@ def _visible_items(session: Session, access, favorite_list_id: int) -> list[Favo
             item.entity_type in _TEXT_COLUMNS
             and item.entity_key in visible_text_values[item.entity_type]
         )
+        or (
+            item.entity_type == "creator"
+            and item.creator_profile_id is not None
+            and _normalize(item.label) in visible_text_values["creator"]
+        )
     ]
 
 
@@ -312,6 +319,56 @@ def _new_item(
             label=tag.name,
             tag_id=tag.id,
         )
+    if payload.entity_type == "creator":
+        profile = (
+            session.get(CreatorProfile, payload.creator_profile_id)
+            if payload.creator_profile_id is not None
+            else session.scalar(
+                select(CreatorProfile).where(
+                    CreatorProfile.normalized_name == _normalize(payload.value or "")
+                )
+            )
+        )
+        if profile is None:
+            requested = payload.value or ""
+            canonical = _visible_text_values(session, access, {"creator"}).get(
+                "creator", {}
+            ).get(_normalize(requested))
+            if canonical is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Creator Profile not found",
+                )
+            profile = resolve_creator_profile(session, canonical)
+        if profile.artwork_id is None:
+            legacy_artwork = session.scalar(
+                select(MetadataArtwork).where(
+                    MetadataArtwork.entity_type == "creator",
+                    MetadataArtwork.entity_key == profile.normalized_name,
+                )
+            )
+            if legacy_artwork is not None:
+                profile.artwork_id = legacy_artwork.id
+        scope = visible_model_scope(access)
+        if scope is not None and session.scalar(
+            select(LibraryModel.id)
+            .where(
+                or_(
+                    LibraryModel.creator_profile_id == profile.id,
+                    LibraryModel.creator.collate("NOCASE") == profile.display_name,
+                ),
+                scope,
+            )
+            .limit(1)
+        ) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Creator Profile not found")
+        return FavoriteListItem(
+            favorite_list_id=favorite_list_id,
+            entity_type="creator",
+            entity_key=f"creator-profile:{profile.id}",
+            label=profile.display_name,
+            creator_profile_id=profile.id,
+        )
 
     requested = payload.value or ""
     canonical = _visible_text_values(session, access, {payload.entity_type}).get(
@@ -335,6 +392,42 @@ def _item_reads(
 ) -> list[FavoriteListItemRead]:
     model_ids = {item.model_id for item in items if item.model_id is not None}
     tag_ids = {item.tag_id for item in items if item.tag_id is not None}
+    creator_profile_ids = {
+        item.creator_profile_id for item in items if item.creator_profile_id is not None
+    }
+    creator_profiles = {
+        profile.id: profile
+        for profile in session.scalars(
+            select(CreatorProfile).where(CreatorProfile.id.in_(creator_profile_ids))
+        )
+    }
+    scope = visible_model_scope(access)
+    if scope is not None:
+        visible_creator_names = _visible_text_values(session, access, {"creator"})[
+            "creator"
+        ]
+        creator_profiles = {
+            profile_id: profile
+            for profile_id, profile in creator_profiles.items()
+            if profile_id in {
+                item.creator_profile_id
+                for item in items
+                if item.creator_profile_id is not None
+                and _normalize(item.label) in visible_creator_names
+            }
+        }
+    creator_artwork = {
+        artwork.id: artwork
+        for artwork in session.scalars(
+            select(MetadataArtwork).where(
+                MetadataArtwork.id.in_(
+                    profile.artwork_id
+                    for profile in creator_profiles.values()
+                    if profile.artwork_id is not None
+                )
+            )
+        )
+    }
     models = {
         model.id: model
         for model in session.scalars(
@@ -391,6 +484,11 @@ def _item_reads(
             label = tag.name
             url = f"/?{urlencode({'tag_id': tag.id})}"
             is_available = True
+        elif item.entity_type == "creator" and item.creator_profile_id in creator_profiles:
+            profile = creator_profiles[item.creator_profile_id]
+            label = profile.display_name
+            url = f"/?{urlencode({'creator': profile.display_name})}"
+            is_available = True
         elif item.entity_type in _TEXT_COLUMNS:
             current_value = text_values.get(item.entity_type, {}).get(item.entity_key)
             if current_value is not None:
@@ -405,14 +503,33 @@ def _item_reads(
                 url=url,
                 is_available=is_available,
                 created_at=item.created_at,
-                model_id=model.id if model else None,
+            model_id=model.id if model else None,
+            creator_profile_id=item.creator_profile_id,
                 thumbnail_url=(
                 f"/api/models/{model.id}/thumbnail?v={thumbnail_image_ids[model.id]}"
                 if model and model.id in thumbnail_image_ids
                     else None
                 ),
-                artwork_url=(
-                    _artwork_url(artwork.get((item.entity_type, item.entity_key)))
+            artwork_url=(
+                _artwork_url(
+                    (creator_artwork[creator_profiles[item.creator_profile_id].artwork_id].id,
+                     creator_artwork[creator_profiles[item.creator_profile_id].artwork_id].etag)
+                )
+                if item.entity_type == "creator"
+                and item.creator_profile_id in creator_profiles
+                and creator_profiles[item.creator_profile_id].artwork_id in creator_artwork
+                else
+                _artwork_url(
+                    artwork.get(
+                        (
+                            "creator",
+                            creator_profiles[item.creator_profile_id].normalized_name,
+                        )
+                    )
+                    if item.entity_type == "creator"
+                    and item.creator_profile_id in creator_profiles
+                    else artwork.get((item.entity_type, item.entity_key))
+                )
                     if item.entity_type in _TEXT_COLUMNS
                     and artwork.get((item.entity_type, item.entity_key)) is not None
                     else None
