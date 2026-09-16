@@ -6,33 +6,7 @@ const user = {
   source_access: { all_sources: true, source_ids: [] },
 }
 
-test("creator detail uses its stable profile URL and paginates its scoped catalogue", async ({ page }) => {
-  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
-  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
-  await page.route("**/api/creators/42", route => route.fulfill({ json: {
-    id: 42, display_name: "Renamed Creator", description: null, artwork: null,
-    links: [{ id: 1, label: "Website", url: "https://example.test" }],
-    primary_link: { id: 1, label: "Website", url: "https://example.test" }, model_count: 25,
-  } }))
-  await page.route("**/api/models?creator_profile_id=42**", route => route.fulfill({ json: {
-    items: [{ id: 7, name: "Visible model", variant: null, thumbnail_url: null }], total: 25, page: 1, page_size: 24,
-  } }))
-  await page.goto("/creators/42")
-  await expect(page.getByRole("heading", { name: "Renamed Creator" })).toBeVisible()
-  await expect(page.getByText("25 visible models")).toBeVisible()
-  await expect(page.getByRole("link", { name: "Visible model" })).toHaveAttribute("href", "/models/7")
-  await expect(page.getByRole("link", { name: "Website ↗" })).toHaveAttribute("rel", "noopener noreferrer")
-})
-
-test("creator detail treats an inaccessible profile as not found", async ({ page }) => {
-  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
-  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
-  await page.route("**/api/creators/404", route => route.fulfill({ status: 404, json: { detail: "Creator not found" } }))
-  await page.goto("/creators/404")
-  await expect(page.getByRole("heading", { name: "Creator not found" })).toBeVisible()
-})
-
-test("creator card wraps long names and uses the shared fallback artwork on narrow screens", async ({ page }) => {
+test("creator card wraps safely and navigates to the stable profile catalogue filter", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 844 })
   await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
   await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
@@ -51,9 +25,12 @@ test("creator card wraps long names and uses the shared fallback artwork on narr
   const card = page.getByLabel("Creator")
   await expect(card.locator("img")).toHaveAttribute("src", "/favorite-fallbacks/favorite-creator.webp")
   await expect(card.getByText("An exceptionally long creator name that must always stay inside this compact card")).toBeVisible()
-  await expect(card.getByRole("link", { name: "View all models" })).toHaveAttribute("href", "/creators/42")
+  await expect(card.getByRole("link", { name: "View all" })).toHaveAttribute("href", "/?creator_profile_id=42")
+  await expect(card.locator(".creator-artwork")).toHaveAttribute("href", "/?creator_profile_id=42")
+  await expect(card.getByRole("link", { name: "An exceptionally long creator name that must always stay inside this compact card" })).toHaveAttribute("href", "/?creator_profile_id=42")
   await expect(card.locator(".creator-card-links")).toHaveCount(1)
   await expect(card.locator(".creator-card-links a")).toHaveCount(3)
+  await expect(card.locator(".creator-card-links a").first()).toHaveCSS("text-decoration-line", "none")
   const topBox = await card.locator(".creator-card-top").boundingBox()
   const linksBox = await card.locator(".creator-card-links").boundingBox()
   expect(topBox).not.toBeNull()

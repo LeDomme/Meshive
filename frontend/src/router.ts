@@ -7,7 +7,6 @@ import ForgotPasswordView from "./views/ForgotPasswordView.vue"
 import FavoriteListsView from "./views/FavoriteListsView.vue"
 import LoginView from "./views/LoginView.vue"
 import ModelDetailView from "./views/ModelDetailView.vue"
-import CreatorDetailView from "./views/CreatorDetailView.vue"
 import NotFoundView from "./views/NotFoundView.vue"
 import PasswordView from "./views/PasswordView.vue"
 import ResetPasswordView from "./views/ResetPasswordView.vue"
@@ -61,12 +60,6 @@ export const router = createRouter({
       path: "/models/:id",
       name: "model-detail",
       component: ModelDetailView,
-      meta: { requiresAuth: true, requiredPermission: "catalogue.view" },
-    },
-    {
-      path: "/creators/:id",
-      name: "creator-detail",
-      component: CreatorDetailView,
       meta: { requiresAuth: true, requiredPermission: "catalogue.view" },
     },
     {

@@ -143,6 +143,7 @@ const defaultQuery = {
   search: "",
   model: "",
   creator: "",
+  creator_profile_id: "",
   franchise: "",
   series: "",
   collection: "",
