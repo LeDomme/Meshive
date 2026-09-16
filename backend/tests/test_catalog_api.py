@@ -36,6 +36,7 @@ from meshive.models.catalog import (
     ScanIssue,
     ScanRun,
 )
+from meshive.models.creator import CreatorLink, CreatorProfile
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import ModelTag, Tag
 from meshive.models.user import User
@@ -105,6 +106,27 @@ def test_lists_searches_filters_and_downloads_models(tmp_path) -> None:
             )
             session.add(model)
             session.flush()
+            profile = CreatorProfile(display_name="Aoae", normalized_name="aoae")
+            session.add(profile)
+            session.flush()
+            model.creator_profile_id = profile.id
+            session.add_all(
+                [
+                    CreatorLink(
+                        creator_profile_id=profile.id,
+                        creator_name="Aoae",
+                        kind="website",
+                        label="Profile",
+                        url="https://example.test/aoae",
+                    ),
+                    CreatorLink(
+                        creator_name="Aoae",
+                        kind="other",
+                        label="Legacy",
+                        url="https://example.test/legacy",
+                    ),
+                ]
+            )
             archive = Archive(
                 model_id=model.id,
                 filename="model.7z",
@@ -169,6 +191,7 @@ def test_lists_searches_filters_and_downloads_models(tmp_path) -> None:
         assert response.status_code == 200
         assert response.json()["total"] == 1
         assert response.json()["items"][0]["creator"] == "Aoae"
+        assert response.json()["items"][0]["creator_profile_id"] == profile.id
         assert response.json()["items"][0]["series"] == "Moikaloop"
         assert response.json()["items"][0]["archive_count"] == 2
         assert response.json()["items"][0]["archive_size_bytes"] == 1536
@@ -176,6 +199,11 @@ def test_lists_searches_filters_and_downloads_models(tmp_path) -> None:
         detail = client.get(f"/api/models/{model.id}")
         assert detail.status_code == 200
         assert detail.json()["relative_path"] == model.relative_path
+        assert detail.json()["creator_profile_id"] == profile.id
+        assert [link["label"] for link in detail.json()["creator_links"]] == [
+            "Legacy",
+            "Profile",
+        ]
         assert len(detail.json()["archives"]) == 2
         assert detail.json()["archive_bundle_download_url"] == (
             f"/api/models/{model.id}/archives/download-all"
@@ -215,6 +243,12 @@ def test_lists_searches_filters_and_downloads_models(tmp_path) -> None:
         partial_model = client.get("/api/models", params={"model": "Neon"})
         assert partial_model.status_code == 200
         assert partial_model.json()["total"] == 0
+
+        profile_filtered = client.get(
+            "/api/models", params={"creator_profile_id": profile.id}
+        )
+        assert profile_filtered.status_code == 200
+        assert profile_filtered.json()["total"] == 1
 
         filters = client.get("/api/models/filters")
         assert filters.status_code == 200
@@ -266,6 +300,13 @@ def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
             ]
             session.add_all(models)
             session.flush()
+            shared_profile = CreatorProfile(
+                display_name="Shared Creator", normalized_name="shared creator"
+            )
+            session.add(shared_profile)
+            session.flush()
+            for model in models:
+                model.creator_profile_id = shared_profile.id
             visible_tag = Tag(name="alpha")
             hidden_tag = Tag(name="hidden-tag")
             session.add_all([visible_tag, hidden_tag])
@@ -367,6 +408,11 @@ def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
             {"id": visible_tag.id, "name": "alpha", "color": None, "description": None}
         ]
         assert client.get("/api/models", params={"search": "blue"}).json()["total"] == 0
+        scoped_profile = client.get(
+            "/api/models", params={"creator_profile_id": shared_profile.id}
+        )
+        assert scoped_profile.status_code == 200
+        assert scoped_profile.json()["total"] == 1
         assert client.get("/api/models", params={"page": 2, "page_size": 1}).json()["items"] == []
 
         facets = client.get("/api/models/filters").json()

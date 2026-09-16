@@ -11,6 +11,7 @@ class ModelSummary(BaseModel):
     name: str
     variant: str | None
     creator: str | None
+    creator_profile_id: int | None = None
     franchise: str | None
     series: str | None
     collection: str | None
@@ -98,6 +99,7 @@ class ModelDetail(BaseModel):
     name: str
     variant: str | None
     creator: str | None
+    creator_profile_id: int | None = None
     creator_url: str | None
     creator_links: list[CreatorMetadataLinkRead]
     franchise: str | None
