@@ -540,6 +540,6 @@ onMounted(loadMetadata)
         </p>
       </template>
     </section>
-    <CreatorProfilesView :profile-id="selectedCreatorProfileId" />
+    <CreatorProfilesView :profile-id="selectedCreatorProfileId" @changed="loadMetadata" />
 </main>
 </template>
