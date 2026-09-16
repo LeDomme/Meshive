@@ -41,7 +41,7 @@ test("creator card wraps long names and uses the shared fallback artwork on narr
   await page.route("**/api/creators/42", route => route.fulfill({ json: {
     id: 42, display_name: "An exceptionally long creator name that must always stay inside this compact card",
     description: null, artwork: null, model_count: 2,
-    links: [{ id: 1, label: "A very long external creator link label that also wraps safely", url: "https://example.test" }],
+    links: [{ id: 1, label: "A very long external creator link label that also wraps safely", url: "https://example.test" }, { id: 2, label: "Second creator link", url: "https://example.org" }, { id: 3, label: "Third creator link", url: "https://example.net" }],
     primary_link: { id: 1, label: "A very long external creator link label that also wraps safely", url: "https://example.test" },
   } }))
   await page.route("**/api/models/7", route => route.fulfill({ json: {
@@ -52,6 +52,13 @@ test("creator card wraps long names and uses the shared fallback artwork on narr
   await expect(card.locator("img")).toHaveAttribute("src", "/favorite-fallbacks/favorite-creator.webp")
   await expect(card.getByText("An exceptionally long creator name that must always stay inside this compact card")).toBeVisible()
   await expect(card.getByRole("link", { name: "View all models" })).toHaveAttribute("href", "/creators/42")
+  await expect(card.locator(".creator-card-links")).toHaveCount(1)
+  await expect(card.locator(".creator-card-links a")).toHaveCount(3)
+  const topBox = await card.locator(".creator-card-top").boundingBox()
+  const linksBox = await card.locator(".creator-card-links").boundingBox()
+  expect(topBox).not.toBeNull()
+  expect(linksBox).not.toBeNull()
+  expect(linksBox!.y).toBeGreaterThanOrEqual(topBox!.y + topBox!.height)
   await expect(page.getByText("Creator links", { exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
