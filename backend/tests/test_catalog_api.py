@@ -423,6 +423,9 @@ def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
         facets = client.get("/api/models/filters").json()
         assert facets["models"] == [{"value": "Amber Model", "count": 1}]
         assert facets["creators"] == [{"value": "Creator A", "count": 1}]
+        assert facets["creator_profiles"] == [
+            {"id": shared_profile.id, "display_name": "Shared Creator", "count": 1}
+        ]
         assert facets["franchises"] == [{"value": "Franchise A", "count": 1}]
         assert facets["sources"] == [{"id": source_a.id, "name": "Source A", "count": 1}]
         assert client.get(f"/api/models/{models[1].id}").status_code == 404

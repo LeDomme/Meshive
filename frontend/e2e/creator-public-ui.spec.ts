@@ -39,3 +39,24 @@ test("creator card wraps safely and navigates to the stable profile catalogue fi
   await expect(page.getByText("Creator links", { exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
+
+test("profile-ID catalogue filters show the profile name and can be cleared", async ({ page }) => {
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
+  await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
+  await page.route("**/api/models/filters**", route => route.fulfill({ json: {
+    models: [], creators: [{ value: "Legacy Alias", count: 1 }],
+    creator_profiles: [{ id: 42, display_name: "Canonical Creator", count: 2 }],
+    franchises: [], series: [], collections: [], sources: [], statuses: [], tags: [],
+  } }))
+  await page.route("**/api/models?**", route => route.fulfill({ json: {
+    items: [{ id: 7, name: "Alias model", variant: null, creator: "Legacy Alias", creator_profile_id: 42, franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", archive_format: null, archive_size_bytes: null, archive_count: 0, thumbnail_url: null, tags: [] }], total: 1, page: 1, page_size: 48,
+  } }))
+  await page.goto("/?creator_profile_id=42&sort=name_asc")
+  const creatorFilter = page.getByRole("button", { name: "Creator" })
+  await expect(creatorFilter).toContainText("Canonical Creator")
+  await expect(page.getByText("Alias model")).toBeVisible()
+  await creatorFilter.click()
+  await page.getByRole("option", { name: "All creators" }).click()
+  await expect(page).not.toHaveURL(/creator_profile_id=/)
+})
