@@ -512,7 +512,17 @@ def _item_reads(
                 and item.creator_profile_id in creator_profiles
                 and creator_profiles[item.creator_profile_id].artwork_id in creator_artwork
                 else
-                _artwork_url(artwork.get((item.entity_type, item.entity_key)))
+                _artwork_url(
+                    artwork.get(
+                        (
+                            "creator",
+                            creator_profiles[item.creator_profile_id].normalized_name,
+                        )
+                    )
+                    if item.entity_type == "creator"
+                    and item.creator_profile_id in creator_profiles
+                    else artwork.get((item.entity_type, item.entity_key))
+                )
                     if item.entity_type in _TEXT_COLUMNS
                     and artwork.get((item.entity_type, item.entity_key)) is not None
                     else None
