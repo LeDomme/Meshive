@@ -15,8 +15,8 @@ from meshive.auth.access import (
 from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import FAVORITES_MANAGE
 from meshive.auth.sessions import utc_now
-from meshive.database import get_session
 from meshive.creators import resolve_creator_profile
+from meshive.database import get_session
 from meshive.models.catalog import LibraryModel, ModelImage
 from meshive.models.creator import CreatorProfile
 from meshive.models.favorite import FavoriteList, FavoriteListItem
@@ -409,6 +409,18 @@ def _item_reads(
             for profile_id, profile in creator_profiles.items()
             if profile_id in visible_profile_ids
         }
+    creator_artwork = {
+        artwork.id: artwork
+        for artwork in session.scalars(
+            select(MetadataArtwork).where(
+                MetadataArtwork.id.in_(
+                    profile.artwork_id
+                    for profile in creator_profiles.values()
+                    if profile.artwork_id is not None
+                )
+            )
+        )
+    }
     models = {
         model.id: model
         for model in session.scalars(
@@ -468,7 +480,7 @@ def _item_reads(
         elif item.entity_type == "creator" and item.creator_profile_id in creator_profiles:
             profile = creator_profiles[item.creator_profile_id]
             label = profile.display_name
-            url = f"/?creator_profile_id={profile.id}"
+            url = f"/?{urlencode({'creator': profile.display_name})}"
             is_available = True
         elif item.entity_type in _TEXT_COLUMNS:
             current_value = text_values.get(item.entity_type, {}).get(item.entity_key)
@@ -491,8 +503,16 @@ def _item_reads(
                 if model and model.id in thumbnail_image_ids
                     else None
                 ),
-                artwork_url=(
-                    _artwork_url(artwork.get((item.entity_type, item.entity_key)))
+            artwork_url=(
+                _artwork_url(
+                    (creator_artwork[creator_profiles[item.creator_profile_id].artwork_id].id,
+                     creator_artwork[creator_profiles[item.creator_profile_id].artwork_id].etag)
+                )
+                if item.entity_type == "creator"
+                and item.creator_profile_id in creator_profiles
+                and creator_profiles[item.creator_profile_id].artwork_id in creator_artwork
+                else
+                _artwork_url(artwork.get((item.entity_type, item.entity_key)))
                     if item.entity_type in _TEXT_COLUMNS
                     and artwork.get((item.entity_type, item.entity_key)) is not None
                     else None
