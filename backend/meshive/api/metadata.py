@@ -25,8 +25,10 @@ from meshive.auth.access import (
 )
 from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import CATALOGUE_VIEW, METADATA_MANAGE
+from meshive.creators import resolve_creator_profile
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel
+from meshive.models.creator import CreatorProfile
 from meshive.models.metadata import MetadataArtwork
 from meshive.models.user import User
 from meshive.schemas.metadata import (
@@ -166,6 +168,11 @@ async def upload_metadata_artwork(
         artwork.height = height
         artwork.etag = sha256(content).hexdigest()
     session.flush()
+    if entity_type == "creator":
+        profile = resolve_creator_profile(session, canonical_value)
+        if profile is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Creator Profile not found")
+        profile.artwork_id = artwork.id
     log_event(
         session,
         current_user,
@@ -197,6 +204,12 @@ def delete_metadata_artwork(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Custom artwork not found",
         )
+    if entity_type == "creator":
+        profile = session.scalar(
+            select(CreatorProfile).where(CreatorProfile.artwork_id == artwork.id)
+        )
+        if profile is not None:
+            profile.artwork_id = None
     log_event(
         session,
         current_user,

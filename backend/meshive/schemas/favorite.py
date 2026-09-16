@@ -32,6 +32,7 @@ class FavoriteListItemCreate(BaseModel):
     entity_type: FavoriteEntityType
     model_id: int | None = Field(default=None, ge=1)
     tag_id: int | None = Field(default=None, ge=1)
+    creator_profile_id: int | None = Field(default=None, ge=1)
     value: str | None = Field(default=None, min_length=1, max_length=512)
 
     @field_validator("value")
@@ -46,17 +47,24 @@ class FavoriteListItemCreate(BaseModel):
         if self.entity_type == "model":
             if self.model_id is None:
                 raise ValueError("model_id is required for model favorites")
-            if self.tag_id is not None or self.value is not None:
+            if self.tag_id is not None or self.creator_profile_id is not None or self.value is not None:
                 raise ValueError("Only model_id is accepted for model favorites")
         elif self.entity_type == "tag":
             if self.tag_id is None:
                 raise ValueError("tag_id is required for tag favorites")
-            if self.model_id is not None or self.value is not None:
+            if self.model_id is not None or self.creator_profile_id is not None or self.value is not None:
                 raise ValueError("Only tag_id is accepted for tag favorites")
+        elif self.entity_type == "creator":
+            if self.creator_profile_id is not None and self.value is not None:
+                raise ValueError("Only creator_profile_id or value is accepted for creator favorites")
+            if self.model_id is not None or self.tag_id is not None:
+                raise ValueError("Only creator_profile_id or value is accepted for creator favorites")
+            if self.creator_profile_id is None and not self.value:
+                raise ValueError("creator_profile_id or value is required for creator favorites")
         else:
             if not self.value:
                 raise ValueError("value is required for catalogue metadata favorites")
-            if self.model_id is not None or self.tag_id is not None:
+            if self.model_id is not None or self.tag_id is not None or self.creator_profile_id is not None:
                 raise ValueError("Only value is accepted for catalogue metadata favorites")
         return self
 
@@ -69,6 +77,7 @@ class FavoriteListItemRead(BaseModel):
     is_available: bool
     created_at: datetime
     model_id: int | None = None
+    creator_profile_id: int | None = None
     thumbnail_url: str | None = None
     artwork_url: str | None = None
     variant: str | None = None

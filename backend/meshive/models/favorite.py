@@ -48,6 +48,9 @@ class FavoriteListItem(Base):
     tag_id: Mapped[int | None] = mapped_column(
         ForeignKey("tags.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    creator_profile_id: Mapped[int | None] = mapped_column(
+        ForeignKey("creator_profiles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

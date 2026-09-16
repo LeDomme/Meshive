@@ -17,6 +17,7 @@ from meshive.auth.permissions import FAVORITES_MANAGE
 from meshive.auth.sessions import utc_now
 from meshive.database import get_session
 from meshive.models.catalog import LibraryModel, ModelImage
+from meshive.models.creator import CreatorProfile
 from meshive.models.favorite import FavoriteList, FavoriteListItem
 from meshive.models.metadata import MetadataArtwork
 from meshive.models.tag import ModelTag, Tag
@@ -312,6 +313,32 @@ def _new_item(
             label=tag.name,
             tag_id=tag.id,
         )
+    if payload.entity_type == "creator":
+        profile = (
+            session.get(CreatorProfile, payload.creator_profile_id)
+            if payload.creator_profile_id is not None
+            else session.scalar(
+                select(CreatorProfile).where(
+                    CreatorProfile.normalized_name == _normalize(payload.value or "")
+                )
+            )
+        )
+        if profile is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Creator Profile not found")
+        scope = visible_model_scope(access)
+        if scope is not None and session.scalar(
+            select(LibraryModel.id)
+            .where(LibraryModel.creator_profile_id == profile.id, scope)
+            .limit(1)
+        ) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Creator Profile not found")
+        return FavoriteListItem(
+            favorite_list_id=favorite_list_id,
+            entity_type="creator",
+            entity_key=f"creator-profile:{profile.id}",
+            label=profile.display_name,
+            creator_profile_id=profile.id,
+        )
 
     requested = payload.value or ""
     canonical = _visible_text_values(session, access, {payload.entity_type}).get(
@@ -335,6 +362,32 @@ def _item_reads(
 ) -> list[FavoriteListItemRead]:
     model_ids = {item.model_id for item in items if item.model_id is not None}
     tag_ids = {item.tag_id for item in items if item.tag_id is not None}
+    creator_profile_ids = {
+        item.creator_profile_id for item in items if item.creator_profile_id is not None
+    }
+    creator_profiles = {
+        profile.id: profile
+        for profile in session.scalars(
+            select(CreatorProfile).where(CreatorProfile.id.in_(creator_profile_ids))
+        )
+    }
+    scope = visible_model_scope(access)
+    if scope is not None:
+        visible_profile_ids = set(
+            session.scalars(
+                select(LibraryModel.creator_profile_id)
+                .where(
+                    LibraryModel.creator_profile_id.in_(creator_profile_ids),
+                    scope,
+                )
+                .distinct()
+            )
+        )
+        creator_profiles = {
+            profile_id: profile
+            for profile_id, profile in creator_profiles.items()
+            if profile_id in visible_profile_ids
+        }
     models = {
         model.id: model
         for model in session.scalars(
@@ -391,6 +444,11 @@ def _item_reads(
             label = tag.name
             url = f"/?{urlencode({'tag_id': tag.id})}"
             is_available = True
+        elif item.entity_type == "creator" and item.creator_profile_id in creator_profiles:
+            profile = creator_profiles[item.creator_profile_id]
+            label = profile.display_name
+            url = f"/?creator_profile_id={profile.id}"
+            is_available = True
         elif item.entity_type in _TEXT_COLUMNS:
             current_value = text_values.get(item.entity_type, {}).get(item.entity_key)
             if current_value is not None:
@@ -405,7 +463,8 @@ def _item_reads(
                 url=url,
                 is_available=is_available,
                 created_at=item.created_at,
-                model_id=model.id if model else None,
+            model_id=model.id if model else None,
+            creator_profile_id=item.creator_profile_id,
                 thumbnail_url=(
                 f"/api/models/{model.id}/thumbnail?v={thumbnail_image_ids[model.id]}"
                 if model and model.id in thumbnail_image_ids
