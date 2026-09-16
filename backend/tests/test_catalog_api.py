@@ -121,7 +121,7 @@ def test_lists_searches_filters_and_downloads_models(tmp_path) -> None:
                     ),
                     CreatorLink(
                         creator_name="Aoae",
-                        kind="social",
+                        kind="other",
                         label="Legacy",
                         url="https://example.test/legacy",
                     ),
