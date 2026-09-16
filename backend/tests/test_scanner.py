@@ -19,6 +19,7 @@ from meshive.models.catalog import (
     ScanIssue,
     ScanRun,
 )
+from meshive.models.creator import CreatorProfile
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import (
     ModelTag,
@@ -675,6 +676,7 @@ def test_smart_scan_skips_unchanged_healthy_models_without_archive_work(
         scanner._execute_scan(session, source.id, baseline.id)
         model = session.scalar(select(LibraryModel))
         assert model is not None
+        assert model.creator_profile_id is None
         assert model.scan_fingerprint is not None
         assert model.scan_policy_key is not None
 
@@ -692,6 +694,50 @@ def test_smart_scan_skips_unchanged_healthy_models_without_archive_work(
         assert smart.models_found == 1
         assert smart.models_skipped == 1
         assert smart.status == "completed"
+    engine.dispose()
+
+
+def test_scan_resolves_creator_profile_and_smart_reconciles_missing_fk(tmp_path, monkeypatch) -> None:
+    directory = tmp_path / "Creator" / "Model"
+    directory.mkdir(parents=True)
+    (directory / "Model.7z").write_bytes(b"archive")
+    engine = create_engine(f"sqlite:///{tmp_path / 'creator-resolution.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path))
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Creators",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{creator}/{model_folder}",
+            model_pattern="{model}",
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        monkeypatch.setattr(scanner, "_sync_archives", lambda *_args: True)
+        monkeypatch.setattr(scanner, "_sync_archive_images", lambda *_args: object())
+
+        full = make_scan(session, source.id)
+        scanner._execute_scan(session, source.id, full.id)
+        model = session.scalar(select(LibraryModel))
+        profile = session.scalar(select(CreatorProfile))
+        assert model is not None
+        assert profile is not None
+        assert model.creator == "Creator"
+        assert model.creator_profile_id == profile.id
+
+        model.creator_profile_id = None
+        session.commit()
+        smart = make_scan(session, source.id)
+        smart.mode = "smart"
+        scanner._execute_scan(session, source.id, smart.id)
+
+        assert model.creator_profile_id == profile.id
+        assert smart.models_skipped == 0
     engine.dispose()
 
 

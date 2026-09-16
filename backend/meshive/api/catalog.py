@@ -97,6 +97,7 @@ def list_models(
     search: str | None = Query(default=None, max_length=200),
     model_name: str | None = Query(default=None, alias="model", max_length=255),
     creator: str | None = Query(default=None, max_length=255),
+    creator_profile_id: int | None = Query(default=None, ge=1),
     franchise: str | None = Query(default=None, max_length=255),
     series: str | None = Query(default=None, max_length=255),
     collection: str | None = Query(default=None, max_length=255),
@@ -126,6 +127,7 @@ def list_models(
         search=search,
         model_name=model_name,
         creator=creator,
+        creator_profile_id=creator_profile_id,
         franchise=franchise,
         series=series,
         collection=collection,
@@ -188,6 +190,7 @@ def list_models(
             name=model.name,
             variant=model.variant,
             creator=model.creator,
+            creator_profile_id=model.creator_profile_id,
             franchise=model.franchise,
             series=model.series,
             collection=model.collection,
@@ -223,6 +226,7 @@ def model_navigation(
     search: str | None = Query(default=None, max_length=200),
     model_name: str | None = Query(default=None, alias="model", max_length=255),
     creator: str | None = Query(default=None, max_length=255),
+    creator_profile_id: int | None = Query(default=None, ge=1),
     franchise: str | None = Query(default=None, max_length=255),
     series: str | None = Query(default=None, max_length=255),
     collection: str | None = Query(default=None, max_length=255),
@@ -252,6 +256,7 @@ def model_navigation(
         search=search,
         model_name=model_name,
         creator=creator,
+        creator_profile_id=creator_profile_id,
         franchise=franchise,
         series=series,
         collection=collection,
@@ -306,6 +311,7 @@ def catalogue_filters(
     search: str | None = Query(default=None, max_length=200),
     model_name: str | None = Query(default=None, alias="model", max_length=255),
     creator: str | None = Query(default=None, max_length=255),
+    creator_profile_id: int | None = Query(default=None, ge=1),
     franchise: str | None = Query(default=None, max_length=255),
     series: str | None = Query(default=None, max_length=255),
     collection: str | None = Query(default=None, max_length=255),
@@ -323,6 +329,7 @@ def catalogue_filters(
         "search": search,
         "model_name": model_name,
         "creator": creator,
+        "creator_profile_id": creator_profile_id,
         "franchise": franchise,
         "series": series,
         "collection": collection,
@@ -543,15 +550,23 @@ def model_detail(
         )
     model, source_name = row
     require_access_permission(access, CATALOGUE_VIEW)
+    creator_link_filters = []
+    if model.creator_profile_id is not None:
+        creator_link_filters.append(CreatorLink.creator_profile_id == model.creator_profile_id)
+    if model.creator:
+        creator_link_filters.append(
+            (CreatorLink.creator_profile_id.is_(None))
+            & (CreatorLink.creator_name == model.creator)
+        )
     creator_links = (
         list(
             session.scalars(
                 select(CreatorLink)
-                .where(CreatorLink.creator_name == model.creator)
+                .where(or_(*creator_link_filters))
                 .order_by(CreatorLink.label.collate("NOCASE"))
             )
         )
-        if model.creator
+        if creator_link_filters
         else []
     )
     creator_url = next(
@@ -628,6 +643,7 @@ def model_detail(
         name=model.name,
         variant=model.variant,
         creator=model.creator,
+        creator_profile_id=model.creator_profile_id,
         creator_url=creator_url,
         creator_links=[
             CreatorMetadataLinkRead(
@@ -1194,6 +1210,7 @@ def _model_filters(
     search: str | None,
     model_name: str | None,
     creator: str | None,
+    creator_profile_id: int | None,
     franchise: str | None,
     series: str | None,
     collection: str | None,
@@ -1216,6 +1233,8 @@ def _model_filters(
         filters.append(LibraryModel.name == model_name)
     if creator:
         filters.append(LibraryModel.creator == creator)
+    if creator_profile_id is not None:
+        filters.append(LibraryModel.creator_profile_id == creator_profile_id)
     if franchise:
         filters.append(LibraryModel.franchise == franchise)
     if series:

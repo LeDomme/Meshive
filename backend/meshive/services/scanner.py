@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from meshive.archives.sevenzip_cli import ArchiveReadError, ListedArchiveEntry, list_archive
 from meshive.auth.sessions import utc_now
 from meshive.config import get_settings
+from meshive.creators import normalize_creator_name, resolve_creator_profile
 from meshive.database import SessionLocal
 from meshive.models.catalog import (
     Archive,
@@ -297,6 +298,8 @@ def _execute_scan(session: Session, source_id: int, scan_run_id: int) -> None:
                     )
                 )
                 if known_model is not None:
+                    profile = resolve_creator_profile(session, known_model.creator)
+                    known_model.creator_profile_id = profile.id if profile is not None else None
                     known_model.last_seen_at = utc_now()
                     known_model.last_seen_scan_id = scan.id
                     known_model.status = "available"
@@ -670,6 +673,16 @@ def _can_skip_smart_scan(
         and not snapshot.has_unsafe_files
         and model.scan_fingerprint == snapshot.fingerprint
         and model.scan_policy_key == _model_scan_policy_key(source)
+        and _has_resolved_creator_identity(model)
+    )
+
+
+def _has_resolved_creator_identity(model: LibraryModel) -> bool:
+    normalized_name = normalize_creator_name(model.creator) if model.creator else ""
+    return (
+        model.creator_profile_id is not None
+        if normalized_name
+        else model.creator_profile_id is None
     )
 
 
@@ -708,6 +721,8 @@ def _scan_model(
     model.name = values["model"]
     model.variant = values.get("variant")
     model.creator = values.get("creator")
+    profile = resolve_creator_profile(session, model.creator)
+    model.creator_profile_id = profile.id if profile is not None else None
     model.franchise = values.get("franchise")
     model.series = values.get("series")
     model.collection = values.get("collection")
