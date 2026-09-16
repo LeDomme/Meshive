@@ -57,6 +57,10 @@ interface CreatorRead {
   model_count: number
   links: CreatorMetadataLink[]
 }
+interface CreatorProfileOption {
+  id: number
+  display_name: string
+}
 
 const linkTypeOptions: Array<{ value: CreatorLinkKind; label: string }> = [
   { value: "website", label: "Website" },
@@ -70,6 +74,7 @@ const linkTypeOptions: Array<{ value: CreatorLinkKind; label: string }> = [
 ]
 
 const creators = ref<Creator[]>([])
+const creatorProfiles = ref<CreatorProfileOption[]>([])
 const metadataEntities = ref<MetadataEntity[]>([])
 const selectedEntityType = ref<MetadataEntityType>("creator")
 const selectedEntityTypeValue = computed({
@@ -133,6 +138,11 @@ const selectedCreator = computed(() =>
     ? creators.value.find((creator) => creator.name === selectedEntityValue.value)
     : undefined,
 )
+const selectedCreatorProfileId = computed(() => {
+  const creator = selectedCreator.value
+  if (!creator) return null
+  return creatorProfiles.value.find((profile) => profile.display_name === creator.name)?.id ?? null
+})
 const entityTypeLabel = computed(() =>
   selectedEntityType.value === "creator"
     ? "Creator"
@@ -202,15 +212,17 @@ async function loadMetadata() {
   loading.value = true
   errorMessage.value = ""
   try {
-    const [creatorResult, entityResult] = await Promise.all([
+    const [creatorResult, entityResult, profileResult] = await Promise.all([
       apiRequest<CreatorRead[]>("/api/admin/creator-links"),
       apiRequest<MetadataEntity[]>("/api/admin/metadata"),
+      apiRequest<CreatorProfileOption[]>("/api/admin/creator-profiles"),
     ])
     creators.value = creatorResult.map((creator) => ({
       ...creator,
       links: creator.links.map(editableLink),
     }))
     metadataEntities.value = entityResult
+    creatorProfiles.value = profileResult
     if (
       selectedEntityValue.value &&
       !metadataEntities.value.some(
@@ -528,6 +540,6 @@ onMounted(loadMetadata)
         </p>
       </template>
     </section>
-    <CreatorProfilesView />
+    <CreatorProfilesView :profile-id="selectedCreatorProfileId" />
 </main>
 </template>
