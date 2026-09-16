@@ -17,6 +17,7 @@ import TagsView from "./views/admin/TagsView.vue"
 import UsersView from "./views/admin/UsersView.vue"
 import BackupsView from "./views/admin/BackupsView.vue"
 import CreatorsView from "./views/admin/CreatorsView.vue"
+import CreatorProfilesView from "./views/admin/CreatorProfilesView.vue"
 import DiagnosticsView from "./views/admin/DiagnosticsView.vue"
 import RolesView from "./views/admin/RolesView.vue"
 import ScansView from "./views/admin/ScansView.vue"
@@ -124,7 +125,9 @@ export const router = createRouter({
     },
     {
       path: "/admin/creators",
-      redirect: "/admin/metadata",
+      name: "creator-management",
+      component: CreatorProfilesView,
+      meta: { requiresAuth: true, requiredPermission: "metadata.manage" },
     },
     {
       path: "/admin/tags",
