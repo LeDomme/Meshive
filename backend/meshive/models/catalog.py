@@ -29,6 +29,9 @@ class LibraryModel(Base):
     name: Mapped[str] = mapped_column(String(512), index=True)
     variant: Mapped[str | None] = mapped_column(String(255), nullable=True)
     creator: Mapped[str | None] = mapped_column(String(255), index=True)
+    creator_profile_id: Mapped[int | None] = mapped_column(
+        ForeignKey("creator_profiles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     franchise: Mapped[str | None] = mapped_column(String(255), index=True)
     series: Mapped[str | None] = mapped_column(String(255), index=True)
     collection: Mapped[str | None] = mapped_column(String(255), index=True)
