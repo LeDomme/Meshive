@@ -2,7 +2,7 @@ import unicodedata
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -287,6 +287,11 @@ def _visible_items(session: Session, access, favorite_list_id: int) -> list[Favo
             item.entity_type in _TEXT_COLUMNS
             and item.entity_key in visible_text_values[item.entity_type]
         )
+        or (
+            item.entity_type == "creator"
+            and item.creator_profile_id is not None
+            and _normalize(item.label) in visible_text_values["creator"]
+        )
     ]
 
 
@@ -338,7 +343,13 @@ def _new_item(
         scope = visible_model_scope(access)
         if scope is not None and session.scalar(
             select(LibraryModel.id)
-            .where(LibraryModel.creator_profile_id == profile.id, scope)
+            .where(
+                or_(
+                    LibraryModel.creator_profile_id == profile.id,
+                    LibraryModel.creator.collate("NOCASE") == profile.display_name,
+                ),
+                scope,
+            )
             .limit(1)
         ) is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Creator Profile not found")
