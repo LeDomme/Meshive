@@ -555,8 +555,7 @@ def model_detail(
         creator_link_filters.append(CreatorLink.creator_profile_id == model.creator_profile_id)
     if model.creator:
         creator_link_filters.append(
-            (CreatorLink.creator_profile_id.is_(None))
-            & (CreatorLink.creator_name == model.creator)
+            CreatorLink.creator_name == model.creator
         )
     creator_links = (
         list(

@@ -16,6 +16,7 @@ from meshive.auth.dependencies import get_current_user
 from meshive.auth.permissions import FAVORITES_MANAGE
 from meshive.auth.sessions import utc_now
 from meshive.database import get_session
+from meshive.creators import resolve_creator_profile
 from meshive.models.catalog import LibraryModel, ModelImage
 from meshive.models.creator import CreatorProfile
 from meshive.models.favorite import FavoriteList, FavoriteListItem
@@ -324,7 +325,16 @@ def _new_item(
             )
         )
         if profile is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Creator Profile not found")
+            requested = payload.value or ""
+            canonical = _visible_text_values(session, access, {"creator"}).get(
+                "creator", {}
+            ).get(_normalize(requested))
+            if canonical is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Creator Profile not found",
+                )
+            profile = resolve_creator_profile(session, canonical)
         scope = visible_model_scope(access)
         if scope is not None and session.scalar(
             select(LibraryModel.id)
