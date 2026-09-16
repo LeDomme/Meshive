@@ -220,6 +220,13 @@ const creatorFilterOptions = computed(() => [
     label: item.display_name,
     count: item.count,
   })),
+  ...((filters.value.creator_profiles ?? []).length === 0
+    ? filters.value.creators.map((item) => ({
+      value: `legacy:${item.value}`,
+      label: item.label ?? item.value,
+      count: item.count,
+    }))
+    : []),
   ...(query.creator ? [{
     value: `legacy:${query.creator}`,
     label: query.creator,
