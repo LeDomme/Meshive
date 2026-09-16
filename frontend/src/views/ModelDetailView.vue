@@ -1030,21 +1030,6 @@ onBeforeUnmount(() => {
                 </RouterLink>
               </dd>
             </template>
-            <template v-if="model.creator_links.length">
-              <dt>Creator links</dt>
-              <dd class="model-fact-external-links">
-                <a
-                  v-for="link in model.creator_links"
-                  :key="link.id"
-                  class="model-fact-link"
-                  :href="link.url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {{ link.label }} <span aria-hidden="true">↗</span>
-                </a>
-              </dd>
-            </template>
             <template v-if="model.franchise">
               <dt>Franchise</dt>
               <dd>
