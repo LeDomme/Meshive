@@ -12,7 +12,6 @@ from meshive.auth.permissions import TAG_RULES_MANAGE
 from meshive.config import get_settings
 from meshive.database import Base
 from meshive.models.authorization import Role, RolePermission
-from meshive.models.catalog import LibraryModel
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import (
     AutomaticTagMatch,
@@ -59,14 +58,18 @@ def test_assignment_rule_migration_copies_legacy_rules_without_touching_tags(
             direct_tag = Tag(name="Direct tag")
             session.add_all([source, folder_tag, automatic_tag, direct_tag])
             session.flush()
-            model = LibraryModel(
-                library_source_id=source.id,
-                relative_path="Series/Model",
-                name="Model",
-                status="available",
-            )
-            session.add(model)
-            session.flush()
+            # This test deliberately prepares the 20260906_36 schema.  Do
+            # not use the current LibraryModel ORM mapping here: later
+            # migrations may add columns that do not exist in this snapshot.
+            model_id = session.execute(
+                text(
+                    "INSERT INTO library_models "
+                    "(library_source_id, relative_path, name, status) "
+                    "VALUES (:library_source_id, 'Series/Model', 'Model', 'available')"
+                ),
+                {"library_source_id": source.id},
+            ).lastrowid
+            assert model_id is not None
             folder_rule = FolderTagRule(
                 library_source_id=source.id,
                 relative_path="Series",
@@ -81,17 +84,17 @@ def test_assignment_rule_migration_copies_legacy_rules_without_touching_tags(
             )
             session.add_all([folder_rule, automatic_rule])
             session.flush()
-            session.add(AutomaticTagMatch(automatic_tag_rule_id=automatic_rule.id, model_id=model.id, matched_path="private/path"))
+            session.add(AutomaticTagMatch(automatic_tag_rule_id=automatic_rule.id, model_id=model_id, matched_path="private/path"))
             # This fixture intentionally exercises the pre-provenance schema.
             session.execute(
                 text(
                     "INSERT INTO model_tags (model_id, tag_id, is_direct, is_inherited, is_automatic) "
                     "VALUES (:model_id, :tag_id, 1, 0, 0)"
                 ),
-                {"model_id": model.id, "tag_id": direct_tag.id},
+                {"model_id": model_id, "tag_id": direct_tag.id},
             )
             session.commit()
-            legacy_ids = (folder_rule.id, automatic_rule.id, model.id, direct_tag.id)
+            legacy_ids = (folder_rule.id, automatic_rule.id, model_id, direct_tag.id)
             automatic_tag_id = automatic_tag.id
 
         # This branch does not have the unmerged FolderNameRegex migration as an
@@ -126,7 +129,7 @@ def test_assignment_rule_migration_copies_legacy_rules_without_touching_tags(
                     "(id, folder_name_regex_tag_rule_id, model_id, created_at) "
                     "VALUES (9, 9, :model_id, CURRENT_TIMESTAMP)"
                 ),
-                {"model_id": model.id},
+                {"model_id": model_id},
             )
 
         command.upgrade(config, "head")
