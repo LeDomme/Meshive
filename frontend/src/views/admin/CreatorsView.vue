@@ -534,15 +534,15 @@ onMounted(loadMetadata)
               </button>
             </form>
           </template>
+          <CreatorProfilesView
+            :profile-id="selectedCreatorProfileId"
+            @changed="loadMetadata"
+          />
         </div>
         <p v-else class="creator-selection-hint muted">
           Select a catalogue entry to edit its metadata.
         </p>
       </template>
-      <CreatorProfilesView
-        :profile-id="selectedCreatorProfileId"
-        @changed="loadMetadata"
-      />
     </section>
 </main>
 </template>
