@@ -236,17 +236,25 @@ def metadata_artwork(
             detail="Custom artwork not found",
         )
     access = get_access_context(session, current_user)
-    column = _ENTITY_COLUMNS[artwork.entity_type]
+    require_access_permission(access, CATALOGUE_VIEW)
+    if artwork.entity_type == "creator":
+        profile_id = session.scalar(
+            select(CreatorProfile.id).where(CreatorProfile.artwork_id == artwork.id)
+        )
+        statement = select(LibraryModel.id).where(LibraryModel.creator_profile_id == profile_id)
+    else:
+        column = _ENTITY_COLUMNS[artwork.entity_type]
+        statement = select(LibraryModel.id).where(
+            column.is_not(None), column != "", column == artwork.entity_value
+        )
     scope = visible_model_scope(access)
-    statement = select(column).where(column.is_not(None), column != "")
     if scope is not None:
         statement = statement.where(scope)
-    if not any(_normalize(value) == artwork.entity_key for value in session.scalars(statement)):
+    if session.scalar(statement.limit(1)) is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Custom artwork not found",
         )
-    require_access_permission(access, CATALOGUE_VIEW)
     return Response(
         content=artwork.content,
         media_type=artwork.content_type,

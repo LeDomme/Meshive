@@ -4085,3 +4085,11 @@ code {
 .user-detail-panel {
   min-width: 0;
 }
+
+.creator-card, .creator-header { display: flex; gap: 1.25rem; align-items: flex-start; padding: 1.25rem; border: 1px solid var(--meshive-border); border-radius: 1rem; background: rgb(8 20 43 / 58%); }
+.creator-card { margin-top: 1.5rem; }
+.creator-artwork { flex: 0 0 7rem; width: 7rem; height: 7rem; overflow: hidden; display: grid; place-items: center; border-radius: .75rem; background: linear-gradient(135deg, var(--meshive-blue), var(--meshive-cyan)); color: var(--meshive-ink); font-size: 2.5rem; font-weight: 800; }
+.creator-artwork img { width: 100%; height: 100%; object-fit: cover; }
+.creator-card-content { min-width: 0; flex: 1; }.creator-name { color: var(--meshive-cyan); font-size: 1.3rem; font-weight: 700; }.creator-description { color: #cbd5e1; }.creator-primary-link, .creator-links a { color: var(--meshive-cyan); }.creator-card-actions { display: flex; justify-content: space-between; gap: 1rem; margin-top: 1rem; }.creator-card-actions a { color: var(--meshive-cyan); }
+.creator-page { width: min(100% - 2rem, 76rem); margin: 2rem auto 4rem; }.creator-header { margin-bottom: 2rem; }.creator-artwork-large { flex-basis: 12rem; width: 12rem; height: 12rem; }.creator-model-count { color: #94a3b8; }.creator-links { display: flex; flex-wrap: wrap; gap: .75rem 1rem; }.creator-model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 1rem; }.creator-model-tile { display: grid; gap: .5rem; color: inherit; text-decoration: none; }.creator-model-tile img, .creator-model-tile .thumbnail-placeholder { width: 100%; aspect-ratio: 1 / .8; object-fit: cover; border-radius: .75rem; }.creator-pagination { display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 1.5rem; }
+@media (max-width: 600px) { .creator-card, .creator-header { gap: .85rem; padding: 1rem; }.creator-artwork { flex-basis: 5.5rem; width: 5.5rem; height: 5.5rem; }.creator-artwork-large { flex-basis: 7rem; width: 7rem; height: 7rem; }.creator-card-actions { align-items: flex-start; flex-direction: column; }.creator-page { width: min(100% - 1rem, 76rem); } }

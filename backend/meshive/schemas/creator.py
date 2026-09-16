@@ -22,6 +22,22 @@ class CreatorMetadataLinkRead(BaseModel):
     url: str
 
 
+class CreatorArtworkRead(BaseModel):
+    url: str
+    width: int
+    height: int
+
+
+class CreatorPublicRead(BaseModel):
+    id: int
+    display_name: str
+    description: str | None = None
+    artwork: CreatorArtworkRead | None = None
+    links: list[CreatorMetadataLinkRead]
+    primary_link: CreatorMetadataLinkRead | None = None
+    model_count: int = Field(ge=0)
+
+
 class CreatorRead(BaseModel):
     name: str
     model_count: int = Field(ge=0)
