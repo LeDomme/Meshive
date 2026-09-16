@@ -14,7 +14,7 @@ from fastapi import (
     status,
 )
 from PIL import Image, ImageOps, UnidentifiedImageError
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from meshive.auth.access import (
@@ -236,12 +236,19 @@ def metadata_artwork(
             detail="Custom artwork not found",
         )
     access = get_access_context(session, current_user)
-    require_access_permission(access, CATALOGUE_VIEW)
     if artwork.entity_type == "creator":
         profile_id = session.scalar(
             select(CreatorProfile.id).where(CreatorProfile.artwork_id == artwork.id)
         )
-        statement = select(LibraryModel.id).where(LibraryModel.creator_profile_id == profile_id)
+        # Keep pre-profile artwork rows reachable during and after migration.
+        # New profile artwork takes the stable-ID path; the legacy predicate also
+        # covers databases whose models have not yet been backfilled.
+        creator_matches = [
+            func.lower(func.trim(LibraryModel.creator)) == artwork.entity_key
+        ]
+        if profile_id is not None:
+            creator_matches.append(LibraryModel.creator_profile_id == profile_id)
+        statement = select(LibraryModel.id).where(or_(*creator_matches))
     else:
         column = _ENTITY_COLUMNS[artwork.entity_type]
         statement = select(LibraryModel.id).where(
@@ -255,6 +262,7 @@ def metadata_artwork(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Custom artwork not found",
         )
+    require_access_permission(access, CATALOGUE_VIEW)
     return Response(
         content=artwork.content,
         media_type=artwork.content_type,
