@@ -403,20 +403,18 @@ def _item_reads(
     }
     scope = visible_model_scope(access)
     if scope is not None:
-        visible_profile_ids = set(
-            session.scalars(
-                select(LibraryModel.creator_profile_id)
-                .where(
-                    LibraryModel.creator_profile_id.in_(creator_profile_ids),
-                    scope,
-                )
-                .distinct()
-            )
-        )
+        visible_creator_names = _visible_text_values(session, access, {"creator"})[
+            "creator"
+        ]
         creator_profiles = {
             profile_id: profile
             for profile_id, profile in creator_profiles.items()
-            if profile_id in visible_profile_ids
+            if profile_id in {
+                item.creator_profile_id
+                for item in items
+                if item.creator_profile_id is not None
+                and _normalize(item.label) in visible_creator_names
+            }
         }
     creator_artwork = {
         artwork.id: artwork
