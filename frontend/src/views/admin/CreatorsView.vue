@@ -442,7 +442,7 @@ onMounted(loadMetadata)
               </label>
               <div class="row-actions">
                 <button
-                  class="primary-button"
+                  class="secondary-button"
                   type="submit"
                   :disabled="uploadingArtwork || !artworkFile || selectedEntity.model_count === 0"
                 >{{ uploadingArtwork ? "Saving..." : "Save artwork" }}</button>
@@ -529,7 +529,7 @@ onMounted(loadMetadata)
                   >
                 </label>
               </div>
-              <button class="primary-button" type="submit" :disabled="addingLink">
+              <button class="secondary-button" type="submit" :disabled="addingLink">
                 {{ addingLink ? "Adding..." : "Add link" }}
               </button>
             </form>
