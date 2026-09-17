@@ -384,8 +384,6 @@ onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artwork
       Manage catalogue artwork and creator links stored by Meshive. Library files are never changed.
     </p>
 
-    <p v-if="errorMessage" class="form-error error-panel" role="alert">{{ errorMessage }}</p>
-    <p v-if="successMessage" class="success-panel" role="status">{{ successMessage }}</p>
 
     <section class="panel creator-links-panel metadata-panel">
       <div class="creator-links-heading">
@@ -432,6 +430,9 @@ onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artwork
               {{ selectedEntity.model_count === 1 ? "model" : "models" }}
             </span>
           </div>
+
+          <p v-if="errorMessage" class="form-error error-panel" role="alert">{{ errorMessage }}</p>
+          <p v-if="successMessage" class="success-panel metadata-action-feedback" role="status">✓ {{ successMessage }}</p>
 
           <section class="creator-metadata-section metadata-artwork-section">
             <div class="metadata-artwork-preview">
