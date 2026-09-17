@@ -442,7 +442,6 @@ onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artwork
           </div>
 
           <p v-if="errorMessage" class="form-error error-panel" role="alert">{{ errorMessage }}</p>
-          <p v-if="successMessage" class="success-panel metadata-action-feedback" role="status">✓ {{ successMessage }}</p>
 
           <section class="creator-metadata-section metadata-artwork-section">
             <div class="metadata-artwork-preview">
