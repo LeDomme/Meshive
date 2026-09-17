@@ -21,19 +21,7 @@ watch(() => props.profileId, () => void load(), { immediate: true })
 </script>
 <template>
   <section v-if="profile" class="creator-metadata-section creator-profile-section">
-    <h4>Profile</h4>
-    <p v-if="error" class="form-error">{{ error }}</p>
-    <form class="source-form" @submit.prevent="save">
-      <label>Display name<input v-model="name" required></label>
-      <label>Description<textarea v-model="description" /></label>
-      <div class="row-actions"><button class="primary-button">Save profile</button></div>
-    </form>
-    <h4>Aliases</h4>
-    <div class="creator-alias-list"><span v-for="item in profile.aliases" :key="item.id" class="creator-alias-chip">{{ item.alias }} <em>Alias</em> <button v-if="item.normalized_alias !== profile.normalized_name" class="text-button" @click="removeAlias(item)">Remove</button></span><span v-for="merge in history.filter(item => !item.undone_at)" :key="`merge-${merge.id}`" class="creator-alias-chip merged-creator">{{ merge.source_display_name }} <em>Merged</em> <button class="text-button" @click="undoMerge(merge.id)">Undo merge</button></span></div>
-    <form class="inline-form creator-inline-form" @submit.prevent="addAlias"><input v-model="alias" placeholder="Add alias"><button class="secondary-button">Add alias</button></form>
-    <h4>Merge</h4>
-    <div class="creator-inline-form"><select v-model.number="mergeSourceId"><option :value="null">Choose source profile</option><option v-for="item in candidates" :key="item.id" :value="item.id">{{ item.display_name }}</option></select><button class="secondary-button" :disabled="!mergeSourceId" @click="getPreview">Preview merge</button></div>
-    <div v-if="preview" class="merge-preview"><p>{{ preview.favorite_count }} favorites; {{ preview.duplicate_favorite_count }} duplicates; {{ preview.duplicate_link_ids.length }} duplicate links.</p><p v-if="preview.link_conflicts.length || preview.artwork_conflict" class="form-error">Conflicts need an explicit choice.</p><button class="danger-button" @click="applyMerge">Apply merge</button></div>
+    <div class="creator-management-grid"><div class="creator-management-controls"><h4>Profile</h4><p v-if="error" class="form-error">{{ error }}</p><form class="source-form" @submit.prevent="save"><label>Display name<input v-model="name" required></label><div class="row-actions"><button class="primary-button">Save profile</button></div></form><h4>Aliases</h4><form class="creator-inline-form" @submit.prevent="addAlias"><input v-model="alias" placeholder="Add alias"><button class="secondary-button">Add alias</button></form><h4>Merge</h4><div class="creator-inline-form"><select v-model.number="mergeSourceId"><option :value="null">Choose source profile</option><option v-for="item in candidates" :key="item.id" :value="item.id">{{ item.display_name }}</option></select><button class="secondary-button" :disabled="!mergeSourceId" @click="getPreview">Preview merge</button></div><div v-if="preview" class="merge-preview"><p>{{ preview.favorite_count }} favorites; {{ preview.duplicate_favorite_count }} duplicates; {{ preview.duplicate_link_ids.length }} duplicate links.</p><p v-if="preview.link_conflicts.length || preview.artwork_conflict" class="form-error">Conflicts need an explicit choice.</p><button class="danger-button" @click="applyMerge">Apply merge</button></div></div><div class="creator-management-list"><label>Description<textarea v-model="description" /></label><div class="creator-alias-list"><span v-for="item in profile.aliases" :key="item.id" class="creator-alias-chip">{{ item.alias }} <em>Alias</em> <button v-if="item.normalized_alias !== profile.normalized_name" class="text-button" @click="removeAlias(item)">Remove</button></span><span v-for="merge in history.filter(item => !item.undone_at)" :key="`merge-${merge.id}`" class="creator-alias-chip merged-creator">{{ merge.source_display_name }} <em>Merged</em> <button class="text-button" @click="undoMerge(merge.id)">Undo merge</button></span></div></div></div>
   </section>
 </template>
 
@@ -44,5 +32,11 @@ watch(() => props.profileId, () => void load(), { immediate: true })
 .creator-inline-form { margin: .5rem 0 1rem; }
 .creator-inline-form input, .creator-inline-form select { min-width: min(100%, 16rem); }
 .creator-alias-chip em { color: var(--meshive-cyan); font-size: .8em; font-style: normal; }
+.creator-management-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 1fr); gap: 1rem; align-items: start; }
+.creator-management-controls .source-form { max-width: 22rem; }
+.creator-management-list { display: grid; gap: .75rem; }
+.creator-management-list textarea { min-height: 5rem; max-width: 34rem; }
+.creator-management-list .creator-alias-list { max-height: 12rem; overflow: auto; align-content: start; padding: .6rem; border: 1px solid var(--meshive-border); border-radius: .6rem; }
 @media (max-width: 600px) { .creator-inline-form > * { width: 100%; } }
+@media (max-width: 760px) { .creator-management-grid { grid-template-columns: 1fr; } }
 </style>
