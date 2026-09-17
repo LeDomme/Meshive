@@ -37,6 +37,10 @@ test("metadata managers see only Metadata and load no tag administration APIs", 
 test("creator artwork previews and direct merge undo preserve the metadata document", async ({ page }) => {
   let merged = false
   let artworkUploads = 0
+  const imageErrors: string[] = []
+  page.on("console", message => {
+    if (message.type() === "error") imageErrors.push(message.text())
+  })
   let mergeHistory = [{ id: 9, source_display_name: "Source Creator", undone_at: null as string | null }]
   const profiles = () => [
     { id: 1, display_name: "Target Creator", normalized_name: "target creator", description: null, aliases: [] },
@@ -87,8 +91,11 @@ test("creator artwork previews and direct merge undo preserve the metadata docum
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLJ1wAAAABJRU5ErkJggg==", "base64"),
   })
   await expect(artwork).toHaveAttribute("src", /^blob:/)
+  await expect.poll(() => artwork.evaluate(image => image.naturalWidth)).toBeGreaterThan(0)
+  await expect.poll(() => artwork.evaluate(image => image.naturalHeight)).toBeGreaterThan(0)
   expect(await artwork.getAttribute("src")).not.toBe(originalArtworkSrc)
   expect(artworkUploads).toBe(0)
+  expect(imageErrors.filter(message => /content security policy|blob:|image/i.test(message))).toEqual([])
   await page.getByRole("button", { name: "Creator", exact: true }).click()
   await page.locator(".searchable-filter-options").getByText("Source Creator", { exact: true }).click()
   await expect(artwork).toHaveAttribute("src", /favorite-creator\.webp$/)

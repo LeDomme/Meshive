@@ -82,7 +82,7 @@ async def security_headers(
         "font-src 'self'; "
         "form-action 'self'; "
         "frame-ancestors 'none'; "
-        "img-src 'self' data:; "
+        "img-src 'self' data: blob:; "
         "object-src 'none'; "
         "script-src 'self'; "
         "style-src 'self'"

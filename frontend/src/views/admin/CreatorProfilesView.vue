@@ -37,6 +37,7 @@ watch(() => props.profileId, () => void load(), { immediate: true })
 .creator-management-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 1fr); gap: 1rem; align-items: start; }
 .creator-management-controls .source-form { max-width: 22rem; }
 .creator-management-list { display: grid; gap: .75rem; }
+.creator-management-list > label { display: grid; gap: .45rem; color: #cbd5e1; font-size: .9rem; font-weight: 650; }
 .creator-management-list textarea { min-height: 5rem; max-width: 34rem; }
 .creator-management-list .creator-alias-list { max-height: min(18rem, 100%); overflow: auto; align-content: start; padding: .6rem; border: 1px solid var(--meshive-border); border-radius: .6rem; scrollbar-color: var(--meshive-cyan) var(--meshive-ink); scrollbar-width: thin; }
 .creator-management-list .creator-alias-list::-webkit-scrollbar { width: .55rem; }
