@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 
 import { ApiError, apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
@@ -85,6 +85,7 @@ const selectedEntityTypeValue = computed({
 })
 const selectedEntityValue = ref("")
 const artworkFile = ref<File | null>(null)
+const artworkPreviewUrl = ref<string | null>(null)
 const artworkInput = ref<HTMLInputElement | null>(null)
 const newLinkKind = ref<CreatorLinkKind>("website")
 const newLinkLabel = ref("")
@@ -151,7 +152,7 @@ const entityTypeLabel = computed(() =>
       : "Collection",
 )
 const artworkPreview = computed(() =>
-  selectedEntity.value?.artwork_url ??
+  artworkPreviewUrl.value ?? selectedEntity.value?.artwork_url ??
   `/favorite-fallbacks/favorite-${selectedEntityType.value}.webp`,
 )
 const availableNewLinkTypeOptions = computed(() =>
@@ -192,6 +193,8 @@ function resetEditor() {
   errorMessage.value = ""
   successMessage.value = ""
   artworkFile.value = null
+  if (artworkPreviewUrl.value) URL.revokeObjectURL(artworkPreviewUrl.value)
+  artworkPreviewUrl.value = null
   if (artworkInput.value) artworkInput.value.value = ""
   creators.value.forEach((creator) => {
     creator.links = creator.links.map(editableLink)
@@ -206,6 +209,8 @@ function entityTypeChanged() {
 
 function artworkSelected(event: Event) {
   artworkFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
+  if (artworkPreviewUrl.value) URL.revokeObjectURL(artworkPreviewUrl.value)
+  artworkPreviewUrl.value = artworkFile.value ? URL.createObjectURL(artworkFile.value) : null
 }
 
 async function loadMetadata() {
@@ -257,6 +262,8 @@ async function uploadArtwork() {
     })
     entity.artwork_url = result.artwork_url
     artworkFile.value = null
+    if (artworkPreviewUrl.value) URL.revokeObjectURL(artworkPreviewUrl.value)
+    artworkPreviewUrl.value = null
     if (artworkInput.value) artworkInput.value.value = ""
     successMessage.value = `Saved custom artwork for ${entity.value}.`
   } catch (error) {
@@ -359,6 +366,7 @@ async function deleteCreatorLink(link: CreatorMetadataLinkRow) {
 }
 
 onMounted(loadMetadata)
+onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artworkPreviewUrl.value) })
 </script>
 
 <template>

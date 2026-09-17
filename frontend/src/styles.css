@@ -644,6 +644,9 @@ h1 {
 .creator-metadata-add .primary-button {
   width: fit-content;
 }
+.creator-metadata-add .secondary-button {
+  width: fit-content;
+}
 
 .creator-selection-hint {
   margin: 1.25rem 0 0;
