@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
 
 import { ApiError, apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
@@ -213,8 +213,8 @@ function artworkSelected(event: Event) {
   artworkPreviewUrl.value = artworkFile.value ? URL.createObjectURL(artworkFile.value) : null
 }
 
-async function loadMetadata() {
-  loading.value = true
+async function loadMetadata(preserveView = false) {
+  if (!preserveView) loading.value = true
   errorMessage.value = ""
   try {
     const [creatorResult, entityResult, profileResult] = await Promise.all([
@@ -241,8 +241,15 @@ async function loadMetadata() {
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "Unable to load metadata"
   } finally {
-    loading.value = false
+    if (!preserveView) loading.value = false
   }
+}
+
+async function refreshCreatorManagement() {
+  const scrollY = window.scrollY
+  await loadMetadata(true)
+  await nextTick()
+  window.scrollTo({ top: scrollY })
 }
 
 async function uploadArtwork() {
@@ -544,7 +551,7 @@ onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artwork
           </template>
           <CreatorProfilesView
             :profile-id="selectedCreatorProfileId"
-            @changed="loadMetadata"
+            @changed="refreshCreatorManagement"
           />
         </div>
         <p v-else class="creator-selection-hint muted">
