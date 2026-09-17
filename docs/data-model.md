@@ -13,14 +13,23 @@ read-only library.
   access.
 - `Session`: opaque server-side session with expiry and last use.
 - `FavoriteList`: a private, named list owned by exactly one user.
-- `FavoriteListItem`: a saved model or catalogue facet with a display snapshot.
-- `MetadataArtwork`: optimized custom artwork for one normalized Creator,
+- `FavoriteListItem`: a saved model or catalogue facet with a display snapshot;
+  Creator entries reference a stable Creator Profile where available.
+- `MetadataArtwork`: optimized custom artwork for a Creator Profile,
   Franchise, or Collection value.
+- `CreatorProfile`: stable creator identity with canonical display name,
+  description, artwork, active state, and optional merge target.
+- `CreatorAlias`: globally unique normalized alternate spelling for a Creator
+  Profile.
+- `CreatorLink`: ordered, validated external link belonging to a Creator
+  Profile; the legacy name key remains for 1.x compatibility.
+- `CreatorMerge`: reversible merge snapshot for restoring source profiles and
+  their model, alias, link, and favorite assignments.
 - `LibrarySource`: display name, container root, parsing patterns, defaults,
   supported formats, and scan settings.
 - `LibraryModel`: one indexed model, uniquely identified by source and relative
-  path. Creator, Franchise, Series, and Collection are currently parsed text
-  fields on this record.
+  path. The raw parsed Creator string remains and may resolve to a stable
+  Creator Profile; Franchise, Series, and Collection remain text fields.
 - `Archive`: the expected archive for a model, including format, size,
   modification time, scan state, and aggregate entry information.
 - `ArchiveEntry`: cached file or directory metadata from an archive listing.
@@ -37,10 +46,10 @@ read-only library.
   `TagAssignmentRuleMatch`: canonical tag rules, their selected targets, and
   their evaluated matches.
 
-Creator links and metadata artwork are currently associated through normalized
-text keys. Meshive does not yet have normalized `Creator` or `Group` entities;
-the parsed Creator, Franchise, Series, and Collection values remain directly on
-`LibraryModel`. A stable Creator entity is planned for a later release.
+Creator Profiles resolve canonical names and aliases during scans. Raw creator
+strings remain for scan reproducibility and debugging; Creator Profile IDs are
+the persistent relationship used by creator metadata, favorites, filters, and
+navigation.
 
 ## Important constraints
 
@@ -58,8 +67,9 @@ the parsed Creator, Franchise, Series, and Collection values remain directly on
   is stored in SQLite so database backups remain self-contained.
 - Saved models and tags use foreign keys plus a label snapshot. If the target is
   deleted, the entry remains visible as unavailable until its owner removes it.
-- Saved Creator, Franchise, Series, and Collection values use normalized keys.
-  They link to the matching catalogue filter while that value still exists.
+- Saved Creator values use stable Creator Profile IDs, so profile-bound
+  favorites survive renames and merges. Franchise, Series, and Collection use
+  normalized keys while matching catalogue values still exist.
 - FTS tables are derived indexes and can be rebuilt.
 - `all_sources=true` grants a user access to current and future sources;
   explicit `UserLibrarySource` grants are then ignored.

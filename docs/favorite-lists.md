@@ -37,9 +37,10 @@ saved in exactly one list, hovering changes the action to **Remove from list**
 and clicking removes it immediately. Models saved in multiple lists open the
 management dialog so that the intended list remains explicit.
 
-Creator, Franchise, Series, Collection, and Tag cards use Meshive-themed
-fallback artwork. Administrators can replace artwork for Creators, Franchises,
-and Collections per catalogue value under **Administration → Metadata**.
+Creator Cards use profile artwork, descriptions, and links when available;
+Franchise, Series, Collection, and Tag cards use Meshive-themed fallback
+artwork. Administrators can replace artwork for Creators, Franchises, and
+Collections under **Administration → Metadata**.
 Uploaded images are validated, resized to at most 1600 pixels per edge, encoded
 as WebP, and stored in SQLite.
 
@@ -51,10 +52,12 @@ Model and tag entries store a label snapshot in addition to their database
 reference. If the referenced record is deleted, the favorite remains readable
 but is marked as no longer available and has no catalogue link.
 
-Creator, Franchise, Series, and Collection entries use a normalized value as
-their stable key. If the corresponding value no longer occurs in the catalogue,
-the saved entry is shown as unavailable. A later scan that restores the same
-normalized value makes its catalogue link available again.
+Creator entries use a stable Creator Profile ID, so they remain usable after
+renames and reversible merges. Franchise, Series, and Collection entries use a
+normalized value as their stable key. If the corresponding value no longer
+occurs in the catalogue, the saved entry is shown as unavailable. A later scan
+that restores the same normalized value makes the catalogue link available
+again.
 
 Missing models that remain indexed by Meshive are still valid favorites and
 continue to link to their detail page.

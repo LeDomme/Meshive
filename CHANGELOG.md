@@ -5,6 +5,22 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-17
+
+### Added
+
+- Stable Creator Profiles now resolve names through canonical IDs and aliases,
+  preserving raw scanned creator values while keeping catalogue navigation stable.
+- Creator Cards and profile metadata provide descriptions, artwork, links, and
+  profile-bound favorites.
+- Metadata managers can rename creators, maintain aliases, and preview and
+  reverse Creator merges without losing model assignments.
+
+### Security
+
+- Creator profiles, counts, artwork, metadata operations, merges, and audit
+  entries respect source scoping and existing permissions.
+
 ## [1.6.3] - 2026-09-09
 
 ### Changed
@@ -264,7 +280,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
-[Unreleased]: ../../compare/v1.6.3...HEAD
+[Unreleased]: ../../compare/v1.7.0...HEAD
+[1.7.0]: ../../compare/v1.6.3...v1.7.0
 [1.6.3]: ../../compare/v1.6.2...v1.6.3
 [1.6.2]: ../../compare/v1.6.1...v1.6.2
 [1.6.1]: ../../compare/v1.6.0...v1.6.1
