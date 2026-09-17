@@ -60,6 +60,7 @@ test("creator artwork previews and direct merge undo preserve the metadata docum
   await page.route("**/api/admin/metadata", route => route.fulfill({ json: metadata() }))
   await page.route("**/api/admin/creator-profiles/1/merge-history", route => route.fulfill({ json: mergeHistory }))
   await page.route("**/api/admin/creator-profiles/2/merge-history", route => route.fulfill({ json: [] }))
+  await page.route("**/api/admin/creator-profiles/1", route => route.fulfill({ json: profiles()[0] }))
   await page.route("**/api/admin/metadata/artwork", async route => {
     artworkUploads += 1
     await route.fulfill({ json: {
@@ -103,7 +104,7 @@ test("creator artwork previews and direct merge undo preserve the metadata docum
   await expect.poll(() => artwork.evaluate(image => image.naturalHeight)).toBeGreaterThan(0)
   expect(await artwork.getAttribute("src")).not.toBe(originalArtworkSrc)
   expect(artworkUploads).toBe(0)
-  await page.getByRole("button", { name: "Save artwork" }).click()
+  await page.getByRole("button", { name: "Save profile" }).click()
   await expect(artwork).toHaveAttribute("src", /\/artwork\/saved\.webp$/)
   await expect(page.locator(".metadata-artwork-preview span")).toHaveText("Custom artwork")
   expect(imageErrors.filter(message => /content security policy|blob:|image/i.test(message))).toEqual([])
