@@ -377,14 +377,17 @@ def catalogue_filters(
                 id=profile_id,
                 display_name=display_name,
                 count=count,
+                aliases=aliases.split("\x1f") if aliases else [],
             )
-            for profile_id, display_name, count in session.execute(
+            for profile_id, display_name, count, aliases in session.execute(
                 select(
                     CreatorProfile.id,
                     CreatorProfile.display_name,
-                    func.count(LibraryModel.id),
+                    func.count(func.distinct(LibraryModel.id)),
+                    func.group_concat(CreatorAlias.alias, "\x1f"),
                 )
                 .join(LibraryModel, LibraryModel.creator_profile_id == CreatorProfile.id)
+                .outerjoin(CreatorAlias, CreatorAlias.creator_profile_id == CreatorProfile.id)
                 .where(*facet_filters("creator_profile_id"))
                 .group_by(CreatorProfile.id, CreatorProfile.display_name)
                 .order_by(CreatorProfile.display_name.collate("NOCASE"))

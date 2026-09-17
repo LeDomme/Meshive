@@ -126,6 +126,7 @@ class CreatorProfileFilterOption(BaseModel):
     id: int
     display_name: str
     count: int = Field(ge=0)
+    aliases: list[str] = []
 
 
 class SourceFilterOption(BaseModel):

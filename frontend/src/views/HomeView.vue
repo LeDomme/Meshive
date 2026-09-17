@@ -58,7 +58,7 @@ interface SourceOption {
 interface CatalogueFilters {
   models: FilterOption[]
   creators: FilterOption[]
-  creator_profiles: Array<{ id: number; display_name: string; count: number }>
+  creator_profiles: Array<{ id: number; display_name: string; count: number; aliases?: string[] }>
   franchises: FilterOption[]
   series: FilterOption[]
   collections: FilterOption[]
@@ -219,6 +219,7 @@ const creatorFilterOptions = computed(() => [
     value: `profile:${item.id}`,
     label: item.display_name,
     count: item.count,
+    searchTerms: item.aliases,
   })),
   ...((filters.value.creator_profiles ?? []).length === 0
     ? filters.value.creators.map((item) => ({
