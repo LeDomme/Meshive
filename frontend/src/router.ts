@@ -122,10 +122,7 @@ export const router = createRouter({
       component: CreatorsView,
       meta: { requiresAuth: true, requiredPermission: "metadata.manage", requiresAllSources: true },
     },
-    {
-      path: "/admin/creators",
-      redirect: "/admin/metadata",
-    },
+    { path: "/admin/creators", redirect: "/admin/metadata" },
     {
       path: "/admin/tags",
       name: "tags",

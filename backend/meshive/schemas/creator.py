@@ -44,6 +44,91 @@ class CreatorRead(BaseModel):
     links: list[CreatorMetadataLinkRead]
 
 
+class CreatorAliasRead(BaseModel):
+    id: int
+    alias: str
+    normalized_alias: str
+
+
+class CreatorProfileRead(BaseModel):
+    id: int
+    display_name: str
+    normalized_name: str
+    description: str | None = None
+    artwork_id: int | None = None
+    model_count: int = Field(ge=0)
+    aliases: list[CreatorAliasRead] = []
+    links: list[CreatorMetadataLinkRead] = []
+
+
+class CreatorProfileWrite(BaseModel):
+    display_name: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+
+    @field_validator("display_name")
+    @classmethod
+    def strip_display_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Creator name cannot be blank")
+        return value
+
+
+class CreatorAliasWrite(BaseModel):
+    alias: str = Field(min_length=1, max_length=255)
+
+    @field_validator("alias")
+    @classmethod
+    def strip_alias(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Creator alias cannot be blank")
+        return value
+
+
+class CreatorMergePreviewRequest(BaseModel):
+    target_profile_id: int = Field(ge=1)
+    source_profile_ids: list[int] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def distinct_profiles(self) -> "CreatorMergePreviewRequest":
+        if self.target_profile_id in self.source_profile_ids:
+            raise ValueError("Target profile cannot also be a source profile")
+        if len(set(self.source_profile_ids)) != len(self.source_profile_ids):
+            raise ValueError("Source profiles must be distinct")
+        return self
+
+
+class CreatorMergeLinkResolution(BaseModel):
+    source_link_id: int = Field(ge=1)
+    action: Literal["keep_target", "keep_source"]
+
+
+class CreatorMergeApplyRequest(CreatorMergePreviewRequest):
+    artwork_resolution: str | None = None
+    link_resolutions: list[CreatorMergeLinkResolution] = []
+
+
+class CreatorMergePreviewRead(BaseModel):
+    target: CreatorProfileRead
+    sources: list[CreatorProfileRead]
+    models_by_source: dict[str, int]
+    favorite_count: int
+    duplicate_favorite_count: int
+    duplicate_link_ids: list[int]
+    link_conflicts: list[dict[str, object]]
+    artwork_conflict: bool
+
+
+class CreatorMergeHistoryRead(BaseModel):
+    id: int
+    source_profile_id: int
+    source_display_name: str
+    target_profile_id: int
+    created_at: str
+    undone_at: str | None = None
+
+
 class CreatorLinkFields(BaseModel):
     kind: CreatorLinkKind
     label: str | None = Field(default=None, max_length=80)

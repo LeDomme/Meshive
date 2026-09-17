@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 
 import { ApiError, apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
 import SearchableFilter from "../../components/SearchableFilter.vue"
+import CreatorProfilesView from "./CreatorProfilesView.vue"
 
 type MetadataEntityType = "creator" | "franchise" | "collection"
 type CreatorLinkKind =
@@ -56,6 +57,10 @@ interface CreatorRead {
   model_count: number
   links: CreatorMetadataLink[]
 }
+interface CreatorProfileOption {
+  id: number
+  display_name: string
+}
 
 const linkTypeOptions: Array<{ value: CreatorLinkKind; label: string }> = [
   { value: "website", label: "Website" },
@@ -69,6 +74,7 @@ const linkTypeOptions: Array<{ value: CreatorLinkKind; label: string }> = [
 ]
 
 const creators = ref<Creator[]>([])
+const creatorProfiles = ref<CreatorProfileOption[]>([])
 const metadataEntities = ref<MetadataEntity[]>([])
 const selectedEntityType = ref<MetadataEntityType>("creator")
 const selectedEntityTypeValue = computed({
@@ -79,6 +85,7 @@ const selectedEntityTypeValue = computed({
 })
 const selectedEntityValue = ref("")
 const artworkFile = ref<File | null>(null)
+const artworkPreviewUrl = ref<string | null>(null)
 const artworkInput = ref<HTMLInputElement | null>(null)
 const newLinkKind = ref<CreatorLinkKind>("website")
 const newLinkLabel = ref("")
@@ -89,6 +96,11 @@ const addingLink = ref(false)
 const savingLinkId = ref<number | null>(null)
 const errorMessage = ref("")
 const successMessage = ref("")
+let successMessageTimer: ReturnType<typeof setTimeout> | null = null
+watch(successMessage, (message) => {
+  if (successMessageTimer) clearTimeout(successMessageTimer)
+  successMessageTimer = message ? setTimeout(() => { successMessage.value = "" }, 2500) : null
+})
 const metadataTypeOptions = [
   { value: "creator", label: "Creator" },
   { value: "franchise", label: "Franchise" },
@@ -132,16 +144,17 @@ const selectedCreator = computed(() =>
     ? creators.value.find((creator) => creator.name === selectedEntityValue.value)
     : undefined,
 )
+const selectedCreatorProfileId = computed(() => {
+  const creator = selectedCreator.value
+  if (!creator) return null
+  return creatorProfiles.value.find((profile) => profile.display_name === creator.name)?.id ?? null
+})
 const entityTypeLabel = computed(() =>
   selectedEntityType.value === "creator"
     ? "Creator"
     : selectedEntityType.value === "franchise"
       ? "Franchise"
       : "Collection",
-)
-const artworkPreview = computed(() =>
-  selectedEntity.value?.artwork_url ??
-  `/favorite-fallbacks/favorite-${selectedEntityType.value}.webp`,
 )
 const availableNewLinkTypeOptions = computed(() =>
   linkTypeOptions.filter(
@@ -181,6 +194,8 @@ function resetEditor() {
   errorMessage.value = ""
   successMessage.value = ""
   artworkFile.value = null
+  if (artworkPreviewUrl.value) URL.revokeObjectURL(artworkPreviewUrl.value)
+  artworkPreviewUrl.value = null
   if (artworkInput.value) artworkInput.value.value = ""
   creators.value.forEach((creator) => {
     creator.links = creator.links.map(editableLink)
@@ -195,21 +210,25 @@ function entityTypeChanged() {
 
 function artworkSelected(event: Event) {
   artworkFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
+  if (artworkPreviewUrl.value) URL.revokeObjectURL(artworkPreviewUrl.value)
+  artworkPreviewUrl.value = artworkFile.value ? URL.createObjectURL(artworkFile.value) : null
 }
 
-async function loadMetadata() {
-  loading.value = true
+async function loadMetadata(preserveView = false) {
+  if (!preserveView) loading.value = true
   errorMessage.value = ""
   try {
-    const [creatorResult, entityResult] = await Promise.all([
+    const [creatorResult, entityResult, profileResult] = await Promise.all([
       apiRequest<CreatorRead[]>("/api/admin/creator-links"),
       apiRequest<MetadataEntity[]>("/api/admin/metadata"),
+      apiRequest<CreatorProfileOption[]>("/api/admin/creator-profiles"),
     ])
     creators.value = creatorResult.map((creator) => ({
       ...creator,
       links: creator.links.map(editableLink),
     }))
     metadataEntities.value = entityResult
+    creatorProfiles.value = profileResult
     if (
       selectedEntityValue.value &&
       !metadataEntities.value.some(
@@ -223,8 +242,25 @@ async function loadMetadata() {
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "Unable to load metadata"
   } finally {
-    loading.value = false
+    if (!preserveView) loading.value = false
   }
+}
+
+async function refreshCreatorManagement() {
+  const scrollY = window.scrollY
+  await loadMetadata(true)
+  await nextTick()
+  window.scrollTo({ top: scrollY })
+}
+
+async function saveCreatorChanges(profile: { id: number; display_name: string; description: string | null }) {
+  errorMessage.value = ""
+  successMessage.value = ""
+  await apiRequest(`/api/admin/creator-profiles/${profile.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ display_name: profile.display_name, description: profile.description }),
+  })
+  if (artworkFile.value) await uploadArtwork()
 }
 
 async function uploadArtwork() {
@@ -244,6 +280,8 @@ async function uploadArtwork() {
     })
     entity.artwork_url = result.artwork_url
     artworkFile.value = null
+    if (artworkPreviewUrl.value) URL.revokeObjectURL(artworkPreviewUrl.value)
+    artworkPreviewUrl.value = null
     if (artworkInput.value) artworkInput.value.value = ""
     successMessage.value = `Saved custom artwork for ${entity.value}.`
   } catch (error) {
@@ -346,6 +384,7 @@ async function deleteCreatorLink(link: CreatorMetadataLinkRow) {
 }
 
 onMounted(loadMetadata)
+onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artworkPreviewUrl.value); if (successMessageTimer) clearTimeout(successMessageTimer) })
 </script>
 
 <template>
@@ -355,8 +394,6 @@ onMounted(loadMetadata)
       Manage catalogue artwork and creator links stored by Meshive. Library files are never changed.
     </p>
 
-    <p v-if="errorMessage" class="form-error error-panel" role="alert">{{ errorMessage }}</p>
-    <p v-if="successMessage" class="success-panel" role="status">{{ successMessage }}</p>
 
     <section class="panel creator-links-panel metadata-panel">
       <div class="creator-links-heading">
@@ -404,10 +441,15 @@ onMounted(loadMetadata)
             </span>
           </div>
 
+          <p v-if="errorMessage" class="form-error error-panel" role="alert">{{ errorMessage }}</p>
+
           <section class="creator-metadata-section metadata-artwork-section">
             <div class="metadata-artwork-preview">
-              <img :src="artworkPreview" :alt="`${selectedEntity.value} artwork`">
-              <span>{{ selectedEntity.artwork_url ? "Custom artwork" : "Meshive fallback" }}</span>
+              <img
+                :src="artworkPreviewUrl || selectedEntity.artwork_url || `/favorite-fallbacks/favorite-${selectedEntityType}.webp`"
+                :alt="`${selectedEntity.value} artwork`"
+              >
+              <span>{{ artworkPreviewUrl ? "Unsaved" : selectedEntity.artwork_url ? "Custom artwork" : "Meshive fallback" }}</span>
             </div>
             <form class="metadata-artwork-form" @submit.prevent="uploadArtwork">
               <div>
@@ -428,11 +470,6 @@ onMounted(loadMetadata)
                 >
               </label>
               <div class="row-actions">
-                <button
-                  class="primary-button"
-                  type="submit"
-                  :disabled="uploadingArtwork || !artworkFile || selectedEntity.model_count === 0"
-                >{{ uploadingArtwork ? "Saving..." : "Save artwork" }}</button>
                 <button
                   v-if="selectedEntity.artwork_url"
                   class="danger-button"
@@ -516,16 +553,22 @@ onMounted(loadMetadata)
                   >
                 </label>
               </div>
-              <button class="primary-button" type="submit" :disabled="addingLink">
+              <button class="secondary-button" type="submit" :disabled="addingLink">
                 {{ addingLink ? "Adding..." : "Add link" }}
               </button>
             </form>
           </template>
+          <CreatorProfilesView
+            :profile-id="selectedCreatorProfileId"
+            :on-save="saveCreatorChanges"
+            @changed="refreshCreatorManagement"
+            @feedback="successMessage = $event"
+          />
         </div>
         <p v-else class="creator-selection-hint muted">
           Select a catalogue entry to edit its metadata.
         </p>
       </template>
     </section>
-  </main>
+</main>
 </template>

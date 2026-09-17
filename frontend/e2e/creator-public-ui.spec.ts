@@ -14,7 +14,7 @@ test("creator card wraps safely and navigates to the stable profile catalogue fi
   await page.route("**/api/models/7/navigation**", route => route.fulfill({ json: { previous: null, next: null } }))
   await page.route("**/api/creators/42", route => route.fulfill({ json: {
     id: 42, display_name: "An exceptionally long creator name that must always stay inside this compact card",
-    description: null, artwork: null, model_count: 2,
+    description: "A deliberately long creator description that wraps within the compact card without pushing its links or actions outside the mobile viewport.", artwork: null, model_count: 2,
     links: [{ id: 1, label: "A very long external creator link label that also wraps safely", url: "https://example.test" }, { id: 2, label: "Second creator link", url: "https://example.org" }, { id: 3, label: "Third creator link", url: "https://example.net" }],
     primary_link: { id: 1, label: "A very long external creator link label that also wraps safely", url: "https://example.test" },
   } }))
@@ -25,6 +25,7 @@ test("creator card wraps safely and navigates to the stable profile catalogue fi
   const card = page.getByLabel("Creator")
   await expect(card.locator("img")).toHaveAttribute("src", "/favorite-fallbacks/favorite-creator.webp")
   await expect(card.getByText("An exceptionally long creator name that must always stay inside this compact card")).toBeVisible()
+  await expect(card.locator(".creator-description")).toContainText("A deliberately long creator description")
   await expect(card.getByRole("link", { name: "View all" })).toHaveAttribute("href", "/?creator_profile_id=42")
   await expect(card.getByRole("link", { name: "View all" })).toHaveCSS("text-decoration-line", "none")
   await expect(card.locator(".creator-artwork")).toHaveAttribute("href", "/?creator_profile_id=42")
@@ -34,10 +35,13 @@ test("creator card wraps safely and navigates to the stable profile catalogue fi
   await expect(card.locator(".creator-card-links a")).toHaveCount(3)
   await expect(card.locator(".creator-card-links a").first()).toHaveCSS("text-decoration-line", "none")
   const topBox = await card.locator(".creator-card-top").boundingBox()
+  const descriptionBox = await card.locator(".creator-description").boundingBox()
   const linksBox = await card.locator(".creator-card-links").boundingBox()
   expect(topBox).not.toBeNull()
+  expect(descriptionBox).not.toBeNull()
   expect(linksBox).not.toBeNull()
-  expect(linksBox!.y).toBeGreaterThanOrEqual(topBox!.y + topBox!.height)
+  expect(descriptionBox!.y).toBeGreaterThanOrEqual(topBox!.y + topBox!.height)
+  expect(linksBox!.y).toBeGreaterThanOrEqual(descriptionBox!.y + descriptionBox!.height)
   await expect(page.getByText("Creator links", { exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
@@ -48,7 +52,12 @@ test("profile-ID catalogue filters show the profile name and can be cleared", as
   await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
   await page.route("**/api/models/filters**", route => route.fulfill({ json: {
     models: [], creators: [{ value: "Canonical Creator", count: 2 }],
-    creator_profiles: [{ id: 42, display_name: "Canonical Creator", count: 2 }],
+    creator_profiles: [{
+      id: 42,
+      display_name: "Canonical Creator",
+      count: 2,
+      aliases: ["Legacy Alias"],
+    }],
     franchises: [], series: [], collections: [], sources: [], statuses: [], tags: [],
   } }))
   await page.route("**/api/models?**", route => route.fulfill({ json: {
@@ -59,7 +68,11 @@ test("profile-ID catalogue filters show the profile name and can be cleared", as
   await expect(creatorFilter).toContainText("Canonical Creator")
   await expect(page.getByText("Alias model")).toBeVisible()
   await creatorFilter.click()
+  await page.getByRole("searchbox", { name: "Search creator" }).fill("legacy")
   await expect(page.getByRole("option", { name: "Canonical Creator" })).toHaveCount(1)
+  await page.getByRole("option", { name: "Canonical Creator" }).click()
+  await expect(page).toHaveURL(/creator_profile_id=42/)
+  await creatorFilter.click()
   await page.getByRole("option", { name: "All creators" }).click()
   await expect(page).not.toHaveURL(/creator_profile_id=/)
   await page.goto("/?creator=Legacy%20Alias&sort=name_asc")

@@ -10,7 +10,7 @@ from meshive.models.catalog import (
     ScanIssue,
     ScanRun,
 )
-from meshive.models.creator import CreatorAlias, CreatorLink, CreatorProfile
+from meshive.models.creator import CreatorAlias, CreatorLink, CreatorMerge, CreatorProfile
 from meshive.models.favorite import FavoriteList, FavoriteListItem
 from meshive.models.library_source import LibrarySource
 from meshive.models.metadata import MetadataArtwork
@@ -39,6 +39,7 @@ __all__ = [
     "BackupSchedule",
     "CreatorAlias",
     "CreatorLink",
+    "CreatorMerge",
     "CreatorProfile",
     "FavoriteList",
     "FavoriteListItem",

@@ -34,6 +34,112 @@ test("metadata managers see only Metadata and load no tag administration APIs", 
   expect(tagRequest).toBe(false)
 })
 
+test("creator artwork previews and direct merge undo preserve the metadata document", async ({ page }) => {
+  let merged = false
+  let artworkUploads = 0
+  const imageErrors: string[] = []
+  page.on("console", message => {
+    if (message.type() === "error") imageErrors.push(message.text())
+  })
+  let mergeHistory = [{ id: 9, source_display_name: "Source Creator", undone_at: null as string | null }]
+  const profiles = () => [
+    { id: 1, display_name: "Target Creator", normalized_name: "target creator", description: null, aliases: [] },
+    ...(merged ? [] : [{ id: 2, display_name: "Source Creator", normalized_name: "source creator", description: null, aliases: [] }]),
+  ]
+  const metadata = () => [
+    { entity_type: "creator", value: "Target Creator", model_count: 1, artwork_url: "/artwork/target.webp" },
+    ...(merged ? [] : [{ entity_type: "creator", value: "Source Creator", model_count: 1, artwork_url: null }]),
+  ]
+  const creatorLinks = () => [
+    { name: "Target Creator", model_count: 1, links: [] },
+    ...(merged ? [] : [{ name: "Source Creator", model_count: 1, links: [] }]),
+  ]
+
+  await mockAuth(page, ["metadata.manage"])
+  await page.route("**/api/admin/creator-links", route => route.fulfill({ json: creatorLinks() }))
+  await page.route("**/api/admin/metadata", route => route.fulfill({ json: metadata() }))
+  await page.route("**/api/admin/creator-profiles/1/merge-history", route => route.fulfill({ json: mergeHistory }))
+  await page.route("**/api/admin/creator-profiles/2/merge-history", route => route.fulfill({ json: [] }))
+  await page.route("**/api/admin/creator-profiles/1", route => route.fulfill({ json: profiles()[0] }))
+  await page.route("**/api/admin/metadata/artwork", async route => {
+    artworkUploads += 1
+    await route.fulfill({ json: {
+      id: 1,
+      entity_type: "creator",
+      value: "Target Creator",
+      artwork_url: "/artwork/saved.webp",
+      width: 1,
+      height: 1,
+    } })
+  })
+  await page.route("**/api/admin/creator-profiles/merges/9/undo", async route => {
+    merged = false
+    mergeHistory = [{ id: 9, source_display_name: "Source Creator", undone_at: "2026-01-01T00:00:00Z" }]
+    await route.fulfill({ status: 204 })
+  })
+  await page.route("**/api/admin/creator-profiles/merge/preview", route => route.fulfill({ json: {
+    favorite_count: 0, duplicate_favorite_count: 0, duplicate_link_ids: [], link_conflicts: [], artwork_conflict: false,
+  } }))
+  await page.route("**/api/admin/creator-profiles/merge", async route => {
+    merged = true
+    await route.fulfill({ status: 204 })
+  })
+  await page.route("**/api/admin/creator-profiles", route => route.fulfill({ json: profiles() }))
+
+  await page.setViewportSize({ width: 1280, height: 400 })
+  await page.goto("/admin/metadata")
+  await page.getByRole("button", { name: "Creator", exact: true }).click()
+  await page.getByRole("option", { name: "Target Creator" }).click()
+  const artwork = page.locator(".metadata-artwork-preview img")
+  const originalArtworkSrc = await artwork.getAttribute("src")
+  expect(originalArtworkSrc).toContain("/artwork/target.webp")
+  await page.getByLabel("Image file").setInputFiles({
+    name: "preview.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLJ1wAAAABJRU5ErkJggg==", "base64"),
+  })
+  await expect(artwork).toHaveAttribute("src", /^blob:/)
+  await expect(page.locator(".metadata-artwork-preview span")).toHaveText("Unsaved")
+  await expect.poll(() => artwork.evaluate(image => image.naturalWidth)).toBeGreaterThan(0)
+  await expect.poll(() => artwork.evaluate(image => image.naturalHeight)).toBeGreaterThan(0)
+  expect(await artwork.getAttribute("src")).not.toBe(originalArtworkSrc)
+  expect(artworkUploads).toBe(0)
+  const saveChanges = page.locator(".creator-profile-section .row-actions .primary-button")
+  await saveChanges.click()
+  await expect(saveChanges).toHaveText("✓ Saved")
+  await expect(page.locator(".success-panel")).toHaveCount(0)
+  await expect(saveChanges).toHaveText("Save changes", { timeout: 3_000 })
+  await expect(artwork).toHaveAttribute("src", /\/artwork\/saved\.webp$/)
+  await expect(page.locator(".metadata-artwork-preview span")).toHaveText("Custom artwork")
+  expect(imageErrors.filter(message => /content security policy|blob:|image/i.test(message))).toEqual([])
+  await page.getByRole("button", { name: "Creator", exact: true }).click()
+  await page.locator(".searchable-filter-options").getByText("Source Creator", { exact: true }).click()
+  await expect(artwork).toHaveAttribute("src", /favorite-creator\.webp$/)
+  await page.getByRole("button", { name: "Creator", exact: true }).click()
+  await page.locator(".searchable-filter-options").getByText("Target Creator", { exact: true }).click()
+
+  await page.evaluate(() => { (window as Window & { meshiveSentinel?: string }).meshiveSentinel = "kept" })
+  await page.getByRole("button", { name: "Merge", exact: true }).scrollIntoViewIfNeeded()
+  const scrollY = await page.evaluate(() => window.scrollY)
+  expect(scrollY).toBeGreaterThan(0)
+  await page.getByRole("combobox").last().selectOption("2")
+  await page.getByRole("button", { name: "Merge", exact: true }).click()
+  await expect(page.locator(".merged-creator")).toContainText("Source Creator")
+  await expect(page.getByText("Apply merge", { exact: true })).toHaveCount(0)
+  await expect(page.getByText("0 favorites; 0 duplicates; 0 duplicate links.", { exact: true })).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => (window as Window & { meshiveSentinel?: string }).meshiveSentinel)).toBe("kept")
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(scrollY - 100)
+  await expect(page).toHaveURL(/\/admin\/metadata$/)
+
+  await page.getByRole("button", { name: "Remove merge" }).click()
+  await expect.poll(() => page.evaluate(() => (window as Window & { meshiveSentinel?: string }).meshiveSentinel)).toBe("kept")
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(scrollY - 100)
+  await page.getByRole("button", { name: "Creator", exact: true }).click()
+  await expect(page.locator(".searchable-filter-options").getByText("Source Creator", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Remove merge" })).toHaveCount(0)
+  await expect(page).toHaveURL(/\/admin\/metadata$/)
+})
+
 test("tag-rule managers load only assignment rules", async ({ page }) => {
   let legacyRequest = false
   await mockAuth(page, ["tag_rules.manage"])

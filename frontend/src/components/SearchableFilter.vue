@@ -12,6 +12,7 @@ interface SearchableFilterOption {
   value: string
   label?: string
   count?: number
+  searchTerms?: string[]
 }
 
 const props = withDefaults(
@@ -59,7 +60,8 @@ const filteredOptions = computed(() => {
   const term = search.value.trim().toLocaleLowerCase()
   if (!term) return props.options
   return props.options.filter((option) =>
-    optionLabel(option).toLocaleLowerCase().includes(term),
+    optionLabel(option).toLocaleLowerCase().includes(term)
+    || option.searchTerms?.some((value) => value.toLocaleLowerCase().includes(term)),
   )
 })
 

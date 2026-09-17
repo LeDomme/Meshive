@@ -39,7 +39,7 @@ from meshive.models.catalog import (
     ModelImage,
     ScanIssue,
 )
-from meshive.models.creator import CreatorLink, CreatorProfile
+from meshive.models.creator import CreatorAlias, CreatorLink, CreatorProfile
 from meshive.models.library_source import LibrarySource
 from meshive.models.tag import ModelTag, Tag
 from meshive.models.user import User
@@ -377,14 +377,17 @@ def catalogue_filters(
                 id=profile_id,
                 display_name=display_name,
                 count=count,
+                aliases=aliases.split("\x1f") if aliases else [],
             )
-            for profile_id, display_name, count in session.execute(
+            for profile_id, display_name, count, aliases in session.execute(
                 select(
                     CreatorProfile.id,
                     CreatorProfile.display_name,
-                    func.count(LibraryModel.id),
+                    func.count(func.distinct(LibraryModel.id)),
+                    func.group_concat(CreatorAlias.alias, "\x1f"),
                 )
                 .join(LibraryModel, LibraryModel.creator_profile_id == CreatorProfile.id)
+                .outerjoin(CreatorAlias, CreatorAlias.creator_profile_id == CreatorProfile.id)
                 .where(*facet_filters("creator_profile_id"))
                 .group_by(CreatorProfile.id, CreatorProfile.display_name)
                 .order_by(CreatorProfile.display_name.collate("NOCASE"))
@@ -1246,7 +1249,15 @@ def _model_filters(
                 .where(text("model_search MATCH :fts_query"))
                 .params(fts_query=fts_query)
             )
-            filters.append(LibraryModel.id.in_(matching_ids))
+        alias_profile_ids = select(CreatorAlias.creator_profile_id).where(
+            CreatorAlias.normalized_alias.like(f"%{search.strip().casefold()}%")
+        )
+        filters.append(
+            or_(
+                LibraryModel.id.in_(matching_ids),
+                LibraryModel.creator_profile_id.in_(alias_profile_ids),
+            )
+        )
     if model_name:
         filters.append(LibraryModel.name == model_name)
     if creator:
