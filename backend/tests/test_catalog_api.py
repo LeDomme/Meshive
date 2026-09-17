@@ -301,7 +301,9 @@ def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
             session.add_all(models)
             session.flush()
             shared_profile = CreatorProfile(
-                display_name="Shared Creator", normalized_name="shared creator"
+                display_name="Shared Creator",
+                normalized_name="shared creator",
+                description="Test description",
             )
             session.add(shared_profile)
             session.flush()
@@ -417,6 +419,7 @@ def test_catalogue_source_scope_prevents_cross_source_data_leaks() -> None:
         assert creator.status_code == 200
         assert creator.json()["id"] == shared_profile.id
         assert creator.json()["display_name"] == "Shared Creator"
+        assert creator.json()["description"] == "Test description"
         assert creator.json()["model_count"] == 1
         assert client.get("/api/models", params={"page": 2, "page_size": 1}).json()["items"] == []
 

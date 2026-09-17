@@ -53,7 +53,7 @@ def get_creator(
     return CreatorPublicRead(
         id=profile.id,
         display_name=profile.display_name,
-        description=None,
+        description=profile.description,
         artwork=CreatorArtworkRead(
             url=f"/api/metadata/artwork/{artwork.id}?v={artwork.etag[:12]}",
             width=artwork.width,
