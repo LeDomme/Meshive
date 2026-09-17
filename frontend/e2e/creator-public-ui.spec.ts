@@ -48,7 +48,12 @@ test("profile-ID catalogue filters show the profile name and can be cleared", as
   await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
   await page.route("**/api/models/filters**", route => route.fulfill({ json: {
     models: [], creators: [{ value: "Canonical Creator", count: 2 }],
-    creator_profiles: [{ id: 42, display_name: "Canonical Creator", count: 2 }],
+    creator_profiles: [{
+      id: 42,
+      display_name: "Canonical Creator",
+      count: 2,
+      aliases: ["Legacy Alias"],
+    }],
     franchises: [], series: [], collections: [], sources: [], statuses: [], tags: [],
   } }))
   await page.route("**/api/models?**", route => route.fulfill({ json: {
@@ -59,7 +64,11 @@ test("profile-ID catalogue filters show the profile name and can be cleared", as
   await expect(creatorFilter).toContainText("Canonical Creator")
   await expect(page.getByText("Alias model")).toBeVisible()
   await creatorFilter.click()
+  await page.getByRole("searchbox", { name: "Search creator" }).fill("legacy")
   await expect(page.getByRole("option", { name: "Canonical Creator" })).toHaveCount(1)
+  await page.getByRole("option", { name: "Canonical Creator" }).click()
+  await expect(page).toHaveURL(/creator_profile_id=42/)
+  await creatorFilter.click()
   await page.getByRole("option", { name: "All creators" }).click()
   await expect(page).not.toHaveURL(/creator_profile_id=/)
   await page.goto("/?creator=Legacy%20Alias&sort=name_asc")
