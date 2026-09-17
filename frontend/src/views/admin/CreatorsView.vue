@@ -253,6 +253,16 @@ async function refreshCreatorManagement() {
   window.scrollTo({ top: scrollY })
 }
 
+async function saveCreatorChanges(profile: { id: number; display_name: string; description: string | null }) {
+  errorMessage.value = ""
+  successMessage.value = ""
+  await apiRequest(`/api/admin/creator-profiles/${profile.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ display_name: profile.display_name, description: profile.description }),
+  })
+  if (artworkFile.value) await uploadArtwork()
+}
+
 async function uploadArtwork() {
   const entity = selectedEntity.value
   if (!entity || !artworkFile.value) return
@@ -462,11 +472,6 @@ onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artwork
               </label>
               <div class="row-actions">
                 <button
-                  class="secondary-button"
-                  type="submit"
-                  :disabled="uploadingArtwork || !artworkFile || selectedEntity.model_count === 0"
-                >{{ uploadingArtwork ? "Saving..." : "Save artwork" }}</button>
-                <button
                   v-if="selectedEntity.artwork_url"
                   class="danger-button"
                   type="button"
@@ -556,6 +561,7 @@ onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artwork
           </template>
           <CreatorProfilesView
             :profile-id="selectedCreatorProfileId"
+            :on-save="saveCreatorChanges"
             @changed="refreshCreatorManagement"
             @feedback="successMessage = $event"
           />

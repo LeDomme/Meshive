@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from "vue"
 import { ApiError, apiRequest } from "../../api"
 
-const props = defineProps<{ profileId: number | null }>()
+const props = defineProps<{ profileId: number | null; onSave?: (profile: { id: number; display_name: string; description: string | null }) => Promise<void> }>()
 const emit = defineEmits<{ changed: []; feedback: [message: string] }>()
 type Alias = { id: number; alias: string; normalized_alias: string }
 type Profile = { id: number; display_name: string; normalized_name: string; description: string | null; aliases: Alias[] }
@@ -12,7 +12,7 @@ const profile = ref<Profile | null>(null); const name = ref(""); const descripti
 const candidates = computed(() => profiles.value.filter(item => item.id !== props.profileId))
 const activeMerges = computed(() => history.value.filter(item => !item.undone_at))
 async function load() { preview.value = null; alias.value = ""; if (!props.profileId) { profile.value = null; profiles.value = []; history.value = []; return } try { const [all, mergeHistory] = await Promise.all([apiRequest<Profile[]>("/api/admin/creator-profiles"), apiRequest<MergeHistory[]>(`/api/admin/creator-profiles/${props.profileId}/merge-history`)]); profiles.value = all; profile.value = all.find(item => item.id === props.profileId) ?? null; name.value = profile.value?.display_name ?? ""; description.value = profile.value?.description ?? ""; history.value = mergeHistory } catch (cause) { error.value = cause instanceof ApiError ? cause.message : "Unable to load creator profile" } }
-async function save() { if (!profile.value) return; await apiRequest(`/api/admin/creator-profiles/${profile.value.id}`, { method: "PUT", body: JSON.stringify({ display_name: name.value, description: description.value || null }) }); await load(); emit("feedback", "Saved") }
+async function save() { if (!profile.value) return; const payload = { id: profile.value.id, display_name: name.value, description: description.value || null }; if (props.onSave) await props.onSave(payload); else await apiRequest(`/api/admin/creator-profiles/${profile.value.id}`, { method: "PUT", body: JSON.stringify(payload) }); await load(); emit("feedback", "Saved") }
 async function addAlias() { if (!profile.value || !alias.value.trim()) return; await apiRequest(`/api/admin/creator-profiles/${profile.value.id}/aliases`, { method: "POST", body: JSON.stringify({ alias: alias.value }) }); await load(); emit("feedback", "Alias added") }
 async function removeAlias(item: Alias) { if (!profile.value) return; await apiRequest(`/api/admin/creator-profiles/${profile.value.id}/aliases/${item.id}`, { method: "DELETE" }); await load(); emit("feedback", "Alias removed") }
 async function refreshAfterMergeMutation(message: string) { const scrollY = window.scrollY; await load(); await nextTick(); window.scrollTo({ top: scrollY }); emit("changed"); emit("feedback", message) }
