@@ -151,10 +151,6 @@ const entityTypeLabel = computed(() =>
       ? "Franchise"
       : "Collection",
 )
-const artworkPreview = computed(() =>
-  artworkPreviewUrl.value ?? selectedEntity.value?.artwork_url ??
-  `/favorite-fallbacks/favorite-${selectedEntityType.value}.webp`,
-)
 const availableNewLinkTypeOptions = computed(() =>
   linkTypeOptions.filter(
     (option) =>
@@ -434,7 +430,10 @@ onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artwork
 
           <section class="creator-metadata-section metadata-artwork-section">
             <div class="metadata-artwork-preview">
-              <img :src="artworkPreview" :alt="`${selectedEntity.value} artwork`">
+              <img
+                :src="artworkPreviewUrl || selectedEntity.artwork_url || `/favorite-fallbacks/favorite-${selectedEntityType}.webp`"
+                :alt="`${selectedEntity.value} artwork`"
+              >
               <span>{{ selectedEntity.artwork_url ? "Custom artwork" : "Meshive fallback" }}</span>
             </div>
             <form class="metadata-artwork-form" @submit.prevent="uploadArtwork">

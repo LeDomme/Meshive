@@ -36,13 +36,14 @@ test("metadata managers see only Metadata and load no tag administration APIs", 
 
 test("creator artwork previews and direct merge undo preserve the metadata document", async ({ page }) => {
   let merged = false
+  let artworkUploads = 0
   let mergeHistory = [{ id: 9, source_display_name: "Source Creator", undone_at: null as string | null }]
   const profiles = () => [
     { id: 1, display_name: "Target Creator", normalized_name: "target creator", description: null, aliases: [] },
     ...(merged ? [] : [{ id: 2, display_name: "Source Creator", normalized_name: "source creator", description: null, aliases: [] }]),
   ]
   const metadata = () => [
-    { entity_type: "creator", value: "Target Creator", model_count: 1, artwork_url: null },
+    { entity_type: "creator", value: "Target Creator", model_count: 1, artwork_url: "/artwork/target.webp" },
     ...(merged ? [] : [{ entity_type: "creator", value: "Source Creator", model_count: 1, artwork_url: null }]),
   ]
   const creatorLinks = () => [
@@ -54,6 +55,11 @@ test("creator artwork previews and direct merge undo preserve the metadata docum
   await page.route("**/api/admin/creator-links", route => route.fulfill({ json: creatorLinks() }))
   await page.route("**/api/admin/metadata", route => route.fulfill({ json: metadata() }))
   await page.route("**/api/admin/creator-profiles/1/merge-history", route => route.fulfill({ json: mergeHistory }))
+  await page.route("**/api/admin/creator-profiles/2/merge-history", route => route.fulfill({ json: [] }))
+  await page.route("**/api/admin/metadata/artwork", async route => {
+    artworkUploads += 1
+    await route.fulfill({ status: 500 })
+  })
   await page.route("**/api/admin/creator-profiles/merges/9/undo", async route => {
     merged = false
     mergeHistory = [{ id: 9, source_display_name: "Source Creator", undone_at: "2026-01-01T00:00:00Z" }]
@@ -73,13 +79,21 @@ test("creator artwork previews and direct merge undo preserve the metadata docum
   await page.getByRole("button", { name: "Creator", exact: true }).click()
   await page.getByRole("option", { name: "Target Creator" }).click()
   const artwork = page.locator(".metadata-artwork-preview img")
-  await expect(artwork).toHaveAttribute("src", /favorite-creator\.webp$/)
+  const originalArtworkSrc = await artwork.getAttribute("src")
+  expect(originalArtworkSrc).toContain("/artwork/target.webp")
   await page.getByLabel("Image file").setInputFiles({
     name: "preview.png",
     mimeType: "image/png",
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLJ1wAAAABJRU5ErkJggg==", "base64"),
   })
   await expect(artwork).toHaveAttribute("src", /^blob:/)
+  expect(await artwork.getAttribute("src")).not.toBe(originalArtworkSrc)
+  expect(artworkUploads).toBe(0)
+  await page.getByRole("button", { name: "Creator", exact: true }).click()
+  await page.locator(".searchable-filter-options").getByText("Source Creator", { exact: true }).click()
+  await expect(artwork).toHaveAttribute("src", /favorite-creator\.webp$/)
+  await page.getByRole("button", { name: "Creator", exact: true }).click()
+  await page.locator(".searchable-filter-options").getByText("Target Creator", { exact: true }).click()
 
   await page.evaluate(() => { (window as Window & { meshiveSentinel?: string }).meshiveSentinel = "kept" })
   await page.getByRole("button", { name: "Merge", exact: true }).scrollIntoViewIfNeeded()
