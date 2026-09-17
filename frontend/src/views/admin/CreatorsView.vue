@@ -434,7 +434,7 @@ onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artwork
                 :src="artworkPreviewUrl || selectedEntity.artwork_url || `/favorite-fallbacks/favorite-${selectedEntityType}.webp`"
                 :alt="`${selectedEntity.value} artwork`"
               >
-              <span>{{ selectedEntity.artwork_url ? "Custom artwork" : "Meshive fallback" }}</span>
+              <span>{{ artworkPreviewUrl ? "Unsaved" : selectedEntity.artwork_url ? "Custom artwork" : "Meshive fallback" }}</span>
             </div>
             <form class="metadata-artwork-form" @submit.prevent="uploadArtwork">
               <div>

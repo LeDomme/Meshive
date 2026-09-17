@@ -14,7 +14,7 @@ test("creator card wraps safely and navigates to the stable profile catalogue fi
   await page.route("**/api/models/7/navigation**", route => route.fulfill({ json: { previous: null, next: null } }))
   await page.route("**/api/creators/42", route => route.fulfill({ json: {
     id: 42, display_name: "An exceptionally long creator name that must always stay inside this compact card",
-    description: null, artwork: null, model_count: 2,
+    description: "A deliberately long creator description that wraps within the compact card without pushing its links or actions outside the mobile viewport.", artwork: null, model_count: 2,
     links: [{ id: 1, label: "A very long external creator link label that also wraps safely", url: "https://example.test" }, { id: 2, label: "Second creator link", url: "https://example.org" }, { id: 3, label: "Third creator link", url: "https://example.net" }],
     primary_link: { id: 1, label: "A very long external creator link label that also wraps safely", url: "https://example.test" },
   } }))
@@ -25,6 +25,7 @@ test("creator card wraps safely and navigates to the stable profile catalogue fi
   const card = page.getByLabel("Creator")
   await expect(card.locator("img")).toHaveAttribute("src", "/favorite-fallbacks/favorite-creator.webp")
   await expect(card.getByText("An exceptionally long creator name that must always stay inside this compact card")).toBeVisible()
+  await expect(card.locator(".creator-description")).toContainText("A deliberately long creator description")
   await expect(card.getByRole("link", { name: "View all" })).toHaveAttribute("href", "/?creator_profile_id=42")
   await expect(card.getByRole("link", { name: "View all" })).toHaveCSS("text-decoration-line", "none")
   await expect(card.locator(".creator-artwork")).toHaveAttribute("href", "/?creator_profile_id=42")

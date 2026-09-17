@@ -62,7 +62,14 @@ test("creator artwork previews and direct merge undo preserve the metadata docum
   await page.route("**/api/admin/creator-profiles/2/merge-history", route => route.fulfill({ json: [] }))
   await page.route("**/api/admin/metadata/artwork", async route => {
     artworkUploads += 1
-    await route.fulfill({ status: 500 })
+    await route.fulfill({ json: {
+      id: 1,
+      entity_type: "creator",
+      value: "Target Creator",
+      artwork_url: "/artwork/saved.webp",
+      width: 1,
+      height: 1,
+    } })
   })
   await page.route("**/api/admin/creator-profiles/merges/9/undo", async route => {
     merged = false
@@ -91,10 +98,14 @@ test("creator artwork previews and direct merge undo preserve the metadata docum
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLJ1wAAAABJRU5ErkJggg==", "base64"),
   })
   await expect(artwork).toHaveAttribute("src", /^blob:/)
+  await expect(page.locator(".metadata-artwork-preview span")).toHaveText("Unsaved")
   await expect.poll(() => artwork.evaluate(image => image.naturalWidth)).toBeGreaterThan(0)
   await expect.poll(() => artwork.evaluate(image => image.naturalHeight)).toBeGreaterThan(0)
   expect(await artwork.getAttribute("src")).not.toBe(originalArtworkSrc)
   expect(artworkUploads).toBe(0)
+  await page.getByRole("button", { name: "Save artwork" }).click()
+  await expect(artwork).toHaveAttribute("src", /\/artwork\/saved\.webp$/)
+  await expect(page.locator(".metadata-artwork-preview span")).toHaveText("Custom artwork")
   expect(imageErrors.filter(message => /content security policy|blob:|image/i.test(message))).toEqual([])
   await page.getByRole("button", { name: "Creator", exact: true }).click()
   await page.locator(".searchable-filter-options").getByText("Source Creator", { exact: true }).click()
