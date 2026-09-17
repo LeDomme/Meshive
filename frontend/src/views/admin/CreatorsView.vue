@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 
 import { ApiError, apiRequest } from "../../api"
 import AdminHeader from "../../components/AdminHeader.vue"
@@ -96,6 +96,11 @@ const addingLink = ref(false)
 const savingLinkId = ref<number | null>(null)
 const errorMessage = ref("")
 const successMessage = ref("")
+let successMessageTimer: ReturnType<typeof setTimeout> | null = null
+watch(successMessage, (message) => {
+  if (successMessageTimer) clearTimeout(successMessageTimer)
+  successMessageTimer = message ? setTimeout(() => { successMessage.value = "" }, 2500) : null
+})
 const metadataTypeOptions = [
   { value: "creator", label: "Creator" },
   { value: "franchise", label: "Franchise" },
@@ -369,7 +374,7 @@ async function deleteCreatorLink(link: CreatorMetadataLinkRow) {
 }
 
 onMounted(loadMetadata)
-onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artworkPreviewUrl.value) })
+onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artworkPreviewUrl.value); if (successMessageTimer) clearTimeout(successMessageTimer) })
 </script>
 
 <template>
@@ -551,6 +556,7 @@ onBeforeUnmount(() => { if (artworkPreviewUrl.value) URL.revokeObjectURL(artwork
           <CreatorProfilesView
             :profile-id="selectedCreatorProfileId"
             @changed="refreshCreatorManagement"
+            @feedback="successMessage = $event"
           />
         </div>
         <p v-else class="creator-selection-hint muted">
