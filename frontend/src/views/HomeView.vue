@@ -614,13 +614,17 @@ async function loadMoreCatalogue() {
   loadingMore.value = false
 }
 
-async function restoreCatalogue(restoreState: CatalogueRestoreState) {
+async function restoreInfiniteCatalogue(restoreState: CatalogueRestoreState) {
   const lastPage = Math.max(1, restoreState.loaded_page)
   await loadCatalogue(1)
   for (let targetPage = 2; targetPage <= lastPage && targetPage <= totalPages.value; targetPage += 1) {
     await loadCatalogue(targetPage)
   }
   await restoreCatalogueScroll(restoreState.scroll_y)
+}
+
+async function restorePaginationCatalogue(restoreState: CatalogueRestoreState) {
+  await loadCatalogue(Math.max(1, restoreState.loaded_page))
 }
 
 async function restoreCatalogueScroll(scrollY: number) {
@@ -1120,7 +1124,9 @@ onMounted(async () => {
     cachedRestore
       ? restoreCachedCatalogue(cachedRestore)
       : catalogueRestoreState
-      ? restoreCatalogue(catalogueRestoreState)
+      ? catalogueRestoreState.navigation_mode === "infinite"
+        ? restoreInfiniteCatalogue(catalogueRestoreState)
+        : restorePaginationCatalogue(catalogueRestoreState)
       : loadCatalogue(navigationMode.value === "infinite" ? 1 : (Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1)),
   ])
   infiniteObserver = new IntersectionObserver((entries) => {

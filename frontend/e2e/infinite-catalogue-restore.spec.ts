@@ -31,7 +31,7 @@ async function mockInfiniteCatalogue(page: Page, savedViews: unknown[] = [], mod
     const requestedPage = Number(url.searchParams.get("page") || "1")
     modelRequests.push(requestedPage)
     const creator = url.searchParams.get("creator") || "Ada"
-    return route.fulfill({ json: { items: Array.from({ length: 48 }, (_, index) => model(requestedPage, index + 1, creator)), total: 240, page: requestedPage, page_size: 48 } })
+    return route.fulfill({ json: { items: Array.from({ length: 48 }, (_, index) => model(requestedPage, index + 1, creator)), total: 4000, page: requestedPage, page_size: 48 } })
   })
 }
 
@@ -149,8 +149,44 @@ test("reload falls back to restoring the previously loaded infinite batches", as
   await openVisibleModelDetail(page)
   await page.reload()
   modelRequests.length = 0
-  await page.goBack()
+  await page.goto("/?sort=name_asc&page=3")
 
   await expect(page.getByRole("link", { name: "Ada page 3 model 1", exact: true })).toBeVisible()
   await expect.poll(() => modelRequests).toEqual([1, 2, 3])
+})
+
+test("pagination browser back restores a high page directly", async ({ page }) => {
+  const modelRequests: number[] = []
+  await mockInfiniteCatalogue(page, [], modelRequests)
+  await page.goto("/?creator=Ada&page=77")
+  await expect(page.getByRole("link", { name: "Ada page 77 model 1", exact: true })).toBeVisible()
+
+  await openVisibleModelDetail(page)
+  modelRequests.length = 0
+  await page.goBack()
+
+  await expect(page.getByRole("link", { name: "Ada page 77 model 1", exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/page=77/)
+  await expect.poll(() => modelRequests).toEqual([77])
+})
+
+test("pagination catalogue back restores a saved view high page directly", async ({ page }) => {
+  const savedView = { id: 1, name: "Ada view", state: { search: "", model: "", creator: "Ada", creator_profile_id: "", franchise: "", series: "", collection: "", source_id: "1", tag_id: "", status: "", sort: "name_asc" }, created_at: "2026-09-18T00:00:00Z", updated_at: "2026-09-18T00:00:00Z" }
+  const modelRequests: number[] = []
+  await mockInfiniteCatalogue(page, [savedView], modelRequests)
+  await page.goto("/")
+  await page.getByRole("button", { name: "Saved views" }).click()
+  await page.getByRole("option", { name: "Ada view" }).click()
+  await expect(page).toHaveURL(/creator=Ada&source_id=1&sort=name_asc$/)
+  await page.goto("/?creator=Ada&source_id=1&sort=name_asc&page=77")
+  await expect(page.getByRole("link", { name: "Ada page 77 model 1", exact: true })).toBeVisible()
+
+  await openVisibleModelDetail(page)
+  modelRequests.length = 0
+  await page.getByRole("link", { name: "Back to catalogue" }).click()
+
+  await expect(page.getByRole("button", { name: "Saved views" })).toContainText("Ada view")
+  await expect(page.getByRole("link", { name: "Ada page 77 model 1", exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/page=77/)
+  await expect.poll(() => modelRequests).toEqual([77])
 })
