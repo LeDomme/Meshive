@@ -703,20 +703,20 @@ def test_catalogue_filter_preferences_are_saved_per_user() -> None:
         ).status_code == 200
 
         assert client.get("/api/auth/catalogue-preferences").json() == {
-            "filter_order": []
+            "filter_order": [], "action_order": []
         }
 
         saved = client.put(
             "/api/auth/catalogue-preferences",
-            json={"filter_order": ["creator", "model", "sort"]},
+            json={"filter_order": ["creator", "model", "sort"], "action_order": ["saved_views", "selection"]},
         )
         assert saved.status_code == 200
         assert saved.json() == {
-            "filter_order": ["creator", "model", "sort"]
+            "filter_order": ["creator", "model", "sort"], "action_order": ["saved_views", "selection"]
         }
 
         assert client.get("/api/auth/catalogue-preferences").json() == {
-            "filter_order": ["creator", "model", "sort"]
+            "filter_order": ["creator", "model", "sort"], "action_order": ["saved_views", "selection"]
         }
 
         duplicate = client.put(

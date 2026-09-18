@@ -275,7 +275,10 @@ def change_password(
 def get_catalogue_preferences(
     user: User = Depends(get_current_user_allow_password_change),
 ) -> CatalogueFilterPreferences:
-    return CatalogueFilterPreferences(filter_order=user.catalogue_filter_order or [])
+    return CatalogueFilterPreferences(
+        filter_order=user.catalogue_filter_order or [],
+        action_order=user.catalogue_action_order or [],
+    )
 
 
 @router.put("/catalogue-preferences", response_model=CatalogueFilterPreferences)
@@ -297,6 +300,21 @@ def update_catalogue_preferences(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Filter order contains an unsupported filter",
         )
+    allowed_action_keys = {"selection", "saved_views"}
+    if len(payload.action_order) != len(set(payload.action_order)):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Action order cannot contain duplicates",
+        )
+    if any(key not in allowed_action_keys for key in payload.action_order):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Action order contains an unsupported action",
+        )
     user.catalogue_filter_order = payload.filter_order
+    user.catalogue_action_order = payload.action_order
     session.commit()
-    return CatalogueFilterPreferences(filter_order=user.catalogue_filter_order)
+    return CatalogueFilterPreferences(
+        filter_order=user.catalogue_filter_order,
+        action_order=user.catalogue_action_order,
+    )

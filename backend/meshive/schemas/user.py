@@ -152,6 +152,7 @@ class CurrentUserRead(UserRead):
 
 class CatalogueFilterPreferences(BaseModel):
     filter_order: list[str] = Field(default_factory=list, max_length=9)
+    action_order: list[str] = Field(default_factory=list, max_length=2)
 
 
 class PasswordChange(BaseModel):
