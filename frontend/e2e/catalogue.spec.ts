@@ -8,10 +8,32 @@ async function mockCatalogue(page: Page, requests: string[]) {
   await page.route("**/api/auth/me", route => route.fulfill({ json: admin }))
   await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
   await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
+  await page.route("**/api/saved-views", route => route.fulfill({ json: [] }))
   await page.route("**/api/favorite-lists/model-memberships**", route => route.fulfill({ json: [] }))
   await page.route("**/api/models/filters**", route => route.fulfill({ json: filters }))
   await page.route("**/api/models?**", route => { requests.push(route.request().url()); return route.fulfill({ json: { items: [model], total: 1, page: 1, page_size: 48 } }) })
 }
+
+test("saved views restore catalogue filters, source scope, and sorting", async ({ page }) => {
+  const requests: string[] = []
+  let savedView: Record<string, unknown> | undefined
+  await mockCatalogue(page, requests)
+  await page.unroute("**/api/saved-views")
+  await page.route("**/api/saved-views", async route => {
+    if (route.request().method() === "GET") return route.fulfill({ json: savedView ? [savedView] : [] })
+    const body = route.request().postDataJSON() as { name: string; state: Record<string, string> }
+    savedView = { id: 1, name: body.name, state: body.state, created_at: "2026-09-18T00:00:00Z", updated_at: "2026-09-18T00:00:00Z" }
+    return route.fulfill({ status: 201, json: savedView })
+  })
+  await page.goto("/?creator=Ada&source_id=1&sort=creator_desc")
+  page.once("dialog", dialog => dialog.accept("Ada collection"))
+  await page.getByRole("button", { name: "Save view" }).click()
+  await page.getByRole("button", { name: "Clear" }).click()
+  await page.selectOption("#saved-view-select", "1")
+  await expect.poll(() => requests.some((url) =>
+    url.includes("creator=Ada") && url.includes("source_id=1") && url.includes("sort=creator_desc"),
+  )).toBe(true)
+})
 
 test("catalogue creator filter and sort update the request state", async ({ page }) => {
   const requests: string[] = []

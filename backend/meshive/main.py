@@ -25,6 +25,7 @@ from meshive.api.recovery import router as recovery_router
 from meshive.api.roles import permissions_router
 from meshive.api.roles import router as roles_router
 from meshive.api.scans import router as scans_router
+from meshive.api.saved_views import router as saved_views_router
 from meshive.api.setup import router as setup_router
 from meshive.api.system import router as system_router
 from meshive.api.tags import admin_router as tags_admin_router
@@ -114,6 +115,7 @@ app.include_router(metadata_admin_router, prefix="/api")
 app.include_router(recovery_router, prefix="/api")
 app.include_router(setup_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
+app.include_router(saved_views_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(roles_router, prefix="/api")
 app.include_router(permissions_router, prefix="/api")

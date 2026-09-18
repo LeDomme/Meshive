@@ -12,6 +12,7 @@ from meshive.models.catalog import (
 )
 from meshive.models.creator import CreatorAlias, CreatorLink, CreatorMerge, CreatorProfile
 from meshive.models.favorite import FavoriteList, FavoriteListItem
+from meshive.models.saved_view import SavedView
 from meshive.models.library_source import LibrarySource
 from meshive.models.metadata import MetadataArtwork
 from meshive.models.session import UserSession
@@ -53,6 +54,7 @@ __all__ = [
     "RolePermission",
     "ScanIssue",
     "ScanRun",
+    "SavedView",
     "Tag",
     "TagAssignmentRule",
     "TagAssignmentRuleMatch",

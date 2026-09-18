@@ -47,6 +47,9 @@ class User(Base):
     favorite_lists: Mapped[list["FavoriteList"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"
     )
+    saved_views: Mapped[list["SavedView"]] = relationship(  # noqa: F821
+        back_populates="user", cascade="all, delete-orphan"
+    )
     role_definition: Mapped["Role | None"] = relationship(back_populates="users")  # noqa: F821
     library_source_grants: Mapped[list["UserLibrarySource"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"

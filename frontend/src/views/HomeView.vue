@@ -67,6 +67,28 @@ interface CatalogueFilters {
   tags: Tag[]
 }
 
+type CatalogueQuery = {
+  search: string
+  model: string
+  creator: string
+  creator_profile_id: string
+  franchise: string
+  series: string
+  collection: string
+  source_id: string
+  tag_id: string
+  status: string
+  sort: string
+}
+
+interface SavedView {
+  id: number
+  name: string
+  state: CatalogueQuery
+  created_at: string
+  updated_at: string
+}
+
 interface PaginationItem {
   key: string
   page: number
@@ -130,6 +152,8 @@ const favoriteMemberships = ref<Record<number, FavoriteMembershipList[]>>({})
 const selectedModelIds = ref<Set<number>>(new Set())
 const batchActionInProgress = ref(false)
 const batchSelectionMode = ref(false)
+const savedViews = ref<SavedView[]>([])
+const selectedSavedViewId = ref("")
 const filters = ref<CatalogueFilters>({
   models: [],
   creators: [],
@@ -545,6 +569,84 @@ function clearFilters() {
   catalogueSearchOpen.value = false
 }
 
+function savedViewState(): CatalogueQuery {
+  return { ...query }
+}
+
+function selectedSavedView(): SavedView | undefined {
+  return savedViews.value.find((view) => view.id === Number(selectedSavedViewId.value))
+}
+
+async function loadSavedViews() {
+  try {
+    savedViews.value = await apiRequest<SavedView[]>("/api/saved-views")
+  } catch {
+    savedViews.value = []
+  }
+}
+
+async function createSavedView() {
+  const name = window.prompt("Name this saved view")?.trim()
+  if (!name) return
+  errorMessage.value = ""
+  try {
+    const view = await apiRequest<SavedView>("/api/saved-views", {
+      method: "POST",
+      body: JSON.stringify({ name, state: savedViewState() }),
+    })
+    savedViews.value = [view, ...savedViews.value]
+    selectedSavedViewId.value = String(view.id)
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError
+      ? error.message
+      : "Unable to save this view"
+  }
+}
+
+function applySavedView() {
+  const view = selectedSavedView()
+  if (!view) return
+  const state = { ...defaultQuery, ...view.state }
+  if (!auth.can("catalogue.view_maintenance")) state.status = ""
+  Object.assign(query, state)
+  catalogueSearchOpen.value = Boolean(query.search)
+  window.dispatchEvent(new Event("meshive:reset-filter-scroll"))
+}
+
+async function renameSavedView() {
+  const view = selectedSavedView()
+  if (!view) return
+  const name = window.prompt("Rename saved view", view.name)?.trim()
+  if (!name || name === view.name) return
+  errorMessage.value = ""
+  try {
+    const renamed = await apiRequest<SavedView>(`/api/saved-views/${view.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    })
+    savedViews.value = savedViews.value.map((item) => item.id === renamed.id ? renamed : item)
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError
+      ? error.message
+      : "Unable to rename this saved view"
+  }
+}
+
+async function deleteSavedView() {
+  const view = selectedSavedView()
+  if (!view || !window.confirm(`Delete saved view "${view.name}"?`)) return
+  errorMessage.value = ""
+  try {
+    await apiRequest<void>(`/api/saved-views/${view.id}`, { method: "DELETE" })
+    savedViews.value = savedViews.value.filter((item) => item.id !== view.id)
+    selectedSavedViewId.value = ""
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError
+      ? error.message
+      : "Unable to delete this saved view"
+  }
+}
+
 async function toggleCatalogueSearch() {
   catalogueSearchOpen.value = !catalogueSearchOpen.value
   if (catalogueSearchOpen.value) {
@@ -802,6 +904,7 @@ watch(
 
 onMounted(async () => {
   await loadFilterOrder()
+  void loadSavedViews()
   await Promise.all([
     loadFilterOptions(),
     loadCatalogue(Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1),
@@ -1015,6 +1118,24 @@ onBeforeUnmount(() => {
       />
 
       <button :style="{ order: 100 }" class="secondary-button" type="button" @click="clearFilters">Clear</button>
+      <div :style="{ order: 101 }" class="saved-view-controls" aria-label="Saved views">
+        <label class="sr-only" for="saved-view-select">Saved views</label>
+        <select id="saved-view-select" v-model="selectedSavedViewId" @change="applySavedView">
+          <option value="">Saved views</option>
+          <option v-for="view in savedViews" :key="view.id" :value="String(view.id)">
+            {{ view.name }}
+          </option>
+        </select>
+        <button class="secondary-button compact-button" type="button" @click="createSavedView">
+          Save view
+        </button>
+        <button class="text-button" type="button" :disabled="!selectedSavedViewId" @click="renameSavedView">
+          Rename
+        </button>
+        <button class="text-button" type="button" :disabled="!selectedSavedViewId" @click="deleteSavedView">
+          Delete
+        </button>
+      </div>
     </div>
 
     <div

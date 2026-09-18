@@ -2144,6 +2144,18 @@ summary {
   gap: 0.55rem;
 }
 
+.saved-view-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.saved-view-controls select {
+  min-height: 2.25rem;
+  max-width: 13rem;
+}
+
 .catalogue-meta-actions .active {
   border-color: var(--meshive-cyan);
   color: #e2f7ff;
