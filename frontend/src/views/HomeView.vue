@@ -171,7 +171,9 @@ const loading = ref(true)
 const errorMessage = ref("")
 const page = ref<ModelPage>({ items: [], total: 0, page: 1, page_size: 48 })
 const infiniteItems = ref<ModelSummary[]>([])
+let infiniteItemIds = new Set<number>()
 const navigationMode = ref<"pagination" | "infinite">("pagination")
+const restoringCatalogue = ref(false)
 const loadingMore = ref(false)
 const visibleItems = computed(() => navigationMode.value === "infinite" ? infiniteItems.value : page.value.items)
 const infiniteSentinel = ref<HTMLElement | null>(null)
@@ -555,6 +557,34 @@ let filterController: AbortController | undefined
 let filterRequest = 0
 let favoriteMembershipsController: AbortController | undefined
 let favoriteMembershipsRequest = 0
+let restoreVisibilityScrollHandler: (() => void) | undefined
+
+function replaceInfiniteItems(items: ModelSummary[]) {
+  const itemIds = new Set<number>()
+  const uniqueItems: ModelSummary[] = []
+  for (const item of items) {
+    if (itemIds.has(item.id)) continue
+    itemIds.add(item.id)
+    uniqueItems.push(item)
+  }
+  infiniteItemIds = itemIds
+  infiniteItems.value = uniqueItems
+}
+
+function appendInfiniteItems(items: ModelSummary[]) {
+  const nextItems = [...infiniteItems.value]
+  for (const item of items) {
+    if (infiniteItemIds.has(item.id)) continue
+    infiniteItemIds.add(item.id)
+    nextItems.push(item)
+  }
+  infiniteItems.value = nextItems
+}
+
+function clearInfiniteItems() {
+  infiniteItemIds = new Set()
+  infiniteItems.value = []
+}
 
 async function loadCatalogue(targetPage = 1, scrollToTop = false) {
   const request = ++catalogueRequest
@@ -585,7 +615,8 @@ async function loadCatalogue(targetPage = 1, scrollToTop = false) {
     if (request !== catalogueRequest) return
     page.value = result
     if (navigationMode.value === "infinite") {
-      infiniteItems.value = targetPage === 1 ? result.items : [...infiniteItems.value, ...result.items.filter((item) => !infiniteItems.value.some((existing) => existing.id === item.id))]
+      if (targetPage === 1) replaceInfiniteItems(result.items)
+      else appendInfiniteItems(result.items)
     }
     if (auth.can("favorites.manage")) {
       await loadFavoriteMemberships(page.value.items.map((model) => model.id))
@@ -615,12 +646,17 @@ async function loadMoreCatalogue() {
 }
 
 async function restoreInfiniteCatalogue(restoreState: CatalogueRestoreState) {
-  const lastPage = Math.max(1, restoreState.loaded_page)
-  await loadCatalogue(1)
-  for (let targetPage = 2; targetPage <= lastPage && targetPage <= totalPages.value; targetPage += 1) {
-    await loadCatalogue(targetPage)
+  restoringCatalogue.value = true
+  try {
+    const lastPage = Math.max(1, restoreState.loaded_page)
+    await loadCatalogue(1)
+    for (let targetPage = 2; targetPage <= lastPage && targetPage <= totalPages.value; targetPage += 1) {
+      await loadCatalogue(targetPage)
+    }
+    await restoreCatalogueScroll(restoreState.scroll_y)
+  } finally {
+    await finishCatalogueRestore()
   }
-  await restoreCatalogueScroll(restoreState.scroll_y)
 }
 
 async function restorePaginationCatalogue(restoreState: CatalogueRestoreState) {
@@ -634,6 +670,25 @@ async function restoreCatalogueScroll(scrollY: number) {
     window.scrollTo({ top: scrollY, behavior: "auto" })
     if (window.scrollY >= scrollY) break
   }
+}
+
+async function finishCatalogueRestore() {
+  await nextTick()
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+  restoreVisibilityScrollHandler?.()
+  const handler = () => {
+    window.removeEventListener("wheel", handler)
+    window.removeEventListener("touchstart", handler)
+    window.removeEventListener("pointerdown", handler)
+    window.removeEventListener("keydown", handler)
+    restoringCatalogue.value = false
+    restoreVisibilityScrollHandler = undefined
+  }
+  restoreVisibilityScrollHandler = handler
+  window.addEventListener("wheel", handler, { passive: true })
+  window.addEventListener("touchstart", handler, { passive: true })
+  window.addEventListener("pointerdown", handler, { passive: true })
+  window.addEventListener("keydown", handler)
 }
 
 function cachedCatalogueRestore(restoreState: CatalogueRestoreState): CatalogueNavigationCache | undefined {
@@ -652,18 +707,20 @@ function cachedCatalogueRestore(restoreState: CatalogueRestoreState): CatalogueN
 }
 
 async function restoreCachedCatalogue(cache: CatalogueNavigationCache) {
+  restoringCatalogue.value = true
   page.value = { ...cache.page, items: [...cache.page.items] }
-  infiniteItems.value = [...cache.infinite_items]
+  replaceInfiniteItems(cache.infinite_items)
   favoriteMemberships.value = { ...cache.favorite_memberships }
   loading.value = false
   await restoreCatalogueScroll(cache.restore.scroll_y)
+  await finishCatalogueRestore()
 }
 
 function setNavigationMode(mode: "pagination" | "infinite") {
   if (navigationMode.value === mode) return
   invalidateCatalogueNavigationCache()
   navigationMode.value = mode
-  infiniteItems.value = []
+  clearInfiniteItems()
   page.value = { ...page.value, items: [], page: 1 }
   void saveFilterOrder()
   void loadCatalogue(1, mode === "pagination")
@@ -1146,6 +1203,7 @@ onBeforeUnmount(() => {
   catalogueController?.abort()
   filterController?.abort()
   favoriteMembershipsController?.abort()
+  restoreVisibilityScrollHandler?.()
   clearTimeout(filterTimer)
 })
 </script>
@@ -1457,7 +1515,7 @@ onBeforeUnmount(() => {
     <p v-if="errorMessage" class="form-error error-panel" role="alert">
       {{ errorMessage }}
     </p>
-    <section v-if="visibleItems.length" class="model-grid">
+    <section v-if="visibleItems.length" class="model-grid" :class="{ 'is-restoring': restoringCatalogue }">
       <article
         v-for="model in visibleItems"
         :key="model.id"
@@ -1486,6 +1544,7 @@ onBeforeUnmount(() => {
             :src="model.thumbnail_url || modelFallbackUrl(model.id)"
             :alt="model.thumbnail_url ? model.name : `${model.name} fallback preview`"
             loading="lazy"
+            decoding="async"
           >
           <span v-if="auth.can('catalogue.view_maintenance') && model.status !== 'available'" class="model-status">
             {{ model.status }}
