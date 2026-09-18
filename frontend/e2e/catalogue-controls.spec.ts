@@ -102,7 +102,7 @@ test("catalogue action groups can be reordered and the order persists", async ({
   const selection = page.locator("[data-action-key='selection']")
   const savedViews = page.locator("[data-action-key='saved_views']")
   await selection.getByRole("button", { name: "Select models" }).dragTo(savedViews)
-  await expect.poll(() => preferences.action_order).toEqual(["saved_views", "selection"])
+  await expect.poll(() => preferences.action_order).toEqual(["saved_views", "selection", "navigation"])
   await expect(savedViews).toHaveCSS("order", "0")
   await page.reload()
   await expect(savedViews).toHaveCSS("order", "0")
