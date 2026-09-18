@@ -20,6 +20,7 @@ const props = withDefaults(
     modelValue: string
     label: string
     allLabel: string
+    clearOptionLabel?: string
     options: SearchableFilterOption[]
     searchPlaceholder?: string
     align?: "start" | "end"
@@ -29,6 +30,7 @@ const props = withDefaults(
     searchPlaceholder: "Search options",
     align: "start",
     showAllOption: true,
+    clearOptionLabel: undefined,
   },
 )
 
@@ -185,7 +187,7 @@ onBeforeUnmount(() => {
           :aria-selected="modelValue === ''"
           @click="selectOption('')"
         >
-          <span>{{ allLabel }}</span>
+            <span>{{ clearOptionLabel ?? allLabel }}</span>
         </button>
 
         <button

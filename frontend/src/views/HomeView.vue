@@ -661,6 +661,15 @@ function applySavedView() {
   window.dispatchEvent(new Event("meshive:reset-filter-scroll"))
 }
 
+function selectSavedView(value: string) {
+  selectedSavedViewId.value = value
+  if (!value) {
+    clearFilters()
+    return
+  }
+  applySavedView()
+}
+
 async function renameSavedView() {
   const view = selectedSavedView()
   if (!view) return
@@ -1224,11 +1233,12 @@ onBeforeUnmount(() => {
             :model-value="selectedSavedViewId"
             label="Saved views"
             all-label="Saved views"
+            clear-option-label="Default view"
             search-placeholder="Search saved views"
             align="end"
             :options="savedViewOptions"
             @dragstart="startActionDrag('saved_views', $event)"
-            @update:model-value="selectedSavedViewId = $event; applySavedView()"
+            @update:model-value="selectSavedView"
           />
           <button class="secondary-button compact-button" type="button" @click="createSavedView">
             Save view
