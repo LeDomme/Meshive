@@ -1211,6 +1211,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div
+          v-if="!batchSelectionMode"
           data-action-key="saved_views"
           :style="{ order: actionPosition('saved_views') }"
           class="saved-view-controls catalogue-action-group"

@@ -2153,7 +2153,13 @@ summary {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  position: relative;
   cursor: grab;
+}
+
+.catalogue-action-button .searchable-filter-drag-grip {
+  position: absolute;
+  left: -0.55rem;
 }
 
 .catalogue-action-button:active {
@@ -2168,7 +2174,7 @@ summary {
 }
 
 .saved-view-controls .searchable-filter {
-  width: min(13rem, 100%);
+  width: min(10rem, 100%);
 }
 
 .saved-view-controls .searchable-filter[draggable="true"] {
