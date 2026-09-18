@@ -1259,7 +1259,6 @@ onBeforeUnmount(() => {
           Delete all missing ({{ missingCount }})
         </button>
       </div>
-      <p class="catalogue-loading" :class="{ 'catalogue-loading--visible': loading }">Loading…</p>
     </div>
     </section>
 

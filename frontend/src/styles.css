@@ -2183,20 +2183,6 @@ summary {
   cursor: grabbing;
 }
 
-.catalogue-loading {
-  position: absolute;
-  right: 1rem;
-  bottom: 0.15rem;
-  margin: 0;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease;
-}
-
-.catalogue-loading--visible {
-  opacity: 1;
-}
-
 .catalogue-meta-actions .active {
   border-color: var(--meshive-cyan);
   color: #e2f7ff;
