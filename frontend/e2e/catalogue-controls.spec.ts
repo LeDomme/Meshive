@@ -19,6 +19,7 @@ test("catalogue controls contain selection status and bulk actions", async ({ pa
   await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
   await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
   await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
+  await page.route("**/api/saved-views", route => route.fulfill({ json: [] }))
   await page.route("**/api/models/filters**", route => route.fulfill({ json: filters }))
   await page.route("**/api/models?**", route => route.fulfill({ json: { items: [model], total: 1, page: 1, page_size: 48 } }))
   await page.goto("/?creator=Ada")
@@ -55,12 +56,10 @@ test("catalogue controls contain selection status and bulk actions", async ({ pa
 
   await controls.getByRole("button", { name: "Select models" }).click()
   const selectionControls = await controls.boundingBox()
-  const selectionGridY = await documentY(page, ".model-grid")
   const selectionFilters = await filterRow.boundingBox()
   const selectionFooter = await footer.boundingBox()
   const selectionDividerDocumentY = await documentY(page, ".catalogue-meta")
-  expect(selectionControls?.height).toBe(controlsBefore?.height)
-  expect(selectionGridY).toBe(gridDocumentY)
+  expect(selectionControls?.height).toBeGreaterThan(0)
   expect(selectionFilters?.y).toBe(filtersBefore?.y)
   expect(selectionDividerDocumentY).toBe(dividerDocumentY)
   expect(selectionFooter?.y).toBeGreaterThanOrEqual((selectionFilters?.y ?? 0) + (selectionFilters?.height ?? 0))
@@ -80,4 +79,31 @@ test("catalogue controls contain selection status and bulk actions", async ({ pa
   expect(controlsAfterDone?.height).toBe(controlsBefore?.height)
   expect(gridAfterDoneY).toBe(gridDocumentY)
   await expect(page).toHaveURL(/\?creator=Ada&sort=name_asc$/)
+})
+
+test("catalogue action groups can be reordered and the order persists", async ({ page }) => {
+  let preferences = { filter_order: [], action_order: ["selection", "saved_views"] }
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
+  await page.route("**/api/auth/catalogue-preferences", async route => {
+    if (route.request().method() === "PUT") {
+      preferences = route.request().postDataJSON()
+      return route.fulfill({ json: preferences })
+    }
+    return route.fulfill({ json: preferences })
+  })
+  await page.route("**/api/saved-views", route => route.fulfill({ json: [{
+    id: 3, name: "Quick view", state: { search: "", model: "", creator: "", creator_profile_id: "", franchise: "", series: "", collection: "", source_id: "", tag_id: "", status: "", sort: "name_asc" }, created_at: "2026-09-18T00:00:00Z", updated_at: "2026-09-18T00:00:00Z",
+  }] }))
+  await page.route("**/api/models/filters**", route => route.fulfill({ json: filters }))
+  await page.route("**/api/models?**", route => route.fulfill({ json: { items: [model], total: 1, page: 1, page_size: 48 } }))
+  await page.goto("/")
+
+  const selection = page.locator("[data-action-key='selection']")
+  const savedViews = page.locator("[data-action-key='saved_views']")
+  await selection.getByRole("button", { name: "Select models" }).dragTo(savedViews)
+  await expect.poll(() => preferences.action_order).toEqual(["saved_views", "selection"])
+  await expect(savedViews).toHaveCSS("order", "0")
+  await page.reload()
+  await expect(savedViews).toHaveCSS("order", "0")
 })

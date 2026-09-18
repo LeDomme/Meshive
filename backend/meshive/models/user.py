@@ -28,6 +28,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
     catalogue_filter_order: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    catalogue_action_order: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -45,6 +46,9 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     favorite_lists: Mapped[list["FavoriteList"]] = relationship(  # noqa: F821
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    saved_views: Mapped[list["SavedView"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"
     )
     role_definition: Mapped["Role | None"] = relationship(back_populates="users")  # noqa: F821

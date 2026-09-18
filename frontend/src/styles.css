@@ -2140,8 +2140,47 @@ summary {
 .catalogue-meta-actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
   gap: 0.55rem;
+  min-width: 0;
+}
+
+.catalogue-action-group {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.catalogue-action-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: grab;
+}
+
+.catalogue-action-button:active {
+  cursor: grabbing;
+}
+
+.saved-view-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.55rem;
+}
+
+.saved-view-controls .searchable-filter {
+  flex: 0 1 10rem;
+  width: 10rem;
+}
+
+.saved-view-controls .searchable-filter[draggable="true"] {
+  cursor: grab;
+}
+
+.saved-view-controls .searchable-filter[draggable="true"]:active {
+  cursor: grabbing;
 }
 
 .catalogue-meta-actions .active {
@@ -2169,6 +2208,15 @@ summary {
   .catalogue-meta {
     flex-wrap: wrap;
     gap: 0.65rem;
+  }
+
+  .catalogue-meta-actions,
+  .saved-view-controls {
+    flex-wrap: wrap;
+  }
+
+  .saved-view-controls .searchable-filter {
+    flex-basis: min(10rem, 100%);
   }
 
   .detail-topbar {

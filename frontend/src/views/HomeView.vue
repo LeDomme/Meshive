@@ -67,6 +67,28 @@ interface CatalogueFilters {
   tags: Tag[]
 }
 
+type CatalogueQuery = {
+  search: string
+  model: string
+  creator: string
+  creator_profile_id: string
+  franchise: string
+  series: string
+  collection: string
+  source_id: string
+  tag_id: string
+  status: string
+  sort: string
+}
+
+interface SavedView {
+  id: number
+  name: string
+  state: CatalogueQuery
+  created_at: string
+  updated_at: string
+}
+
 interface PaginationItem {
   key: string
   page: number
@@ -130,6 +152,8 @@ const favoriteMemberships = ref<Record<number, FavoriteMembershipList[]>>({})
 const selectedModelIds = ref<Set<number>>(new Set())
 const batchActionInProgress = ref(false)
 const batchSelectionMode = ref(false)
+const savedViews = ref<SavedView[]>([])
+const selectedSavedViewId = ref("")
 const filters = ref<CatalogueFilters>({
   models: [],
   creators: [],
@@ -281,7 +305,11 @@ const defaultFilterOrder: CatalogueFilterKey[] = [
   "sort",
 ]
 const filterOrder = ref<CatalogueFilterKey[]>([...defaultFilterOrder])
+type CatalogueActionKey = "selection" | "saved_views"
+const defaultActionOrder: CatalogueActionKey[] = ["selection", "saved_views"]
+const actionOrder = ref<CatalogueActionKey[]>([...defaultActionOrder])
 const draggedFilter = ref<CatalogueFilterKey | null>(null)
+const draggedAction = ref<CatalogueActionKey | null>(null)
 const dragPreviewTarget = ref<CatalogueFilterKey | null>(null)
 const filterOrderChanged = ref(false)
 
@@ -297,18 +325,34 @@ function normalizeFilterOrder(value: unknown): CatalogueFilterKey[] {
   return [...configured, ...defaultFilterOrder.filter((key) => !configured.includes(key))]
 }
 
+function normalizeActionOrder(value: unknown): CatalogueActionKey[] {
+  const received = Array.isArray(value) ? value : []
+  const configured = received.filter(
+    (key): key is CatalogueActionKey =>
+      typeof key === "string" && defaultActionOrder.includes(key as CatalogueActionKey)
+      && !received.slice(0, received.indexOf(key)).includes(key),
+  )
+  return [...configured, ...defaultActionOrder.filter((key) => !configured.includes(key))]
+}
+
 function filterPosition(key: CatalogueFilterKey): number {
   return filterOrder.value.indexOf(key)
 }
 
+function actionPosition(key: CatalogueActionKey): number {
+  return actionOrder.value.indexOf(key)
+}
+
 async function loadFilterOrder() {
   try {
-    const preferences = await apiRequest<{ filter_order: string[] }>(
+    const preferences = await apiRequest<{ filter_order: string[]; action_order?: string[] }>(
       "/api/auth/catalogue-preferences",
     )
     filterOrder.value = normalizeFilterOrder(preferences.filter_order)
+    actionOrder.value = normalizeActionOrder(preferences.action_order)
   } catch {
     filterOrder.value = [...defaultFilterOrder]
+    actionOrder.value = [...defaultActionOrder]
   }
 }
 
@@ -316,12 +360,39 @@ async function saveFilterOrder() {
   try {
     await apiRequest("/api/auth/catalogue-preferences", {
       method: "PUT",
-      body: JSON.stringify({ filter_order: filterOrder.value }),
+      body: JSON.stringify({ filter_order: filterOrder.value, action_order: actionOrder.value }),
     })
   } catch {
     errorMessage.value = "Unable to save the filter order"
   }
 }
+
+function startActionDrag(key: CatalogueActionKey, event: DragEvent) {
+  draggedAction.value = key
+  event.dataTransfer?.setData("text/plain", key)
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move"
+}
+
+function moveAction(source: CatalogueActionKey, target: CatalogueActionKey): boolean {
+  if (source === target) return false
+  const next = [...actionOrder.value]
+  const sourceIndex = next.indexOf(source)
+  const targetIndex = next.indexOf(target)
+  next.splice(sourceIndex, 1)
+  next.splice(targetIndex, 0, source)
+  actionOrder.value = next
+  return true
+}
+
+function dropAction(target: CatalogueActionKey, event: DragEvent) {
+  event.preventDefault()
+  if (draggedAction.value && moveAction(draggedAction.value, target)) void saveFilterOrder()
+  draggedAction.value = null
+}
+
+const savedViewOptions = computed(() => savedViews.value.map((view) => ({
+  value: String(view.id), label: view.name,
+})))
 
 function startFilterDrag(key: CatalogueFilterKey, event: DragEvent) {
   draggedFilter.value = key
@@ -541,8 +612,96 @@ async function loadFilterOptions() {
 
 function clearFilters() {
   Object.assign(query, defaultQuery)
+  selectedSavedViewId.value = ""
   window.dispatchEvent(new Event("meshive:reset-filter-scroll"))
   catalogueSearchOpen.value = false
+}
+
+function savedViewState(): CatalogueQuery {
+  return { ...query }
+}
+
+function selectedSavedView(): SavedView | undefined {
+  return savedViews.value.find((view) => view.id === Number(selectedSavedViewId.value))
+}
+
+async function loadSavedViews() {
+  try {
+    savedViews.value = await apiRequest<SavedView[]>("/api/saved-views")
+  } catch {
+    savedViews.value = []
+  }
+}
+
+async function createSavedView() {
+  const name = window.prompt("Name this saved view")?.trim()
+  if (!name) return
+  errorMessage.value = ""
+  try {
+    const view = await apiRequest<SavedView>("/api/saved-views", {
+      method: "POST",
+      body: JSON.stringify({ name, state: savedViewState() }),
+    })
+    savedViews.value = [view, ...savedViews.value]
+    selectedSavedViewId.value = String(view.id)
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError
+      ? error.message
+      : "Unable to save this view"
+  }
+}
+
+function applySavedView() {
+  const view = selectedSavedView()
+  if (!view) return
+  const state = { ...defaultQuery, ...view.state }
+  if (!auth.can("catalogue.view_maintenance")) state.status = ""
+  Object.assign(query, state)
+  catalogueSearchOpen.value = Boolean(query.search)
+  window.dispatchEvent(new Event("meshive:reset-filter-scroll"))
+}
+
+function selectSavedView(value: string) {
+  selectedSavedViewId.value = value
+  if (!value) {
+    clearFilters()
+    return
+  }
+  applySavedView()
+}
+
+async function renameSavedView() {
+  const view = selectedSavedView()
+  if (!view) return
+  const name = window.prompt("Rename saved view", view.name)?.trim()
+  if (!name || name === view.name) return
+  errorMessage.value = ""
+  try {
+    const renamed = await apiRequest<SavedView>(`/api/saved-views/${view.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    })
+    savedViews.value = savedViews.value.map((item) => item.id === renamed.id ? renamed : item)
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError
+      ? error.message
+      : "Unable to rename this saved view"
+  }
+}
+
+async function deleteSavedView() {
+  const view = selectedSavedView()
+  if (!view || !window.confirm(`Delete saved view "${view.name}"?`)) return
+  errorMessage.value = ""
+  try {
+    await apiRequest<void>(`/api/saved-views/${view.id}`, { method: "DELETE" })
+    savedViews.value = savedViews.value.filter((item) => item.id !== view.id)
+    selectedSavedViewId.value = ""
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError
+      ? error.message
+      : "Unable to delete this saved view"
+  }
 }
 
 async function toggleCatalogueSearch() {
@@ -802,6 +961,7 @@ watch(
 
 onMounted(async () => {
   await loadFilterOrder()
+  void loadSavedViews()
   await Promise.all([
     loadFilterOptions(),
     loadCatalogue(Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1),
@@ -1039,15 +1199,57 @@ onBeforeUnmount(() => {
           </button>
           <button class="text-button" type="button" :disabled="batchActionInProgress || !selectedModelCount" @click="clearModelSelection">Clear selection</button>
         </template>
-        <button
+        <div
           v-if="canRunBatchActions && page.items.length"
-          class="secondary-button compact-button"
-          type="button"
-          :class="{ active: batchSelectionMode }"
-          @click="toggleBatchSelectionMode"
+          data-action-key="selection"
+          :style="{ order: actionPosition('selection') }"
+          class="catalogue-action-group"
+          @dragover.prevent
+          @drop="dropAction('selection', $event)"
         >
-          {{ batchSelectionMode ? "Done selecting" : "Select models" }}
-        </button>
+          <button
+            class="secondary-button compact-button catalogue-action-button"
+            type="button"
+            draggable="true"
+            :class="{ active: batchSelectionMode }"
+            @dragstart="startActionDrag('selection', $event)"
+            @click="toggleBatchSelectionMode"
+          >
+            <span class="searchable-filter-drag-grip" aria-hidden="true"></span>
+            {{ batchSelectionMode ? "Done selecting" : "Select models" }}
+          </button>
+        </div>
+        <div
+          v-if="!batchSelectionMode"
+          data-action-key="saved_views"
+          :style="{ order: actionPosition('saved_views') }"
+          class="saved-view-controls catalogue-action-group"
+          @dragover.prevent
+          @drop="dropAction('saved_views', $event)"
+        >
+          <SearchableFilter
+            data-action-key="saved_views-trigger"
+            draggable="true"
+            :model-value="selectedSavedViewId"
+            label="Saved views"
+            all-label="Saved views"
+            clear-option-label="Default view"
+            search-placeholder="Search saved views"
+            align="end"
+            :options="savedViewOptions"
+            @dragstart="startActionDrag('saved_views', $event)"
+            @update:model-value="selectSavedView"
+          />
+          <button class="secondary-button compact-button" type="button" @click="createSavedView">
+            Save view
+          </button>
+          <button v-if="selectedSavedViewId" class="text-button" type="button" @click="renameSavedView">
+            Rename
+          </button>
+          <button v-if="selectedSavedViewId" class="text-button" type="button" @click="deleteSavedView">
+            Delete
+          </button>
+        </div>
         <button
           v-if="auth.can('catalogue.view_maintenance') && auth.can('models.delete_missing') && missingCount > 0"
           class="danger-button"
@@ -1057,7 +1259,6 @@ onBeforeUnmount(() => {
           Delete all missing ({{ missingCount }})
         </button>
       </div>
-      <p v-if="loading">Loading…</p>
     </div>
     </section>
 
