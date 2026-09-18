@@ -19,6 +19,7 @@ test("catalogue controls contain selection status and bulk actions", async ({ pa
   await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
   await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
   await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
+  await page.route("**/api/saved-views", route => route.fulfill({ json: [] }))
   await page.route("**/api/models/filters**", route => route.fulfill({ json: filters }))
   await page.route("**/api/models?**", route => route.fulfill({ json: { items: [model], total: 1, page: 1, page_size: 48 } }))
   await page.goto("/?creator=Ada")

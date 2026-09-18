@@ -565,6 +565,7 @@ async function loadFilterOptions() {
 
 function clearFilters() {
   Object.assign(query, defaultQuery)
+  selectedSavedViewId.value = ""
   window.dispatchEvent(new Event("meshive:reset-filter-scroll"))
   catalogueSearchOpen.value = false
 }
@@ -1118,24 +1119,6 @@ onBeforeUnmount(() => {
       />
 
       <button :style="{ order: 100 }" class="secondary-button" type="button" @click="clearFilters">Clear</button>
-      <div :style="{ order: 101 }" class="saved-view-controls" aria-label="Saved views">
-        <label class="sr-only" for="saved-view-select">Saved views</label>
-        <select id="saved-view-select" v-model="selectedSavedViewId" @change="applySavedView">
-          <option value="">Saved views</option>
-          <option v-for="view in savedViews" :key="view.id" :value="String(view.id)">
-            {{ view.name }}
-          </option>
-        </select>
-        <button class="secondary-button compact-button" type="button" @click="createSavedView">
-          Save view
-        </button>
-        <button class="text-button" type="button" :disabled="!selectedSavedViewId" @click="renameSavedView">
-          Rename
-        </button>
-        <button class="text-button" type="button" :disabled="!selectedSavedViewId" @click="deleteSavedView">
-          Delete
-        </button>
-      </div>
     </div>
 
     <div
@@ -1169,6 +1152,24 @@ onBeforeUnmount(() => {
         >
           {{ batchSelectionMode ? "Done selecting" : "Select models" }}
         </button>
+        <div class="saved-view-controls" aria-label="Saved views">
+          <label class="sr-only" for="saved-view-select">Saved views</label>
+          <select id="saved-view-select" v-model="selectedSavedViewId" @change="applySavedView">
+            <option value="">Saved views</option>
+            <option v-for="view in savedViews" :key="view.id" :value="String(view.id)">
+              {{ view.name }}
+            </option>
+          </select>
+          <button class="secondary-button compact-button" type="button" @click="createSavedView">
+            Save view
+          </button>
+          <button v-if="selectedSavedViewId" class="text-button" type="button" @click="renameSavedView">
+            Rename
+          </button>
+          <button v-if="selectedSavedViewId" class="text-button" type="button" @click="deleteSavedView">
+            Delete
+          </button>
+        </div>
         <button
           v-if="auth.can('catalogue.view_maintenance') && auth.can('models.delete_missing') && missingCount > 0"
           class="danger-button"
