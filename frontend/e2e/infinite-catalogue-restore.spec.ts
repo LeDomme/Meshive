@@ -12,7 +12,7 @@ function detail(id: number) {
   return { id, name: `Detail ${id}`, variant: null, creator: "Ada", creator_links: [], franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", relative_path: `Model ${id}`, images: [], archives: [], archive_bundle_download_url: null, recent_scan_issues: [], archive_statistics: null, tags: [] }
 }
 
-async function mockInfiniteCatalogue(page: Page, savedViews: unknown[] = []) {
+async function mockInfiniteCatalogue(page: Page, savedViews: unknown[] = [], modelRequests: number[] = []) {
   let preferences = { filter_order: [], action_order: [], navigation_mode: "pagination" }
   await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
   await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
@@ -29,6 +29,7 @@ async function mockInfiniteCatalogue(page: Page, savedViews: unknown[] = []) {
   await page.route("**/api/models?**", route => {
     const url = new URL(route.request().url())
     const requestedPage = Number(url.searchParams.get("page") || "1")
+    modelRequests.push(requestedPage)
     const creator = url.searchParams.get("creator") || "Ada"
     return route.fulfill({ json: { items: Array.from({ length: 48 }, (_, index) => model(requestedPage, index + 1, creator)), total: 240, page: requestedPage, page_size: 48 } })
   })
@@ -87,17 +88,20 @@ async function openVisibleModelDetail(page: Page) {
 
 test("browser back restores infinite batches, scroll position, and automatic loading", async ({ page }) => {
   await mockIntersectionObserver(page)
-  await mockInfiniteCatalogue(page)
+  const modelRequests: number[] = []
+  await mockInfiniteCatalogue(page, [], modelRequests)
   await page.goto("/")
   await enableInfiniteAndLoadThreePages(page)
   await scrollNearInfiniteSentinel(page)
   const scrollY = await page.evaluate(() => window.scrollY)
 
   await openVisibleModelDetail(page)
+  modelRequests.length = 0
   await page.goBack()
 
   await expect(page.getByRole("link", { name: "Ada page 3 model 1", exact: true })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThanOrEqual(scrollY - 4)
+  expect(modelRequests).toEqual([])
   await page.evaluate(() => (window as Window & { triggerInfiniteSentinel: () => void }).triggerInfiniteSentinel())
   await expect(page.getByRole("link", { name: "Ada page 4 model 1", exact: true })).toBeVisible()
 })
@@ -105,7 +109,8 @@ test("browser back restores infinite batches, scroll position, and automatic loa
 test("catalogue back restores a saved view and infinite automatic loading", async ({ page }) => {
   await mockIntersectionObserver(page)
   const savedView = { id: 1, name: "Ada view", state: { search: "", model: "", creator: "Ada", creator_profile_id: "", franchise: "", series: "", collection: "", source_id: "1", tag_id: "", status: "", sort: "name_asc" }, created_at: "2026-09-18T00:00:00Z", updated_at: "2026-09-18T00:00:00Z" }
-  await mockInfiniteCatalogue(page, [savedView])
+  const modelRequests: number[] = []
+  await mockInfiniteCatalogue(page, [savedView], modelRequests)
   await page.goto("/")
   await page.getByRole("button", { name: "Saved views" }).click()
   await page.getByRole("option", { name: "Ada view" }).click()
@@ -116,12 +121,14 @@ test("catalogue back restores a saved view and infinite automatic loading", asyn
   const scrollY = await page.evaluate(() => window.scrollY)
 
   await openVisibleModelDetail(page)
+  modelRequests.length = 0
   await expect(page.getByRole("link", { name: "Back to catalogue" })).toBeVisible()
   await page.getByRole("link", { name: "Back to catalogue" }).click()
 
   await expect(page.getByRole("button", { name: "Saved views" })).toContainText("Ada view")
   await expect(page.getByRole("link", { name: "Ada page 3 model 1", exact: true })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThanOrEqual(scrollY - 4)
+  expect(modelRequests).toEqual([])
   await page.evaluate(() => (window as Window & { triggerInfiniteSentinel: () => void }).triggerInfiniteSentinel())
   await expect(page.getByRole("link", { name: "Ada page 4 model 1", exact: true })).toBeVisible()
 
@@ -129,4 +136,21 @@ test("catalogue back restores a saved view and infinite automatic loading", asyn
   await page.getByRole("option", { name: /^Bea/ }).click()
   await expect(page.getByRole("link", { name: "Bea page 1 model 1", exact: true })).toBeVisible()
   await expect(page.getByRole("link", { name: "Ada page 3 model 1", exact: true })).toHaveCount(0)
+})
+
+test("reload falls back to restoring the previously loaded infinite batches", async ({ page }) => {
+  await mockIntersectionObserver(page)
+  const modelRequests: number[] = []
+  await mockInfiniteCatalogue(page, [], modelRequests)
+  await page.goto("/")
+  await enableInfiniteAndLoadThreePages(page)
+  await scrollNearInfiniteSentinel(page)
+
+  await openVisibleModelDetail(page)
+  await page.reload()
+  modelRequests.length = 0
+  await page.goBack()
+
+  await expect(page.getByRole("link", { name: "Ada page 3 model 1", exact: true })).toBeVisible()
+  await expect.poll(() => modelRequests).toEqual([1, 2, 3])
 })
