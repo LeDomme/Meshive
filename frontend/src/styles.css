@@ -2146,6 +2146,10 @@ summary {
   min-width: 0;
 }
 
+.catalogue-navigation-mode { display: flex; gap: 0.35rem; }
+.catalogue-navigation-mode .active { color: #e2f7ff; border-color: var(--meshive-cyan); }
+.infinite-sentinel { display: flex; justify-content: center; padding: 1.5rem 0; }
+
 .catalogue-action-group {
   display: flex;
   align-items: center;

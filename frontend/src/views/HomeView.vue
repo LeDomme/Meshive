@@ -144,6 +144,12 @@ const route = useRoute()
 const loading = ref(true)
 const errorMessage = ref("")
 const page = ref<ModelPage>({ items: [], total: 0, page: 1, page_size: 48 })
+const infiniteItems = ref<ModelSummary[]>([])
+const navigationMode = ref<"pagination" | "infinite">("pagination")
+const loadingMore = ref(false)
+const visibleItems = computed(() => navigationMode.value === "infinite" ? infiniteItems.value : page.value.items)
+const infiniteSentinel = ref<HTMLElement | null>(null)
+let infiniteObserver: IntersectionObserver | undefined
 const favoriteModel = ref<ModelSummary | null>(null)
 const favoriteDialogTargets = computed(() =>
   favoriteModel.value ? favoriteTargetsForModel(favoriteModel.value) : [],
@@ -345,11 +351,12 @@ function actionPosition(key: CatalogueActionKey): number {
 
 async function loadFilterOrder() {
   try {
-    const preferences = await apiRequest<{ filter_order: string[]; action_order?: string[] }>(
+    const preferences = await apiRequest<{ filter_order: string[]; action_order?: string[]; navigation_mode?: "pagination" | "infinite" }>(
       "/api/auth/catalogue-preferences",
     )
     filterOrder.value = normalizeFilterOrder(preferences.filter_order)
     actionOrder.value = normalizeActionOrder(preferences.action_order)
+    navigationMode.value = preferences.navigation_mode ?? "pagination"
   } catch {
     filterOrder.value = [...defaultFilterOrder]
     actionOrder.value = [...defaultActionOrder]
@@ -360,7 +367,7 @@ async function saveFilterOrder() {
   try {
     await apiRequest("/api/auth/catalogue-preferences", {
       method: "PUT",
-      body: JSON.stringify({ filter_order: filterOrder.value, action_order: actionOrder.value }),
+      body: JSON.stringify({ filter_order: filterOrder.value, action_order: actionOrder.value, navigation_mode: navigationMode.value }),
     })
   } catch {
     errorMessage.value = "Unable to save the filter order"
@@ -518,6 +525,9 @@ async function loadCatalogue(targetPage = 1, scrollToTop = false) {
     })
     if (request !== catalogueRequest) return
     page.value = result
+    if (navigationMode.value === "infinite") {
+      infiniteItems.value = targetPage === 1 ? result.items : [...infiniteItems.value, ...result.items.filter((item) => !infiniteItems.value.some((existing) => existing.id === item.id))]
+    }
     if (auth.can("favorites.manage")) {
       await loadFavoriteMemberships(page.value.items.map((model) => model.id))
     } else {
@@ -536,6 +546,22 @@ async function loadCatalogue(targetPage = 1, scrollToTop = false) {
   } finally {
     if (request === catalogueRequest) loading.value = false
   }
+}
+
+async function loadMoreCatalogue() {
+  if (loadingMore.value || page.value.page >= totalPages.value) return
+  loadingMore.value = true
+  await loadCatalogue(page.value.page + 1)
+  loadingMore.value = false
+}
+
+function setNavigationMode(mode: "pagination" | "infinite") {
+  if (navigationMode.value === mode) return
+  navigationMode.value = mode
+  infiniteItems.value = []
+  void saveFilterOrder()
+  void loadCatalogue(1)
+  void nextTick(() => infiniteSentinel.value && infiniteObserver?.observe(infiniteSentinel.value))
 }
 
 function goToPage(targetPage: number) {
@@ -966,9 +992,14 @@ onMounted(async () => {
     loadFilterOptions(),
     loadCatalogue(Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1),
   ])
+  infiniteObserver = new IntersectionObserver((entries) => {
+    if (entries[0]?.isIntersecting && navigationMode.value === "infinite") void loadMoreCatalogue()
+  }, { rootMargin: "320px" })
+  if (infiniteSentinel.value) infiniteObserver.observe(infiniteSentinel.value)
 })
 
 onBeforeUnmount(() => {
+  infiniteObserver?.disconnect()
   catalogueController?.abort()
   filterController?.abort()
   favoriteMembershipsController?.abort()
@@ -1187,6 +1218,10 @@ onBeforeUnmount(() => {
         <span v-if="batchSelectionMode && selectedModelCount" class="batch-selection-count">{{ selectedModelCount }} selected</span>
       </div>
       <div class="catalogue-meta-actions">
+        <div class="catalogue-navigation-mode" aria-label="Catalogue navigation mode">
+          <button class="text-button" :class="{ active: navigationMode === 'pagination' }" type="button" @click="setNavigationMode('pagination')">Pages</button>
+          <button class="text-button" :class="{ active: navigationMode === 'infinite' }" type="button" @click="setNavigationMode('infinite')">Infinite scroll</button>
+        </div>
         <template v-if="batchSelectionMode">
           <button v-if="auth.can('models.rescan')" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress || !selectedModelCount" @click="runSelectedModelAction('rescan')">
             Rescan selected
@@ -1265,9 +1300,9 @@ onBeforeUnmount(() => {
     <p v-if="errorMessage" class="form-error error-panel" role="alert">
       {{ errorMessage }}
     </p>
-    <section v-if="page.items.length" class="model-grid">
+    <section v-if="visibleItems.length" class="model-grid">
       <article
-        v-for="model in page.items"
+        v-for="model in visibleItems"
         :key="model.id"
         class="model-card"
         :class="{
@@ -1377,7 +1412,10 @@ onBeforeUnmount(() => {
       <p>Run a source scan or adjust the active filters.</p>
     </section>
 
-    <nav v-if="totalPages > 1" class="pagination" aria-label="Catalogue pages">
+    <div v-if="navigationMode === 'infinite' && page.page < totalPages" ref="infiniteSentinel" class="infinite-sentinel">
+      <button class="secondary-button" type="button" :disabled="loadingMore" @click="loadMoreCatalogue">Load more</button>
+    </div>
+    <nav v-if="navigationMode === 'pagination' && totalPages > 1" class="pagination" aria-label="Catalogue pages">
       <span class="sr-only" aria-live="polite">
         Page {{ page.page }} of {{ totalPages }}
       </span>
