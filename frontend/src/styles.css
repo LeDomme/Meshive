@@ -2232,6 +2232,16 @@ summary {
   }
 }
 
+.catalogue-shell .model-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 24.5rem;
+}
+
+.catalogue-shell .model-grid.is-restoring .model-card {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
 .model-card {
   position: relative;
 }
