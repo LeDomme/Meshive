@@ -1,3 +1,7 @@
+<script lang="ts">
+let catalogueNavigationCache: unknown
+</script>
+
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
@@ -41,6 +45,28 @@ interface ModelPage {
   total: number
   page: number
   page_size: number
+}
+
+interface CatalogueRestoreState {
+  navigation_mode: "pagination" | "infinite"
+  loaded_page: number
+  scroll_y: number
+}
+
+interface StoredCatalogueState {
+  query?: Partial<CatalogueQuery>
+  page?: number
+  saved_view_id?: string
+  restore?: CatalogueRestoreState
+}
+
+interface CatalogueNavigationCache {
+  restore: CatalogueRestoreState
+  query: CatalogueQuery
+  saved_view_id: string
+  page: ModelPage
+  infinite_items: ModelSummary[]
+  favorite_memberships: Record<number, FavoriteMembershipList[]>
 }
 
 interface FilterOption {
@@ -144,6 +170,13 @@ const route = useRoute()
 const loading = ref(true)
 const errorMessage = ref("")
 const page = ref<ModelPage>({ items: [], total: 0, page: 1, page_size: 48 })
+const infiniteItems = ref<ModelSummary[]>([])
+const navigationMode = ref<"pagination" | "infinite">("pagination")
+const loadingMore = ref(false)
+const visibleItems = computed(() => navigationMode.value === "infinite" ? infiniteItems.value : page.value.items)
+const infiniteSentinel = ref<HTMLElement | null>(null)
+const showBackToTop = ref(false)
+let infiniteObserver: IntersectionObserver | undefined
 const favoriteModel = ref<ModelSummary | null>(null)
 const favoriteDialogTargets = computed(() =>
   favoriteModel.value ? favoriteTargetsForModel(favoriteModel.value) : [],
@@ -178,13 +211,14 @@ const defaultQuery = {
   status: "",
   sort: "name_asc",
 }
-const storedState = (() => {
+const storedState: StoredCatalogueState = (() => {
   try {
-    return JSON.parse(sessionStorage.getItem("meshive-catalogue-state") || "{}")
+    return JSON.parse(sessionStorage.getItem("meshive-catalogue-state") || "{}") as StoredCatalogueState
   } catch {
     return {}
   }
 })()
+const catalogueRestoreState = storedState.restore
 const query = reactive({ ...defaultQuery })
 const catalogueQueryKeys = Object.keys(defaultQuery) as Array<
   keyof typeof defaultQuery
@@ -305,8 +339,8 @@ const defaultFilterOrder: CatalogueFilterKey[] = [
   "sort",
 ]
 const filterOrder = ref<CatalogueFilterKey[]>([...defaultFilterOrder])
-type CatalogueActionKey = "selection" | "saved_views"
-const defaultActionOrder: CatalogueActionKey[] = ["selection", "saved_views"]
+type CatalogueActionKey = "selection" | "saved_views" | "navigation"
+const defaultActionOrder: CatalogueActionKey[] = ["selection", "saved_views", "navigation"]
 const actionOrder = ref<CatalogueActionKey[]>([...defaultActionOrder])
 const draggedFilter = ref<CatalogueFilterKey | null>(null)
 const draggedAction = ref<CatalogueActionKey | null>(null)
@@ -345,11 +379,12 @@ function actionPosition(key: CatalogueActionKey): number {
 
 async function loadFilterOrder() {
   try {
-    const preferences = await apiRequest<{ filter_order: string[]; action_order?: string[] }>(
+    const preferences = await apiRequest<{ filter_order: string[]; action_order?: string[]; navigation_mode?: "pagination" | "infinite" }>(
       "/api/auth/catalogue-preferences",
     )
     filterOrder.value = normalizeFilterOrder(preferences.filter_order)
     actionOrder.value = normalizeActionOrder(preferences.action_order)
+    navigationMode.value = preferences.navigation_mode ?? "pagination"
   } catch {
     filterOrder.value = [...defaultFilterOrder]
     actionOrder.value = [...defaultActionOrder]
@@ -360,7 +395,7 @@ async function saveFilterOrder() {
   try {
     await apiRequest("/api/auth/catalogue-preferences", {
       method: "PUT",
-      body: JSON.stringify({ filter_order: filterOrder.value, action_order: actionOrder.value }),
+      body: JSON.stringify({ filter_order: filterOrder.value, action_order: actionOrder.value, navigation_mode: navigationMode.value }),
     })
   } catch {
     errorMessage.value = "Unable to save the filter order"
@@ -483,6 +518,37 @@ function detailRoute(modelId: number) {
   }
 }
 
+function saveCatalogueRestoreState() {
+  const restore = {
+    navigation_mode: navigationMode.value,
+    loaded_page: page.value.page,
+    scroll_y: window.scrollY,
+  } satisfies CatalogueRestoreState
+  catalogueNavigationCache = navigationMode.value === "infinite"
+    ? {
+        restore,
+        query: { ...query },
+        saved_view_id: selectedSavedViewId.value,
+        page: { ...page.value, items: [...page.value.items] },
+        infinite_items: [...infiniteItems.value],
+        favorite_memberships: { ...favoriteMemberships.value },
+      }
+    : undefined
+  sessionStorage.setItem(
+    "meshive-catalogue-state",
+    JSON.stringify({
+      query: { ...query },
+      page: page.value.page,
+      saved_view_id: selectedSavedViewId.value,
+      restore,
+    }),
+  )
+}
+
+function invalidateCatalogueNavigationCache() {
+  catalogueNavigationCache = undefined
+}
+
 let catalogueController: AbortController | undefined
 let catalogueRequest = 0
 let filterController: AbortController | undefined
@@ -506,11 +572,11 @@ async function loadCatalogue(targetPage = 1, scrollToTop = false) {
   }
   sessionStorage.setItem(
     "meshive-catalogue-state",
-    JSON.stringify({ query: { ...query }, page: targetPage }),
+    JSON.stringify({ query: { ...query }, page: targetPage, saved_view_id: selectedSavedViewId.value }),
   )
   const locationQuery = Object.fromEntries(parameters.entries())
   delete locationQuery.page_size
-  if (targetPage === 1) delete locationQuery.page
+  if (targetPage === 1 || navigationMode.value === "infinite") delete locationQuery.page
   void router.replace({ query: locationQuery })
   try {
     const result = await apiRequest<ModelPage>(`/api/models?${parameters}`, {
@@ -518,6 +584,9 @@ async function loadCatalogue(targetPage = 1, scrollToTop = false) {
     })
     if (request !== catalogueRequest) return
     page.value = result
+    if (navigationMode.value === "infinite") {
+      infiniteItems.value = targetPage === 1 ? result.items : [...infiniteItems.value, ...result.items.filter((item) => !infiniteItems.value.some((existing) => existing.id === item.id))]
+    }
     if (auth.can("favorites.manage")) {
       await loadFavoriteMemberships(page.value.items.map((model) => model.id))
     } else {
@@ -536,6 +605,83 @@ async function loadCatalogue(targetPage = 1, scrollToTop = false) {
   } finally {
     if (request === catalogueRequest) loading.value = false
   }
+}
+
+async function loadMoreCatalogue() {
+  if (loading.value || loadingMore.value || page.value.page >= totalPages.value) return
+  loadingMore.value = true
+  await loadCatalogue(page.value.page + 1)
+  loadingMore.value = false
+}
+
+async function restoreInfiniteCatalogue(restoreState: CatalogueRestoreState) {
+  const lastPage = Math.max(1, restoreState.loaded_page)
+  await loadCatalogue(1)
+  for (let targetPage = 2; targetPage <= lastPage && targetPage <= totalPages.value; targetPage += 1) {
+    await loadCatalogue(targetPage)
+  }
+  await restoreCatalogueScroll(restoreState.scroll_y)
+}
+
+async function restorePaginationCatalogue(restoreState: CatalogueRestoreState) {
+  await loadCatalogue(Math.max(1, restoreState.loaded_page))
+}
+
+async function restoreCatalogueScroll(scrollY: number) {
+  await nextTick()
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+    window.scrollTo({ top: scrollY, behavior: "auto" })
+    if (window.scrollY >= scrollY) break
+  }
+}
+
+function cachedCatalogueRestore(restoreState: CatalogueRestoreState): CatalogueNavigationCache | undefined {
+  const cache = catalogueNavigationCache as CatalogueNavigationCache | undefined
+  const sameQuery = cache && Object.entries(query).every(([key, value]) => cache.query[key as keyof CatalogueQuery] === value)
+  if (
+    !cache
+    || !sameQuery
+    || cache.saved_view_id !== (storedState.saved_view_id || "")
+    || cache.restore.navigation_mode !== restoreState.navigation_mode
+    || cache.restore.loaded_page !== restoreState.loaded_page
+    || cache.restore.scroll_y !== restoreState.scroll_y
+  ) return undefined
+  catalogueNavigationCache = undefined
+  return cache
+}
+
+async function restoreCachedCatalogue(cache: CatalogueNavigationCache) {
+  page.value = { ...cache.page, items: [...cache.page.items] }
+  infiniteItems.value = [...cache.infinite_items]
+  favoriteMemberships.value = { ...cache.favorite_memberships }
+  loading.value = false
+  await restoreCatalogueScroll(cache.restore.scroll_y)
+}
+
+function setNavigationMode(mode: "pagination" | "infinite") {
+  if (navigationMode.value === mode) return
+  invalidateCatalogueNavigationCache()
+  navigationMode.value = mode
+  infiniteItems.value = []
+  page.value = { ...page.value, items: [], page: 1 }
+  void saveFilterOrder()
+  void loadCatalogue(1, mode === "pagination")
+}
+
+function backToTop() {
+  window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })
+}
+
+function observeInfiniteSentinel() {
+  infiniteObserver?.disconnect()
+  if (navigationMode.value === "infinite" && infiniteSentinel.value) {
+    infiniteObserver?.observe(infiniteSentinel.value)
+  }
+}
+
+function updateBackToTopVisibility() {
+  showBackToTop.value = window.scrollY > window.innerHeight
 }
 
 function goToPage(targetPage: number) {
@@ -611,8 +757,10 @@ async function loadFilterOptions() {
 }
 
 function clearFilters() {
+  invalidateCatalogueNavigationCache()
   Object.assign(query, defaultQuery)
   selectedSavedViewId.value = ""
+  sessionStorage.removeItem("meshive-catalogue-saved-view")
   window.dispatchEvent(new Event("meshive:reset-filter-scroll"))
   catalogueSearchOpen.value = false
 }
@@ -628,6 +776,8 @@ function selectedSavedView(): SavedView | undefined {
 async function loadSavedViews() {
   try {
     savedViews.value = await apiRequest<SavedView[]>("/api/saved-views")
+    const savedViewId = String(storedState.saved_view_id || sessionStorage.getItem("meshive-catalogue-saved-view") || "")
+    if (savedViews.value.some((view) => String(view.id) === savedViewId)) selectedSavedViewId.value = savedViewId
   } catch {
     savedViews.value = []
   }
@@ -644,6 +794,7 @@ async function createSavedView() {
     })
     savedViews.value = [view, ...savedViews.value]
     selectedSavedViewId.value = String(view.id)
+    sessionStorage.setItem("meshive-catalogue-saved-view", selectedSavedViewId.value)
   } catch (error) {
     errorMessage.value = error instanceof ApiError
       ? error.message
@@ -654,9 +805,11 @@ async function createSavedView() {
 function applySavedView() {
   const view = selectedSavedView()
   if (!view) return
+  invalidateCatalogueNavigationCache()
   const state = { ...defaultQuery, ...view.state }
   if (!auth.can("catalogue.view_maintenance")) state.status = ""
   Object.assign(query, state)
+  sessionStorage.setItem("meshive-catalogue-saved-view", selectedSavedViewId.value)
   catalogueSearchOpen.value = Boolean(query.search)
   window.dispatchEvent(new Event("meshive:reset-filter-scroll"))
 }
@@ -664,6 +817,7 @@ function applySavedView() {
 function selectSavedView(value: string) {
   selectedSavedViewId.value = value
   if (!value) {
+    sessionStorage.removeItem("meshive-catalogue-saved-view")
     clearFilters()
     return
   }
@@ -950,6 +1104,7 @@ let filterTimer: ReturnType<typeof setTimeout> | undefined
 watch(
   query,
   () => {
+    invalidateCatalogueNavigationCache()
     clearTimeout(filterTimer)
     filterTimer = setTimeout(
       () => void Promise.all([loadCatalogue(1), loadFilterOptions()]),
@@ -961,14 +1116,33 @@ watch(
 
 onMounted(async () => {
   await loadFilterOrder()
+  if (catalogueRestoreState) navigationMode.value = catalogueRestoreState.navigation_mode
   void loadSavedViews()
+  const cachedRestore = catalogueRestoreState && cachedCatalogueRestore(catalogueRestoreState)
   await Promise.all([
     loadFilterOptions(),
-    loadCatalogue(Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1),
+    cachedRestore
+      ? restoreCachedCatalogue(cachedRestore)
+      : catalogueRestoreState
+      ? catalogueRestoreState.navigation_mode === "infinite"
+        ? restoreInfiniteCatalogue(catalogueRestoreState)
+        : restorePaginationCatalogue(catalogueRestoreState)
+      : loadCatalogue(navigationMode.value === "infinite" ? 1 : (Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1)),
   ])
+  infiniteObserver = new IntersectionObserver((entries) => {
+    if (entries[0]?.isIntersecting && navigationMode.value === "infinite") void loadMoreCatalogue()
+  }, { rootMargin: "320px" })
+  observeInfiniteSentinel()
+  window.addEventListener("scroll", updateBackToTopVisibility, { passive: true })
 })
 
+watch([infiniteSentinel, navigationMode], () => {
+  observeInfiniteSentinel()
+}, { flush: "post" })
+
 onBeforeUnmount(() => {
+  infiniteObserver?.disconnect()
+  window.removeEventListener("scroll", updateBackToTopVisibility)
   catalogueController?.abort()
   filterController?.abort()
   favoriteMembershipsController?.abort()
@@ -1187,6 +1361,24 @@ onBeforeUnmount(() => {
         <span v-if="batchSelectionMode && selectedModelCount" class="batch-selection-count">{{ selectedModelCount }} selected</span>
       </div>
       <div class="catalogue-meta-actions">
+        <div
+          data-action-key="navigation"
+          :style="{ order: actionPosition('navigation') }"
+          class="catalogue-navigation-mode catalogue-action-group"
+          @dragover.prevent
+          @drop="dropAction('navigation', $event)"
+        >
+          <span class="searchable-filter-drag-grip" draggable="true" aria-hidden="true" @dragstart="startActionDrag('navigation', $event)"></span>
+          <span>Infinite scroll</span>
+          <button
+            class="catalogue-navigation-switch"
+            type="button"
+            role="switch"
+            :aria-checked="navigationMode === 'infinite'"
+            aria-label="Infinite scroll"
+            @click="setNavigationMode(navigationMode === 'infinite' ? 'pagination' : 'infinite')"
+          ><span></span></button>
+        </div>
         <template v-if="batchSelectionMode">
           <button v-if="auth.can('models.rescan')" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress || !selectedModelCount" @click="runSelectedModelAction('rescan')">
             Rescan selected
@@ -1265,9 +1457,9 @@ onBeforeUnmount(() => {
     <p v-if="errorMessage" class="form-error error-panel" role="alert">
       {{ errorMessage }}
     </p>
-    <section v-if="page.items.length" class="model-grid">
+    <section v-if="visibleItems.length" class="model-grid">
       <article
-        v-for="model in page.items"
+        v-for="model in visibleItems"
         :key="model.id"
         class="model-card"
         :class="{
@@ -1288,6 +1480,7 @@ onBeforeUnmount(() => {
         <RouterLink
           class="thumbnail-frame"
           :to="detailRoute(model.id)"
+          @click="saveCatalogueRestoreState"
         >
           <img
             :src="model.thumbnail_url || modelFallbackUrl(model.id)"
@@ -1308,6 +1501,7 @@ onBeforeUnmount(() => {
             <RouterLink
               class="model-title-link"
               :to="detailRoute(model.id)"
+              @click="saveCatalogueRestoreState"
             >
               {{ model.name }}
             </RouterLink>
@@ -1377,7 +1571,11 @@ onBeforeUnmount(() => {
       <p>Run a source scan or adjust the active filters.</p>
     </section>
 
-    <nav v-if="totalPages > 1" class="pagination" aria-label="Catalogue pages">
+    <div v-if="navigationMode === 'infinite' && page.page < totalPages" ref="infiniteSentinel" class="infinite-sentinel">
+      <button class="secondary-button" type="button" :disabled="loadingMore" @click="loadMoreCatalogue">Load more</button>
+    </div>
+    <button v-if="navigationMode === 'infinite' && showBackToTop" class="catalogue-back-to-top" type="button" aria-label="Back to top" @click="backToTop">↑ <span>Back to top</span></button>
+    <nav v-if="navigationMode === 'pagination' && totalPages > 1" class="pagination" aria-label="Catalogue pages">
       <span class="sr-only" aria-live="polite">
         Page {{ page.page }} of {{ totalPages }}
       </span>

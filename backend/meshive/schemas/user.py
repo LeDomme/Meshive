@@ -152,7 +152,8 @@ class CurrentUserRead(UserRead):
 
 class CatalogueFilterPreferences(BaseModel):
     filter_order: list[str] = Field(default_factory=list, max_length=9)
-    action_order: list[str] = Field(default_factory=list, max_length=2)
+    action_order: list[str] = Field(default_factory=list, max_length=3)
+    navigation_mode: Literal["pagination", "infinite"] = "pagination"
 
 
 class PasswordChange(BaseModel):
