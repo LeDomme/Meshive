@@ -149,6 +149,7 @@ const navigationMode = ref<"pagination" | "infinite">("pagination")
 const loadingMore = ref(false)
 const visibleItems = computed(() => navigationMode.value === "infinite" ? infiniteItems.value : page.value.items)
 const infiniteSentinel = ref<HTMLElement | null>(null)
+const showBackToTop = ref(false)
 let infiniteObserver: IntersectionObserver | undefined
 const favoriteModel = ref<ModelSummary | null>(null)
 const favoriteDialogTargets = computed(() =>
@@ -311,8 +312,8 @@ const defaultFilterOrder: CatalogueFilterKey[] = [
   "sort",
 ]
 const filterOrder = ref<CatalogueFilterKey[]>([...defaultFilterOrder])
-type CatalogueActionKey = "selection" | "saved_views"
-const defaultActionOrder: CatalogueActionKey[] = ["selection", "saved_views"]
+type CatalogueActionKey = "selection" | "saved_views" | "navigation"
+const defaultActionOrder: CatalogueActionKey[] = ["selection", "saved_views", "navigation"]
 const actionOrder = ref<CatalogueActionKey[]>([...defaultActionOrder])
 const draggedFilter = ref<CatalogueFilterKey | null>(null)
 const draggedAction = ref<CatalogueActionKey | null>(null)
@@ -549,7 +550,7 @@ async function loadCatalogue(targetPage = 1, scrollToTop = false) {
 }
 
 async function loadMoreCatalogue() {
-  if (loadingMore.value || page.value.page >= totalPages.value) return
+  if (loading.value || loadingMore.value || page.value.page >= totalPages.value) return
   loadingMore.value = true
   await loadCatalogue(page.value.page + 1)
   loadingMore.value = false
@@ -559,8 +560,13 @@ function setNavigationMode(mode: "pagination" | "infinite") {
   if (navigationMode.value === mode) return
   navigationMode.value = mode
   infiniteItems.value = []
+  page.value = { ...page.value, items: [], page: 1 }
   void saveFilterOrder()
   void loadCatalogue(1, mode === "pagination")
+}
+
+function backToTop() {
+  window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })
 }
 
 function goToPage(targetPage: number) {
@@ -1000,6 +1006,7 @@ onMounted(async () => {
   infiniteObserver = new IntersectionObserver((entries) => {
     if (entries[0]?.isIntersecting && navigationMode.value === "infinite") void loadMoreCatalogue()
   }, { rootMargin: "320px" })
+  window.addEventListener("scroll", () => { showBackToTop.value = window.scrollY > window.innerHeight }, { passive: true })
 })
 
 watch([infiniteSentinel, navigationMode], () => {
@@ -1229,7 +1236,14 @@ onBeforeUnmount(() => {
         <span v-if="batchSelectionMode && selectedModelCount" class="batch-selection-count">{{ selectedModelCount }} selected</span>
       </div>
       <div class="catalogue-meta-actions">
-        <label class="catalogue-navigation-mode">
+        <div
+          data-action-key="navigation"
+          :style="{ order: actionPosition('navigation') }"
+          class="catalogue-navigation-mode catalogue-action-group"
+          @dragover.prevent
+          @drop="dropAction('navigation', $event)"
+        >
+          <span class="searchable-filter-drag-grip" draggable="true" aria-hidden="true" @dragstart="startActionDrag('navigation', $event)"></span>
           <span>Infinite scroll</span>
           <button
             class="catalogue-navigation-switch"
@@ -1239,7 +1253,7 @@ onBeforeUnmount(() => {
             aria-label="Infinite scroll"
             @click="setNavigationMode(navigationMode === 'infinite' ? 'pagination' : 'infinite')"
           ><span></span></button>
-        </label>
+        </div>
         <template v-if="batchSelectionMode">
           <button v-if="auth.can('models.rescan')" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress || !selectedModelCount" @click="runSelectedModelAction('rescan')">
             Rescan selected
@@ -1433,6 +1447,7 @@ onBeforeUnmount(() => {
     <div v-if="navigationMode === 'infinite' && page.page < totalPages" ref="infiniteSentinel" class="infinite-sentinel">
       <button class="secondary-button" type="button" :disabled="loadingMore" @click="loadMoreCatalogue">Load more</button>
     </div>
+    <button v-if="navigationMode === 'infinite' && showBackToTop" class="catalogue-back-to-top" type="button" aria-label="Back to top" @click="backToTop">↑ <span>Back to top</span></button>
     <nav v-if="navigationMode === 'pagination' && totalPages > 1" class="pagination" aria-label="Catalogue pages">
       <span class="sr-only" aria-live="polite">
         Page {{ page.page }} of {{ totalPages }}

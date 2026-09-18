@@ -301,7 +301,7 @@ def update_catalogue_preferences(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Filter order contains an unsupported filter",
         )
-    allowed_action_keys = {"selection", "saved_views"}
+    allowed_action_keys = {"selection", "saved_views", "navigation"}
     if len(payload.action_order) != len(set(payload.action_order)):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
