@@ -513,11 +513,11 @@ async function loadCatalogue(targetPage = 1, scrollToTop = false) {
   }
   sessionStorage.setItem(
     "meshive-catalogue-state",
-    JSON.stringify({ query: { ...query }, page: targetPage }),
+    JSON.stringify({ query: { ...query }, page: targetPage, saved_view_id: selectedSavedViewId.value }),
   )
   const locationQuery = Object.fromEntries(parameters.entries())
   delete locationQuery.page_size
-  if (targetPage === 1) delete locationQuery.page
+  if (targetPage === 1 || navigationMode.value === "infinite") delete locationQuery.page
   void router.replace({ query: locationQuery })
   try {
     const result = await apiRequest<ModelPage>(`/api/models?${parameters}`, {
@@ -560,8 +560,7 @@ function setNavigationMode(mode: "pagination" | "infinite") {
   navigationMode.value = mode
   infiniteItems.value = []
   void saveFilterOrder()
-  void loadCatalogue(1)
-  void nextTick(() => infiniteSentinel.value && infiniteObserver?.observe(infiniteSentinel.value))
+  void loadCatalogue(1, mode === "pagination")
 }
 
 function goToPage(targetPage: number) {
@@ -639,6 +638,7 @@ async function loadFilterOptions() {
 function clearFilters() {
   Object.assign(query, defaultQuery)
   selectedSavedViewId.value = ""
+  sessionStorage.removeItem("meshive-catalogue-saved-view")
   window.dispatchEvent(new Event("meshive:reset-filter-scroll"))
   catalogueSearchOpen.value = false
 }
@@ -654,6 +654,8 @@ function selectedSavedView(): SavedView | undefined {
 async function loadSavedViews() {
   try {
     savedViews.value = await apiRequest<SavedView[]>("/api/saved-views")
+    const savedViewId = String(storedState.saved_view_id || sessionStorage.getItem("meshive-catalogue-saved-view") || "")
+    if (savedViews.value.some((view) => String(view.id) === savedViewId)) selectedSavedViewId.value = savedViewId
   } catch {
     savedViews.value = []
   }
@@ -670,6 +672,7 @@ async function createSavedView() {
     })
     savedViews.value = [view, ...savedViews.value]
     selectedSavedViewId.value = String(view.id)
+    sessionStorage.setItem("meshive-catalogue-saved-view", selectedSavedViewId.value)
   } catch (error) {
     errorMessage.value = error instanceof ApiError
       ? error.message
@@ -683,6 +686,7 @@ function applySavedView() {
   const state = { ...defaultQuery, ...view.state }
   if (!auth.can("catalogue.view_maintenance")) state.status = ""
   Object.assign(query, state)
+  sessionStorage.setItem("meshive-catalogue-saved-view", selectedSavedViewId.value)
   catalogueSearchOpen.value = Boolean(query.search)
   window.dispatchEvent(new Event("meshive:reset-filter-scroll"))
 }
@@ -690,6 +694,7 @@ function applySavedView() {
 function selectSavedView(value: string) {
   selectedSavedViewId.value = value
   if (!value) {
+    sessionStorage.removeItem("meshive-catalogue-saved-view")
     clearFilters()
     return
   }
@@ -990,13 +995,19 @@ onMounted(async () => {
   void loadSavedViews()
   await Promise.all([
     loadFilterOptions(),
-    loadCatalogue(Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1),
+    loadCatalogue(navigationMode.value === "infinite" ? 1 : (Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1)),
   ])
   infiniteObserver = new IntersectionObserver((entries) => {
     if (entries[0]?.isIntersecting && navigationMode.value === "infinite") void loadMoreCatalogue()
   }, { rootMargin: "320px" })
-  if (infiniteSentinel.value) infiniteObserver.observe(infiniteSentinel.value)
 })
+
+watch([infiniteSentinel, navigationMode], () => {
+  infiniteObserver?.disconnect()
+  if (navigationMode.value === "infinite" && infiniteSentinel.value) {
+    infiniteObserver?.observe(infiniteSentinel.value)
+  }
+}, { flush: "post" })
 
 onBeforeUnmount(() => {
   infiniteObserver?.disconnect()
@@ -1218,10 +1229,17 @@ onBeforeUnmount(() => {
         <span v-if="batchSelectionMode && selectedModelCount" class="batch-selection-count">{{ selectedModelCount }} selected</span>
       </div>
       <div class="catalogue-meta-actions">
-        <div class="catalogue-navigation-mode" aria-label="Catalogue navigation mode">
-          <button class="text-button" :class="{ active: navigationMode === 'pagination' }" type="button" @click="setNavigationMode('pagination')">Pages</button>
-          <button class="text-button" :class="{ active: navigationMode === 'infinite' }" type="button" @click="setNavigationMode('infinite')">Infinite scroll</button>
-        </div>
+        <label class="catalogue-navigation-mode">
+          <span>Infinite scroll</span>
+          <button
+            class="catalogue-navigation-switch"
+            type="button"
+            role="switch"
+            :aria-checked="navigationMode === 'infinite'"
+            aria-label="Infinite scroll"
+            @click="setNavigationMode(navigationMode === 'infinite' ? 'pagination' : 'infinite')"
+          ><span></span></button>
+        </label>
         <template v-if="batchSelectionMode">
           <button v-if="auth.can('models.rescan')" class="secondary-button compact-button" type="button" :disabled="batchActionInProgress || !selectedModelCount" @click="runSelectedModelAction('rescan')">
             Rescan selected

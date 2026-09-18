@@ -2146,8 +2146,11 @@ summary {
   min-width: 0;
 }
 
-.catalogue-navigation-mode { display: flex; gap: 0.35rem; }
-.catalogue-navigation-mode .active { color: #e2f7ff; border-color: var(--meshive-cyan); }
+.catalogue-navigation-mode { display: inline-flex; align-items: center; gap: 0.45rem; white-space: nowrap; }
+.catalogue-navigation-switch { width: 2.5rem; height: 1.4rem; padding: 0.15rem; border: 1px solid #334155; border-radius: 999px; background: #0b1220; cursor: pointer; }
+.catalogue-navigation-switch span { display: block; width: 0.9rem; height: 0.9rem; border-radius: 50%; background: #94a3b8; transition: transform 120ms ease; }
+.catalogue-navigation-switch[aria-checked="true"] { border-color: var(--meshive-cyan); background: rgb(8 47 73 / 70%); }
+.catalogue-navigation-switch[aria-checked="true"] span { transform: translateX(1.1rem); background: var(--meshive-cyan); }
 .infinite-sentinel { display: flex; justify-content: center; padding: 1.5rem 0; }
 
 .catalogue-action-group {
