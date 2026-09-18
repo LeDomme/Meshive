@@ -43,6 +43,19 @@ interface ModelPage {
   page_size: number
 }
 
+interface CatalogueRestoreState {
+  navigation_mode: "pagination" | "infinite"
+  loaded_page: number
+  scroll_y: number
+}
+
+interface StoredCatalogueState {
+  query?: Partial<CatalogueQuery>
+  page?: number
+  saved_view_id?: string
+  restore?: CatalogueRestoreState
+}
+
 interface FilterOption {
   value: string
   label?: string
@@ -185,13 +198,14 @@ const defaultQuery = {
   status: "",
   sort: "name_asc",
 }
-const storedState = (() => {
+const storedState: StoredCatalogueState = (() => {
   try {
-    return JSON.parse(sessionStorage.getItem("meshive-catalogue-state") || "{}")
+    return JSON.parse(sessionStorage.getItem("meshive-catalogue-state") || "{}") as StoredCatalogueState
   } catch {
     return {}
   }
 })()
+const catalogueRestoreState = storedState.restore
 const query = reactive({ ...defaultQuery })
 const catalogueQueryKeys = Object.keys(defaultQuery) as Array<
   keyof typeof defaultQuery
@@ -491,6 +505,22 @@ function detailRoute(modelId: number) {
   }
 }
 
+function saveCatalogueRestoreState() {
+  sessionStorage.setItem(
+    "meshive-catalogue-state",
+    JSON.stringify({
+      query: { ...query },
+      page: page.value.page,
+      saved_view_id: selectedSavedViewId.value,
+      restore: {
+        navigation_mode: navigationMode.value,
+        loaded_page: page.value.page,
+        scroll_y: window.scrollY,
+      },
+    }),
+  )
+}
+
 let catalogueController: AbortController | undefined
 let catalogueRequest = 0
 let filterController: AbortController | undefined
@@ -556,6 +586,20 @@ async function loadMoreCatalogue() {
   loadingMore.value = false
 }
 
+async function restoreCatalogue(restoreState: CatalogueRestoreState) {
+  const lastPage = Math.max(1, restoreState.loaded_page)
+  await loadCatalogue(1)
+  for (let targetPage = 2; targetPage <= lastPage && targetPage <= totalPages.value; targetPage += 1) {
+    await loadCatalogue(targetPage)
+  }
+  await nextTick()
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+    window.scrollTo({ top: restoreState.scroll_y, behavior: "auto" })
+    if (window.scrollY >= restoreState.scroll_y) break
+  }
+}
+
 function setNavigationMode(mode: "pagination" | "infinite") {
   if (navigationMode.value === mode) return
   navigationMode.value = mode
@@ -567,6 +611,17 @@ function setNavigationMode(mode: "pagination" | "infinite") {
 
 function backToTop() {
   window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })
+}
+
+function observeInfiniteSentinel() {
+  infiniteObserver?.disconnect()
+  if (navigationMode.value === "infinite" && infiniteSentinel.value) {
+    infiniteObserver?.observe(infiniteSentinel.value)
+  }
+}
+
+function updateBackToTopVisibility() {
+  showBackToTop.value = window.scrollY > window.innerHeight
 }
 
 function goToPage(targetPage: number) {
@@ -998,26 +1053,28 @@ watch(
 
 onMounted(async () => {
   await loadFilterOrder()
+  if (catalogueRestoreState) navigationMode.value = catalogueRestoreState.navigation_mode
   void loadSavedViews()
   await Promise.all([
     loadFilterOptions(),
-    loadCatalogue(navigationMode.value === "infinite" ? 1 : (Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1)),
+    catalogueRestoreState
+      ? restoreCatalogue(catalogueRestoreState)
+      : loadCatalogue(navigationMode.value === "infinite" ? 1 : (Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1)),
   ])
   infiniteObserver = new IntersectionObserver((entries) => {
     if (entries[0]?.isIntersecting && navigationMode.value === "infinite") void loadMoreCatalogue()
   }, { rootMargin: "320px" })
-  window.addEventListener("scroll", () => { showBackToTop.value = window.scrollY > window.innerHeight }, { passive: true })
+  observeInfiniteSentinel()
+  window.addEventListener("scroll", updateBackToTopVisibility, { passive: true })
 })
 
 watch([infiniteSentinel, navigationMode], () => {
-  infiniteObserver?.disconnect()
-  if (navigationMode.value === "infinite" && infiniteSentinel.value) {
-    infiniteObserver?.observe(infiniteSentinel.value)
-  }
+  observeInfiniteSentinel()
 }, { flush: "post" })
 
 onBeforeUnmount(() => {
   infiniteObserver?.disconnect()
+  window.removeEventListener("scroll", updateBackToTopVisibility)
   catalogueController?.abort()
   filterController?.abort()
   favoriteMembershipsController?.abort()
@@ -1355,6 +1412,7 @@ onBeforeUnmount(() => {
         <RouterLink
           class="thumbnail-frame"
           :to="detailRoute(model.id)"
+          @click="saveCatalogueRestoreState"
         >
           <img
             :src="model.thumbnail_url || modelFallbackUrl(model.id)"
@@ -1375,6 +1433,7 @@ onBeforeUnmount(() => {
             <RouterLink
               class="model-title-link"
               :to="detailRoute(model.id)"
+              @click="saveCatalogueRestoreState"
             >
               {{ model.name }}
             </RouterLink>
