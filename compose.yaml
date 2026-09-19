@@ -2,7 +2,7 @@
 # trusted network or for evaluation; use compose.traefik.yaml for HTTPS.
 services:
   meshive:
-    image: ${MESHIVE_IMAGE:-ghcr.io/ledomme/meshive:1.7.0}
+    image: ${MESHIVE_IMAGE:-ghcr.io/ledomme/meshive:1.8.0}
     container_name: meshive
     restart: unless-stopped
     init: true

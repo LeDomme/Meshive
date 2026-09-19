@@ -5,6 +5,26 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-19
+
+### Added
+
+- Personal Saved Catalogue Views let users create, load, rename, and delete
+  reusable filter, source-scope, and sorting configurations.
+- Catalogue action ordering and the choice between pagination and optional
+  infinite scrolling are saved per user.
+- Infinite scrolling keeps catalogue state when opening model details, restores
+  the previous position on return, and provides automatic loading and a
+  back-to-top control.
+
+### Changed
+
+- Catalogue navigation remains stable while changing filters, sorting, source
+  scopes, and Saved Views; pagination continues to be available alongside
+  infinite scrolling.
+- Large infinite catalogues reduce offscreen rendering work, decode catalogue
+  previews asynchronously, and avoid duplicate models while loading batches.
+
 ## [1.7.0] - 2026-09-17
 
 ### Added
@@ -280,7 +300,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
-[Unreleased]: ../../compare/v1.7.0...HEAD
+[Unreleased]: ../../compare/v1.8.0...HEAD
+[1.8.0]: ../../compare/v1.7.0...v1.8.0
 [1.7.0]: ../../compare/v1.6.3...v1.7.0
 [1.6.3]: ../../compare/v1.6.2...v1.6.3
 [1.6.2]: ../../compare/v1.6.1...v1.6.2
