@@ -75,10 +75,18 @@ async function enableInfiniteAndLoadThreePages(page: Page) {
 }
 
 async function loadInfiniteCatalogueTo(page: Page, itemCount: number) {
-  while (await page.locator(".model-card").count() < itemCount) {
-    await page.getByRole("button", { name: "Load more" }).click()
+  const cards = page.locator(".model-card")
+  const loadMore = page.getByRole("button", { name: "Load more" })
+  let loadedCount = await cards.count()
+  while (loadedCount < itemCount) {
+    await loadMore.evaluate((button) => {
+      if ((button as HTMLButtonElement).disabled) throw new Error("Load more is disabled")
+      ;(button as HTMLButtonElement).click()
+    })
+    loadedCount = Math.min(itemCount, loadedCount + 48)
+    await expect(cards).toHaveCount(loadedCount)
   }
-  await expect(page.locator(".model-card")).toHaveCount(itemCount)
+  await expect(cards).toHaveCount(itemCount)
 }
 
 async function expectUniqueModelCards(page: Page) {
@@ -88,9 +96,9 @@ async function expectUniqueModelCards(page: Page) {
   expect(new Set(modelIds).size).toBe(modelIds.length)
 }
 
-async function scrollThroughCatalogue(page: Page) {
+async function visitCatalogueScrollPositions(page: Page) {
   await page.evaluate(async () => {
-    const step = window.innerHeight * 2
+    const step = window.innerHeight * 4
     for (let top = 0; top < document.documentElement.scrollHeight; top += step) {
       window.scrollTo({ top, behavior: "auto" })
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
@@ -123,7 +131,7 @@ test("browser back restores infinite batches, scroll position, and automatic loa
   await mockInfiniteCatalogue(page, [], modelRequests)
   await page.goto("/")
   await enableInfiniteAndLoadThreePages(page)
-  await scrollThroughCatalogue(page)
+  await visitCatalogueScrollPositions(page)
   await scrollNearInfiniteSentinel(page)
   const scrollY = await page.evaluate(() => window.scrollY)
 
@@ -153,7 +161,7 @@ test("large infinite catalogue keeps card structure and restores cached batches"
 
   await loadInfiniteCatalogueTo(page, 1008)
   await expectUniqueModelCards(page)
-  await scrollThroughCatalogue(page)
+  await visitCatalogueScrollPositions(page)
   await scrollNearInfiniteSentinel(page)
   const scrollY = await page.evaluate(() => window.scrollY)
   await openVisibleModelDetail(page)
@@ -198,7 +206,7 @@ test("catalogue back restores a saved view and infinite automatic loading", asyn
   await expect(page).toHaveURL(/creator=Ada&source_id=1&sort=name_asc$/)
   await expect(page.getByRole("link", { name: "Ada page 1 model 1", exact: true })).toBeVisible()
   await enableInfiniteAndLoadThreePages(page)
-  await scrollThroughCatalogue(page)
+  await visitCatalogueScrollPositions(page)
   await scrollNearInfiniteSentinel(page)
   const scrollY = await page.evaluate(() => window.scrollY)
 
