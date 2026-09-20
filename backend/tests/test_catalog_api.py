@@ -715,6 +715,43 @@ def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:
         assert detail.json()["variants"] == ["Chibi version"]
 
 
+def test_model_variants_can_be_replaced_and_normalized() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(name="Variants", root_path="/models", directory_pattern="{model}")
+            session.add(source)
+            session.flush()
+            model = LibraryModel(
+                library_source_id=source.id,
+                relative_path="Sora",
+                name="Sora",
+                status="available",
+                variants=[ModelVariant(value="Legacy", normalized_value="legacy", position=0)],
+            )
+            session.add(model)
+            session.commit()
+            model_id = model.id
+
+        response = client.patch(
+            f"/api/models/{model_id}/variants",
+            json={"variants": [" Chibi ", "Halloween Town", "chibi", ""]},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"variants": ["Chibi", "Halloween Town"]}
+
+        detail = client.get(f"/api/models/{model_id}")
+        assert detail.json()["variants"] == ["Chibi", "Halloween Town"]
+        assert detail.json()["variant"] == "Chibi"
+
+        assert client.patch(f"/api/models/{model_id}/variants", json={"variants": []}).json() == {
+            "variants": []
+        }
+        with sessions() as session:
+            reloaded = session.get(LibraryModel, model_id)
+            assert reloaded is not None
+            assert reloaded.variants == []
+
+
 def test_admin_can_only_delete_missing_models() -> None:
     with catalog_client() as (client, sessions):
         with sessions() as session:

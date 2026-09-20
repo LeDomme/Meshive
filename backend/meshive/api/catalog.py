@@ -28,6 +28,7 @@ from meshive.auth.permissions import (
     MODELS_REBUILD_IMAGES,
     MODELS_RESCAN,
     MODELS_RESET_IMAGES,
+    METADATA_MANAGE,
 )
 from meshive.config import get_settings
 from meshive.database import get_session
@@ -59,6 +60,8 @@ from meshive.schemas.catalog import (
     ModelPage,
     ModelScanIssueRead,
     ModelSummary,
+    ModelVariantsRead,
+    ModelVariantsWrite,
     SourceFilterOption,
 )
 from meshive.schemas.creator import CreatorMetadataLinkRead
@@ -79,12 +82,29 @@ from meshive.services.thumbnails import (
     remove_cached_file,
     safe_cache_path,
 )
+from meshive.services.variants import replace_model_variants
 
 router = APIRouter(
     prefix="/models",
     tags=["catalogue"],
     dependencies=[Depends(get_current_user)],
 )
+
+
+@router.patch("/{model_id}/variants", response_model=ModelVariantsRead)
+def update_model_variants(
+    model_id: int,
+    payload: ModelVariantsWrite,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ModelVariantsRead:
+    access = get_access_context(session, current_user)
+    if METADATA_MANAGE not in access.permission_keys:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing permission")
+    model = get_visible_model_or_404(session, access, model_id)
+    replace_model_variants(model, payload.variants)
+    session.commit()
+    return ModelVariantsRead(variants=[variant.value for variant in model.variants])
 admin_router = APIRouter(
     prefix="/admin/models",
     tags=["catalogue administration"],

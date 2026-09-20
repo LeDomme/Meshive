@@ -66,7 +66,7 @@ interface ModelArchiveStatistics {
 interface ModelDetail {
   id: number
   name: string
-  variant: string | null
+  variants: string[]
   creator: string | null
   creator_profile_id: number | null
   creator_links: Array<{
@@ -93,7 +93,7 @@ interface ModelDetail {
 interface ModelNavigationItem {
   id: number
   name: string
-  variant: string | null
+  variants: string[]
 }
 
 interface ModelNavigation {
@@ -141,6 +141,8 @@ const selectedTagId = ref("")
 const tagMutationInProgress = ref(false)
 const loading = ref(true)
 const errorMessage = ref("")
+const variantDraft = ref("")
+const variantSaveInProgress = ref(false)
 const selectedImage = ref<ModelImage | null>(null)
 const pictureNotice = ref("")
 const rescanInProgress = ref(false)
@@ -294,6 +296,36 @@ function endThumbnailDrag(event: PointerEvent) {
   }
   window.setTimeout(() => { thumbnailDragMoved = false }, 0)
 }
+function addVariant() {
+  const value = variantDraft.value.trim()
+  if (!model.value || !value) return
+  if (!model.value.variants.some((item) => item.localeCompare(value, undefined, { sensitivity: "accent" }) === 0)) {
+    model.value.variants.push(value)
+  }
+  variantDraft.value = ""
+}
+
+function removeVariant(index: number) {
+  model.value?.variants.splice(index, 1)
+}
+
+async function saveVariants() {
+  if (!model.value || !auth.can("metadata.manage")) return
+  variantSaveInProgress.value = true
+  errorMessage.value = ""
+  try {
+    const response = await apiRequest<{ variants: string[] }>(`/api/models/${model.value.id}/variants`, {
+      method: "PATCH",
+      body: JSON.stringify({ variants: model.value.variants }),
+    })
+    model.value.variants = response.variants
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError ? error.message : "Unable to save variants"
+  } finally {
+    variantSaveInProgress.value = false
+  }
+}
+
 async function setPrimaryImage(image: ModelImage) {
   if (!auth.can("models.primary_image") || !model.value || image.is_primary) return
   errorMessage.value = ""
@@ -844,9 +876,21 @@ onBeforeUnmount(() => {
         <div>
           <p class="eyebrow">{{ model.source_name }}</p>
           <h1>{{ model.name }}</h1>
-          <p v-if="model.variant" class="detail-variant">
-            Variant · {{ model.variant }}
+          <p v-if="model.variants.length" class="detail-variant">
+            Variants · {{ model.variants.join(" · ") }}
           </p>
+          <div v-if="auth.can('metadata.manage')" class="detail-variant-editor">
+            <div class="tag-list">
+              <TagChip v-for="(variant, index) in model.variants" :key="`${variant}-${index}`" color="#64748b" :description="null">
+                {{ variant }} <button type="button" aria-label="Remove variant" @click="removeVariant(index)">×</button>
+              </TagChip>
+            </div>
+            <div class="inline-form">
+              <input v-model="variantDraft" type="text" maxlength="255" placeholder="Add variant" @keydown.enter.prevent="addVariant" />
+              <button type="button" class="secondary-button" @click="addVariant">Add</button>
+              <button type="button" class="primary-button" :disabled="variantSaveInProgress" @click="saveVariants">{{ variantSaveInProgress ? "Saving…" : "Save variants" }}</button>
+            </div>
+          </div>
           <p class="detail-taxonomy">
             {{ [model.franchise, model.series, model.collection]
               .filter((value, index, values) => value && values.indexOf(value) === index)
@@ -1015,9 +1059,9 @@ onBeforeUnmount(() => {
                 {{ model.name }}
               </RouterLink>
             </dd>
-            <template v-if="model.variant">
-              <dt>Variant</dt>
-              <dd>{{ model.variant }}</dd>
+            <template v-if="model.variants.length">
+              <dt>Variants</dt>
+              <dd>{{ model.variants.join(" · ") }}</dd>
             </template>
             <template v-if="model.creator">
               <dt>Creator</dt>
