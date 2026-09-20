@@ -192,6 +192,7 @@ def list_models(
             id=model.id,
             name=model.name,
             variants=[variant.value for variant in model.variants],
+            variant=model.variants[0].value if model.variants else None,
             creator=model.creator,
             creator_profile_id=model.creator_profile_id,
             franchise=model.franchise,
@@ -296,13 +297,17 @@ def model_navigation(
                 id=row.previous_id,
                 name=row.previous_name,
             variants=variants_by_model.get(row.previous_id, []),
+            variant=(variants_by_model.get(row.previous_id) or [None])[0],
             )
             if row.previous_id is not None
             else None
         ),
         next=(
         ModelNavigationItem(
-            id=row.next_id, name=row.next_name, variants=variants_by_model.get(row.next_id, [])
+            id=row.next_id,
+            name=row.next_name,
+            variants=variants_by_model.get(row.next_id, []),
+            variant=(variants_by_model.get(row.next_id) or [None])[0],
         )
             if row.next_id is not None
             else None
@@ -666,6 +671,7 @@ def model_detail(
         id=model.id,
         name=model.name,
         variants=[variant.value for variant in model.variants],
+        variant=model.variants[0].value if model.variants else None,
         creator=model.creator,
         creator_profile_id=model.creator_profile_id,
         creator_url=creator_url,

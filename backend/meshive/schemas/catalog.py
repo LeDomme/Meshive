@@ -10,6 +10,7 @@ class ModelSummary(BaseModel):
     id: int
     name: str
     variants: list[str]
+    variant: str | None
     creator: str | None
     creator_profile_id: int | None = None
     franchise: str | None
@@ -36,6 +37,7 @@ class ModelNavigationItem(BaseModel):
     id: int
     name: str
     variants: list[str]
+    variant: str | None
 
 
 class ModelNavigation(BaseModel):
@@ -98,6 +100,7 @@ class ModelDetail(BaseModel):
     id: int
     name: str
     variants: list[str]
+    variant: str | None
     creator: str | None
     creator_profile_id: int | None = None
     creator_url: str | None

@@ -535,6 +535,7 @@ def _item_reads(
                     else None
                 ),
         variants=[variant.value for variant in model.variants] if model else [],
+        variant=model.variants[0].value if model and model.variants else None,
                 creator=model.creator if model else None,
                 franchise=model.franchise if model else None,
                 series=model.series if model else None,
