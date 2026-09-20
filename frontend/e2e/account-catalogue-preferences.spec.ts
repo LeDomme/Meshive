@@ -67,6 +67,7 @@ test("account manages saved views without reloading", async ({ page }) => {
     return route.fulfill({ status: 405 })
   })
 
+  await page.setViewportSize({ width: 375, height: 800 })
   await page.goto("/account")
   page.once("dialog", dialog => dialog.accept("Renamed view"))
   await page.getByRole("button", { name: "Rename" }).click()

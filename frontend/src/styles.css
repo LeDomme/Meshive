@@ -1690,6 +1690,10 @@ summary {
   display: grid;
   max-width: 38rem;
   gap: 1.15rem;
+}
+
+.account-form,
+.account-panel-content {
   margin-top: 1.5rem;
 }
 
@@ -1771,10 +1775,6 @@ summary {
   margin: 0.3rem 0 0;
   color: #94a3b8;
   font-size: 0.875rem;
-}
-
-.saved-view-list {
-  margin-top: 0.875rem;
 }
 
 .email-verified,

@@ -362,9 +362,9 @@ onMounted(() => {
 
         <section class="panel account-catalogue-preferences" aria-labelledby="catalogue-preferences-heading">
           <div class="panel-heading"><div><h2 id="catalogue-preferences-heading">Catalogue preferences</h2><p class="panel-copy">Restore your default catalogue control layout.</p></div></div>
-          <p v-if="cataloguePreferencesLoading" class="panel-copy">Loading catalogue preferences…</p>
+          <p v-if="cataloguePreferencesLoading" class="panel-copy account-panel-content">Loading catalogue preferences…</p>
           <template v-else>
-            <div class="catalogue-layout-setting">
+            <div class="catalogue-layout-setting account-panel-content">
               <div>
                 <h3>Catalogue layout</h3>
                 <p>Restore the default filter and catalogue action order.</p>
@@ -378,9 +378,9 @@ onMounted(() => {
 
         <section class="panel account-saved-views" aria-labelledby="saved-views-heading">
           <div class="panel-heading"><div><h2 id="saved-views-heading">Saved views</h2><p class="panel-copy">Rename or remove your saved catalogue views.</p></div></div>
-          <p v-if="savedViewsLoading" class="panel-copy">Loading saved views…</p>
-          <p v-else-if="savedViews.length === 0 && !savedViewsError" class="panel-copy">No saved views yet.</p>
-          <div v-else class="saved-view-list">
+          <p v-if="savedViewsLoading" class="panel-copy account-panel-content">Loading saved views…</p>
+          <p v-else-if="savedViews.length === 0 && !savedViewsError" class="panel-copy account-panel-content">No saved views yet.</p>
+          <div v-else class="saved-view-list account-panel-content">
             <article v-for="view in savedViews" :key="view.id" class="saved-view-item">
               <h3>{{ view.name }}</h3>
               <div class="saved-view-actions">
