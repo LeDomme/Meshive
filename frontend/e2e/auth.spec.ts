@@ -60,6 +60,8 @@ test("account settings use the assigned custom role and account navigation", asy
   await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
   await page.route("**/api/auth/me", route => route.fulfill({ json: customRoleUser }))
   await page.route("**/api/auth/sessions", route => route.fulfill({ json: [] }))
+  await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [], action_order: [], navigation_mode: "pagination" } }))
+  await page.route("**/api/saved-views", route => route.fulfill({ json: [] }))
 
   await page.goto("/account")
 

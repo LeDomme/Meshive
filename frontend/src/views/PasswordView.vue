@@ -24,6 +24,18 @@ const emailPassword = ref("")
 const emailError = ref("")
 const emailMessage = ref("")
 const emailSubmitting = ref(false)
+const cataloguePreferences = ref<CataloguePreferences>({ filter_order: [], action_order: [], navigation_mode: "pagination" })
+const cataloguePreferencesLoading = ref(true)
+const cataloguePreferencesSubmitting = ref(false)
+const cataloguePreferencesError = ref("")
+const cataloguePreferencesMessage = ref("")
+const savedViews = ref<SavedView[]>([])
+const savedViewsLoading = ref(true)
+const savedViewsActionId = ref<number | null>(null)
+const savedViewsError = ref("")
+
+const defaultFilterOrder = ["model", "variant", "creator", "franchise", "series", "source", "tag", "status", "sort"]
+const defaultActionOrder = ["selection", "saved_views", "navigation"]
 
 interface UserSession {
   id: string
@@ -38,6 +50,19 @@ interface UserSession {
 
 interface SessionRevocationResult {
   revoked_count: number
+}
+
+interface CataloguePreferences {
+  filter_order: string[]
+  action_order: string[]
+  navigation_mode: "pagination" | "infinite"
+}
+
+interface SavedView {
+  id: number
+  name: string
+  created_at: string
+  updated_at: string
 }
 
 const hasOtherSessions = computed(() => sessions.value.some((item) => !item.is_current))
@@ -72,6 +97,87 @@ async function loadSessions() {
     sessionError.value = error instanceof ApiError ? error.message : "Unable to load active sessions"
   } finally {
     sessionsLoading.value = false
+  }
+}
+
+async function loadCataloguePreferences() {
+  cataloguePreferencesLoading.value = true
+  cataloguePreferencesError.value = ""
+  try {
+    cataloguePreferences.value = await apiRequest<CataloguePreferences>("/api/auth/catalogue-preferences")
+  } catch (error) {
+    cataloguePreferencesError.value = error instanceof ApiError ? error.message : "Unable to load catalogue preferences"
+  } finally {
+    cataloguePreferencesLoading.value = false
+  }
+}
+
+async function saveCataloguePreferences(preferences: CataloguePreferences, message: string) {
+  cataloguePreferencesSubmitting.value = true
+  cataloguePreferencesError.value = ""
+  cataloguePreferencesMessage.value = ""
+  try {
+    cataloguePreferences.value = await apiRequest<CataloguePreferences>("/api/auth/catalogue-preferences", {
+      method: "PUT",
+      body: JSON.stringify(preferences),
+    })
+    cataloguePreferencesMessage.value = message
+  } catch (error) {
+    cataloguePreferencesError.value = error instanceof ApiError ? error.message : "Unable to save catalogue preferences"
+  } finally {
+    cataloguePreferencesSubmitting.value = false
+  }
+}
+
+function resetCatalogueLayout() {
+  void saveCataloguePreferences({
+    filter_order: [...defaultFilterOrder],
+    action_order: [...defaultActionOrder],
+    navigation_mode: cataloguePreferences.value.navigation_mode,
+  }, "Catalogue layout reset.")
+}
+
+async function loadSavedViews() {
+  savedViewsLoading.value = true
+  savedViewsError.value = ""
+  try {
+    savedViews.value = await apiRequest<SavedView[]>("/api/saved-views")
+  } catch (error) {
+    savedViewsError.value = error instanceof ApiError ? error.message : "Unable to load saved views"
+  } finally {
+    savedViewsLoading.value = false
+  }
+}
+
+async function renameSavedView(view: SavedView) {
+  const name = window.prompt("Rename saved view", view.name)?.trim()
+  if (!name || name === view.name) return
+  savedViewsActionId.value = view.id
+  savedViewsError.value = ""
+  try {
+    const renamed = await apiRequest<SavedView>(`/api/saved-views/${view.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    })
+    savedViews.value = savedViews.value.map((item) => item.id === renamed.id ? { ...item, ...renamed } : item)
+  } catch (error) {
+    savedViewsError.value = error instanceof ApiError ? error.message : "Unable to rename this saved view"
+  } finally {
+    savedViewsActionId.value = null
+  }
+}
+
+async function deleteSavedView(view: SavedView) {
+  if (!window.confirm(`Delete saved view "${view.name}"?`)) return
+  savedViewsActionId.value = view.id
+  savedViewsError.value = ""
+  try {
+    await apiRequest<void>(`/api/saved-views/${view.id}`, { method: "DELETE" })
+    savedViews.value = savedViews.value.filter((item) => item.id !== view.id)
+  } catch (error) {
+    savedViewsError.value = error instanceof ApiError ? error.message : "Unable to delete this saved view"
+  } finally {
+    savedViewsActionId.value = null
   }
 }
 
@@ -179,7 +285,11 @@ async function submit() {
   }
 }
 
-onMounted(loadSessions)
+onMounted(() => {
+  void loadSessions()
+  void loadCataloguePreferences()
+  void loadSavedViews()
+})
 </script>
 
 <template>
@@ -197,7 +307,7 @@ onMounted(loadSessions)
         <AccountMenu />
       </nav>
     </header>
-    <p class="account-intro">Manage your profile, recovery email, password and signed-in devices.</p>
+    <p class="account-intro">Manage your profile, recovery email, password, catalogue preferences and signed-in devices.</p>
 
     <section class="account-layout">
       <aside class="panel account-profile" aria-labelledby="profile-heading">
@@ -248,6 +358,38 @@ onMounted(loadSessions)
             <p v-if="successMessage" class="success-panel" role="status">{{ successMessage }}</p>
             <button class="primary-button" type="submit" :disabled="submitting">{{ submitting ? "Changing password…" : "Change password" }}</button>
           </form>
+        </section>
+
+        <section class="panel account-catalogue-preferences" aria-labelledby="catalogue-preferences-heading">
+          <div class="panel-heading"><div><h2 id="catalogue-preferences-heading">Catalogue preferences</h2><p class="panel-copy">Restore your default catalogue control layout.</p></div></div>
+          <p v-if="cataloguePreferencesLoading" class="panel-copy account-panel-content">Loading catalogue preferences…</p>
+          <template v-else>
+            <div class="catalogue-layout-setting account-panel-content">
+              <div>
+                <h3>Catalogue layout</h3>
+                <p>Restore the default filter and catalogue action order.</p>
+              </div>
+              <button class="text-button" type="button" :disabled="cataloguePreferencesSubmitting" @click="resetCatalogueLayout">Reset</button>
+            </div>
+            <p v-if="cataloguePreferencesError" class="form-error" role="alert">{{ cataloguePreferencesError }}</p>
+            <p v-if="cataloguePreferencesMessage" class="success-panel" role="status">{{ cataloguePreferencesMessage }}</p>
+          </template>
+        </section>
+
+        <section class="panel account-saved-views" aria-labelledby="saved-views-heading">
+          <div class="panel-heading"><div><h2 id="saved-views-heading">Saved views</h2><p class="panel-copy">Rename or remove your saved catalogue views.</p></div></div>
+          <p v-if="savedViewsLoading" class="panel-copy account-panel-content">Loading saved views…</p>
+          <p v-else-if="savedViews.length === 0 && !savedViewsError" class="panel-copy account-panel-content">No saved views yet.</p>
+          <div v-else class="saved-view-list account-panel-content">
+            <article v-for="view in savedViews" :key="view.id" class="saved-view-item">
+              <h3>{{ view.name }}</h3>
+              <div class="saved-view-actions">
+                <button class="text-button" type="button" :disabled="savedViewsActionId !== null" @click="renameSavedView(view)">Rename</button>
+                <button class="text-button danger-text-button" type="button" :disabled="savedViewsActionId !== null" @click="deleteSavedView(view)">Delete</button>
+              </div>
+            </article>
+          </div>
+          <p v-if="savedViewsError" class="form-error" role="alert">{{ savedViewsError }}</p>
         </section>
 
         <section class="panel account-sessions" aria-labelledby="sessions-heading">
