@@ -102,6 +102,23 @@ def test_parses_free_form_model_variant(identifier: str) -> None:
     assert values["creator"] == "E.S Monster"
 
 
+def test_parses_variant_identifier_with_a_comma_separated_variant_value() -> None:
+    _, values = parse_library_path(
+        directory_pattern="{franchise}/{model_folder}",
+        model_pattern=(
+            "{franchise} - {model} - "
+            "{variant_identifier} {variant} - by {creator}"
+        ),
+        relative_path=(
+            "Moikaloop/Moikaloop - Moika - "
+            "variant Neon, sexy, chibi - by Aoae3D"
+        ),
+    )
+
+    assert values["variant_identifier"] == "variant"
+    assert values["variant"] == "Neon, sexy, chibi"
+
+
 def test_warns_about_structurally_ambiguous_variant_patterns() -> None:
     warnings = model_pattern_warnings(
         "{franchise} - {series} - {model} - by {creator}\n"

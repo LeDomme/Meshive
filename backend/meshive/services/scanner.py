@@ -44,7 +44,7 @@ from meshive.services.thumbnails import (
     remove_cached_thumbnail,
     safe_cache_path,
 )
-from meshive.services.variants import add_scanned_variant
+from meshive.services.variants import parse_source_variants, replace_model_variants
 
 
 class ScanCancelled(RuntimeError):
@@ -720,7 +720,7 @@ def _scan_model(
         scan.models_updated += 1
 
     model.name = values["model"]
-    add_scanned_variant(model, values.get("variant"))
+    replace_model_variants(model, parse_source_variants(values.get("variant")))
     model.creator = values.get("creator")
     profile = resolve_creator_profile(session, model.creator)
     model.creator_profile_id = profile.id if profile is not None else None
