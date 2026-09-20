@@ -1669,7 +1669,7 @@ def test_rescan_splits_variant_without_creating_duplicate(tmp_path, monkeypatch)
         assert model is not None
         model_id = model.id
         assert model.name == folder_name
-        assert model.variant is None
+        assert model.variants == []
 
         source.model_pattern = (
             "{franchise} - {series} - {model} - {variant_identifier} {variant} - by {creator}"
@@ -1682,7 +1682,7 @@ def test_rescan_splits_variant_without_creating_duplicate(tmp_path, monkeypatch)
         assert len(models) == 1
         assert models[0].id == model_id
         assert models[0].name == "Psylocke"
-        assert models[0].variant == "Chibi"
+        assert [variant.value for variant in models[0].variants] == ["Chibi"]
         assert models[0].creator == "E.S Monster"
         assert models[0].franchise == "Marvel"
         assert models[0].series == "X-Men"

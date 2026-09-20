@@ -12,7 +12,7 @@ from sqlalchemy import (
     desc,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from meshive.database import Base
 
@@ -27,7 +27,11 @@ class LibraryModel(Base):
     )
     relative_path: Mapped[str] = mapped_column(Text)
     name: Mapped[str] = mapped_column(String(512), index=True)
-    variant: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    variants: Mapped[list["ModelVariant"]] = relationship(
+        back_populates="model",
+        cascade="all, delete-orphan",
+        order_by="ModelVariant.position",
+    )
     creator: Mapped[str | None] = mapped_column(String(255), index=True)
     creator_profile_id: Mapped[int | None] = mapped_column(
         ForeignKey("creator_profiles.id", ondelete="SET NULL"), nullable=True, index=True
@@ -49,11 +53,27 @@ class LibraryModel(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
     archive_image_policy_key: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
     scan_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     scan_policy_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class ModelVariant(Base):
+    __tablename__ = "model_variants"
+    __table_args__ = (UniqueConstraint("model_id", "normalized_value"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    model_id: Mapped[int] = mapped_column(
+        ForeignKey("library_models.id", ondelete="CASCADE"), index=True
+    )
+    value: Mapped[str] = mapped_column(String(255))
+    normalized_value: Mapped[str] = mapped_column(String(255))
+    position: Mapped[int] = mapped_column(Integer)
+
+    model: Mapped[LibraryModel] = relationship(back_populates="variants")
 
 
 class Archive(Base):

@@ -10,7 +10,7 @@ from meshive.auth.dependencies import get_current_user
 from meshive.database import Base, create_database_engine, get_session
 from meshive.main import app
 from meshive.models.authorization import Role, UserLibrarySource
-from meshive.models.catalog import LibraryModel, ModelImage
+from meshive.models.catalog import LibraryModel, ModelImage, ModelVariant
 from meshive.models.favorite import FavoriteListItem
 from meshive.models.library_source import LibrarySource
 from meshive.models.metadata import MetadataArtwork
@@ -87,7 +87,7 @@ def test_favorite_lists_are_private_and_resolve_catalogue_targets(tmp_path) -> N
                 library_source_id=source.id,
                 relative_path="Marvel/Psylocke Chibi",
                 name="Psylocke",
-                variant="Chibi",
+                variants=[ModelVariant(value="Chibi", normalized_value="chibi", position=0)],
                 creator="E.S Monster",
                 franchise="Marvel",
                 series="X-Men",
@@ -197,7 +197,7 @@ def test_favorite_lists_are_private_and_resolve_catalogue_targets(tmp_path) -> N
         assert items["model"]["thumbnail_url"] == (
             f"/api/models/{model_id}/thumbnail?v={image_id}"
         )
-        assert items["model"]["variant"] == "Chibi"
+        assert items["model"]["variants"] == ["Chibi"]
         assert items["model"]["creator"] == "E.S Monster"
         assert items["creator"]["label"] == "E.S Monster"
         assert items["creator"]["url"] == "/?creator=E.S+Monster"

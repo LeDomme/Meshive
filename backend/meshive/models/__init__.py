@@ -7,14 +7,15 @@ from meshive.models.catalog import (
     ArchiveEntry,
     LibraryModel,
     ModelImage,
+    ModelVariant,
     ScanIssue,
     ScanRun,
 )
 from meshive.models.creator import CreatorAlias, CreatorLink, CreatorMerge, CreatorProfile
 from meshive.models.favorite import FavoriteList, FavoriteListItem
-from meshive.models.saved_view import SavedView
 from meshive.models.library_source import LibrarySource
 from meshive.models.metadata import MetadataArtwork
+from meshive.models.saved_view import SavedView
 from meshive.models.session import UserSession
 from meshive.models.tag import (
     AutomaticTagMatch,
@@ -50,11 +51,12 @@ __all__ = [
     "MetadataArtwork",
     "ModelImage",
     "ModelTag",
+    "ModelVariant",
     "Role",
     "RolePermission",
+    "SavedView",
     "ScanIssue",
     "ScanRun",
-    "SavedView",
     "Tag",
     "TagAssignmentRule",
     "TagAssignmentRuleMatch",

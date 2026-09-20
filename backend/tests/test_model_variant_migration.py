@@ -12,7 +12,7 @@ def test_existing_models_survive_variant_search_migration(tmp_path, monkeypatch)
     get_settings.cache_clear()
     config = Config("backend/alembic.ini")
     try:
-        command.upgrade(config, "20260802_16")
+        command.upgrade(config, "20260918_46")
         engine = create_engine(database_url)
         with engine.begin() as connection:
             connection.execute(
@@ -33,13 +33,19 @@ def test_existing_models_survive_variant_search_migration(tmp_path, monkeypatch)
                     "'Marvel', 'X-Men', NULL, 'available')"
                 )
             )
+            connection.execute(
+                text("UPDATE library_models SET variant = ' Halloween Town ' WHERE id = 1")
+            )
         engine.dispose()
 
         command.upgrade(config, "head")
         engine = create_engine(database_url)
         with engine.begin() as connection:
             migrated = connection.execute(
-                text("SELECT name, variant FROM library_models WHERE id = 1")
+                text(
+                    "SELECT value, normalized_value, position FROM model_variants "
+                    "WHERE model_id = 1"
+                )
             ).one()
             search_columns = {
                 row[1]
@@ -47,7 +53,8 @@ def test_existing_models_survive_variant_search_migration(tmp_path, monkeypatch)
             }
             connection.execute(
                 text(
-                    "UPDATE library_models SET variant = 'Chibi version' WHERE id = 1"
+                "INSERT INTO model_variants (model_id, value, normalized_value, position) "
+                "VALUES (1, 'Chibi version', 'chibi version', 0)"
                 )
             )
             search_match = connection.execute(
@@ -58,7 +65,7 @@ def test_existing_models_survive_variant_search_migration(tmp_path, monkeypatch)
             ).scalar_one()
         engine.dispose()
 
-        assert migrated == ("Psylocke", None)
+        assert migrated == (" Halloween Town ", "halloween town", 0)
         assert "variant" in search_columns
         assert search_match == 1
     finally:
