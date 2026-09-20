@@ -40,15 +40,13 @@ def upgrade() -> None:
         """
     )
     _drop_search_index()
-    with op.batch_alter_table("library_models") as batch:
-        batch.drop_column("variant")
+    op.drop_column("library_models", "variant")
     _create_search_index()
 
 
 def downgrade() -> None:
     _drop_search_index()
-    with op.batch_alter_table("library_models") as batch:
-        batch.add_column(sa.Column("variant", sa.String(length=255), nullable=True))
+    op.add_column("library_models", sa.Column("variant", sa.String(length=255), nullable=True))
     op.execute(
         """
         UPDATE library_models
@@ -62,7 +60,28 @@ def downgrade() -> None:
     )
     op.drop_index("ix_model_variants_model_id", table_name="model_variants")
     op.drop_table("model_variants")
-    _create_search_index()
+    _create_legacy_search_index()
+
+
+def _create_legacy_search_index() -> None:
+    """Restore the pre-1.9 FTS projection after the relation has been removed."""
+    op.execute(
+        """
+        CREATE VIRTUAL TABLE model_search USING fts5(
+            model_id UNINDEXED, name, variant, creator, franchise, series, collection, tags,
+            tokenize = 'unicode61 remove_diacritics 2'
+        )
+        """
+    )
+    op.execute(
+        """
+        INSERT INTO model_search (model_id, name, variant, creator, franchise, series, collection, tags)
+        SELECT m.id, m.name, COALESCE(m.variant, ''), COALESCE(m.creator, ''),
+               COALESCE(m.franchise, ''), COALESCE(m.series, ''), COALESCE(m.collection, ''),
+               COALESCE((SELECT group_concat(t.name, ' ') FROM model_tags mt JOIN tags t ON t.id = mt.tag_id WHERE mt.model_id = m.id), '')
+        FROM library_models m
+        """
+    )
 
 
 def _drop_search_index() -> None:

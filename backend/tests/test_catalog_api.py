@@ -1071,8 +1071,8 @@ def test_model_navigation_follows_catalogue_filters_and_sorting() -> None:
 
         assert response.status_code == 200
         assert response.json() == {
-            "previous": {"id": models[2].id, "name": "Gamma", "variant": None},
-            "next": {"id": models[0].id, "name": "Alpha", "variant": None},
+            "previous": {"id": models[2].id, "name": "Gamma", "variants": []},
+            "next": {"id": models[0].id, "name": "Alpha", "variants": []},
         }
 
         boundary = client.get(
@@ -1095,9 +1095,11 @@ def test_model_navigation_matches_every_catalogue_sort_order() -> None:
                     library_source_id=source.id,
                     relative_path=f"model-{index}",
                     name=name,
-                variants=[
-                    ModelVariant(value=variant, normalized_value=variant.casefold(), position=0)
-                ],
+                variants=(
+                    [ModelVariant(value=variant, normalized_value=variant.casefold(), position=0)]
+                    if variant is not None
+                    else []
+                ),
                     creator=creator,
                     status="available",
                     first_seen_at=datetime(2025, 1, index + 1, tzinfo=UTC),
@@ -1209,7 +1211,7 @@ def test_model_navigation_supports_combined_fts_and_tag_filters() -> None:
         ]
         navigation = client.get(f"/api/models/{models[1].id}/navigation", params=params)
         assert navigation.json() == {
-            "previous": {"id": models[0].id, "name": models[0].name, "variant": None},
+            "previous": {"id": models[0].id, "name": models[0].name, "variants": []},
             "next": None,
         }
         assert client.get(f"/api/models/{models[2].id}/navigation", params=params).status_code == 404
@@ -1254,7 +1256,8 @@ def test_model_navigation_keeps_large_results_in_sql() -> None:
         assert "lead(" in navigation_query.lower()
         assert "FROM (SELECT" in navigation_query
         assert "ranked_models.id = ?" in navigation_query
-        assert len(statements) == 2
+        # Navigation batches variants for just previous/next instead of loading per model.
+        assert len(statements) == 3
         assert elapsed_seconds < 5
 
 
