@@ -99,12 +99,12 @@ def model_favorite_memberships(
     unique_ids = list(dict.fromkeys(model_ids))
     if any(model_id < 1 for model_id in unique_ids):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Model IDs must be positive integers",
         )
     if len(unique_ids) > 100:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="At most 100 model IDs may be checked at once",
         )
     memberships: dict[int, list[FavoriteMembershipList]] = {

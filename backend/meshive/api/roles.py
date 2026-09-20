@@ -55,7 +55,7 @@ def _validate_permission_keys(permission_keys: list[str]) -> None:
     unknown = sorted(set(permission_keys) - ALL_PERMISSION_KEYS)
     if unknown:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unknown permission keys: {', '.join(unknown)}",
         )
 

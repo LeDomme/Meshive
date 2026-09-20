@@ -94,7 +94,7 @@ def _resolve_role(session: Session, payload: UserCreate | UserUpdate) -> Role:
 def _resolve_source_ids(session: Session, source_ids: list[int]) -> list[int]:
     if len(source_ids) != len(set(source_ids)):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Source IDs must be unique",
         )
     if not source_ids:
