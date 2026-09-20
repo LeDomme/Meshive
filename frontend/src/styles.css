@@ -2048,15 +2048,17 @@ summary {
 
 .searchable-filter-reset {
   flex: 0 0 auto;
-  min-height: 2.25rem;
+  width: 2.25rem;
+  height: 2.25rem;
   margin-bottom: 0.55rem;
-  padding: 0.35rem 0.55rem;
+  padding: 0;
   border: 1px solid #334155;
   border-radius: 0.45rem;
   color: #bfdbfe;
   background: #0b1220;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 1.15rem;
+  line-height: 1;
   cursor: pointer;
 }
 

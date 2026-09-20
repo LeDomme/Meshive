@@ -185,9 +185,10 @@ onBeforeUnmount(() => {
         class="searchable-filter-reset"
         type="button"
         :aria-label="`Reset ${label}`"
+        :title="`Reset ${label}`"
         :disabled="!modelValue"
         @click="reset"
-      >Reset</button>
+      >⟲</button>
       </div>
 
       <div
