@@ -137,14 +137,6 @@ function resetCatalogueLayout() {
   }, "Catalogue layout reset.")
 }
 
-function resetNavigationMode() {
-  void saveCataloguePreferences({
-    filter_order: cataloguePreferences.value.filter_order,
-    action_order: cataloguePreferences.value.action_order,
-    navigation_mode: "pagination",
-  }, "Navigation mode reset to pagination.")
-}
-
 async function loadSavedViews() {
   savedViewsLoading.value = true
   savedViewsError.value = ""
@@ -369,12 +361,15 @@ onMounted(() => {
         </section>
 
         <section class="panel account-catalogue-preferences" aria-labelledby="catalogue-preferences-heading">
-          <div class="panel-heading"><div><h2 id="catalogue-preferences-heading">Catalogue preferences</h2><p class="panel-copy">Restore the catalogue control layout or its navigation mode without changing your filters or saved views.</p></div></div>
+          <div class="panel-heading"><div><h2 id="catalogue-preferences-heading">Catalogue preferences</h2><p class="panel-copy">Restore your default catalogue control layout.</p></div></div>
           <p v-if="cataloguePreferencesLoading" class="panel-copy">Loading catalogue preferences…</p>
           <template v-else>
-            <div class="account-preference-actions">
-              <button class="secondary-button" type="button" :disabled="cataloguePreferencesSubmitting" @click="resetCatalogueLayout">Reset catalogue layout</button>
-              <button class="secondary-button" type="button" :disabled="cataloguePreferencesSubmitting" @click="resetNavigationMode">Reset navigation mode</button>
+            <div class="catalogue-layout-setting">
+              <div>
+                <h3>Catalogue layout</h3>
+                <p>Restore the default filter and catalogue action order.</p>
+              </div>
+              <button class="text-button" type="button" :disabled="cataloguePreferencesSubmitting" @click="resetCatalogueLayout">Reset</button>
             </div>
             <p v-if="cataloguePreferencesError" class="form-error" role="alert">{{ cataloguePreferencesError }}</p>
             <p v-if="cataloguePreferencesMessage" class="success-panel" role="status">{{ cataloguePreferencesMessage }}</p>

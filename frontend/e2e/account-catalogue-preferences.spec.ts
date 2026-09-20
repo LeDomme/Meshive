@@ -21,7 +21,7 @@ async function mockAccount(page: Page) {
   await page.route("**/api/auth/sessions", route => route.fulfill({ json: [] }))
 }
 
-test("account resets catalogue layout and navigation mode independently", async ({ page }) => {
+test("account resets catalogue layout while preserving navigation mode", async ({ page }) => {
   let preferences = {
     filter_order: ["sort", "model", "variant", "creator", "franchise", "series", "source", "tag", "status"],
     action_order: ["navigation", "saved_views", "selection"],
@@ -39,20 +39,14 @@ test("account resets catalogue layout and navigation mode independently", async 
   await expect(page.getByRole("heading", { name: "Saved views" })).toBeVisible()
   await expect(page.getByText("Ada view", { exact: true })).toBeVisible()
 
-  await page.getByRole("button", { name: "Reset catalogue layout" }).click()
+  await expect(page.getByRole("button", { name: "Reset navigation mode" })).toHaveCount(0)
+  await page.getByRole("button", { name: "Reset" }).click()
   await expect.poll(() => preferences).toEqual({
     filter_order: defaultFilterOrder,
     action_order: defaultActionOrder,
     navigation_mode: "infinite",
   })
   await expect(page.getByText("Ada view", { exact: true })).toBeVisible()
-
-  await page.getByRole("button", { name: "Reset navigation mode" }).click()
-  await expect.poll(() => preferences).toEqual({
-    filter_order: defaultFilterOrder,
-    action_order: defaultActionOrder,
-    navigation_mode: "pagination",
-  })
 })
 
 test("account manages saved views without reloading", async ({ page }) => {

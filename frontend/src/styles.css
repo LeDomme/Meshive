@@ -1736,18 +1736,19 @@ summary {
   gap: 0.75rem;
 }
 
-.account-preference-actions,
 .saved-view-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
 }
 
+.catalogue-layout-setting,
 .saved-view-list {
   display: grid;
   gap: 0.75rem;
 }
 
+.catalogue-layout-setting,
 .saved-view-item {
   display: flex;
   align-items: center;
@@ -1759,10 +1760,21 @@ summary {
   background: rgb(15 23 42 / 35%);
 }
 
+.catalogue-layout-setting h3,
 .saved-view-item h3 {
   margin: 0;
   font-size: 1rem;
   overflow-wrap: anywhere;
+}
+
+.catalogue-layout-setting p {
+  margin: 0.3rem 0 0;
+  color: #94a3b8;
+  font-size: 0.875rem;
+}
+
+.saved-view-list {
+  margin-top: 0.875rem;
 }
 
 .email-verified,
