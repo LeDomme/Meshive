@@ -125,6 +125,7 @@ interface ArchiveBrowseState {
 
 type CatalogueFilterKey =
   | "model"
+  | "variant"
   | "creator"
   | "franchise"
   | "series"
@@ -593,6 +594,7 @@ function navigationParameters() {
     "franchise",
     "series",
     "collection",
+    "variant",
     "tag_id",
     "source_id",
     "status",

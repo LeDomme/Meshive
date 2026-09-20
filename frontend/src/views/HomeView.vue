@@ -88,6 +88,7 @@ interface CatalogueFilters {
   franchises: FilterOption[]
   series: FilterOption[]
   collections: FilterOption[]
+  variants: FilterOption[]
   sources: SourceOption[]
   statuses: FilterOption[]
   tags: Tag[]
@@ -101,6 +102,7 @@ type CatalogueQuery = {
   franchise: string
   series: string
   collection: string
+  variant: string
   source_id: string
   tag_id: string
   status: string
@@ -196,6 +198,7 @@ const filters = ref<CatalogueFilters>({
   franchises: [],
   series: [],
   collections: [],
+  variants: [],
   sources: [],
   statuses: [],
   tags: [],
@@ -208,6 +211,7 @@ const defaultQuery = {
   franchise: "",
   series: "",
   collection: "",
+  variant: "",
   source_id: "",
   tag_id: "",
   status: "",
@@ -322,6 +326,7 @@ const sortOptions = [
 
 type CatalogueFilterKey =
   | "model"
+  | "variant"
   | "creator"
   | "franchise"
   | "series"
@@ -332,6 +337,7 @@ type CatalogueFilterKey =
 
 const defaultFilterOrder: CatalogueFilterKey[] = [
   "model",
+  "variant",
   "creator",
   "franchise",
   "series",
@@ -747,6 +753,7 @@ function goToPage(targetPage: number) {
 
 type FacetKey =
   | "model"
+  | "variant"
   | "creator"
   | "franchise"
   | "series"
@@ -764,6 +771,7 @@ function reconcileFacets(result: CatalogueFilters) {
   if (!lastChangedFacet) return
   const validValues: Record<FacetKey, Set<string>> = {
     model: new Set(result.models.map((item) => item.value)),
+    variant: new Set((result.variants ?? []).map((item) => item.value)),
     creator: new Set(result.creators.map((item) => item.value)),
     franchise: new Set(result.franchises.map((item) => item.value)),
     series: new Set(result.series.map((item) => item.value)),
@@ -1280,6 +1288,23 @@ onBeforeUnmount(() => {
         search-placeholder="Search models"
         :options="filters.models"
         @change="facetChanged('model')"
+      />
+
+      <SearchableFilter
+        data-filter-key="variant"
+        :style="{ order: filterPosition('variant') }"
+        draggable="true"
+        title="Drag to reorder filter"
+        @dragstart="startFilterDrag('variant', $event)"
+        @dragover.prevent="previewFilterDrop('variant')"
+        @drop="dropFilter('variant', $event)"
+        @dragend="endFilterDrag"
+        v-model="query.variant"
+        label="Variant"
+        all-label="All variants"
+        search-placeholder="Search variants"
+        :options="filters.variants ?? []"
+        @change="facetChanged('variant')"
       />
 
       <SearchableFilter

@@ -79,6 +79,7 @@ from meshive.services.thumbnails import (
     remove_cached_file,
     safe_cache_path,
 )
+from meshive.services.variants import normalize_variant
 
 router = APIRouter(
     prefix="/models",
@@ -105,6 +106,7 @@ def list_models(
     franchise: str | None = Query(default=None, max_length=255),
     series: str | None = Query(default=None, max_length=255),
     collection: str | None = Query(default=None, max_length=255),
+    variant: str | None = Query(default=None, max_length=255),
     tag_id: int | None = None,
     source_id: int | None = None,
     model_status: str | None = Query(default=None, alias="status", max_length=30),
@@ -135,6 +137,7 @@ def list_models(
         franchise=franchise,
         series=series,
         collection=collection,
+        variant=variant,
         tag_id=tag_id,
         source_id=source_id,
         model_status=model_status,
@@ -236,6 +239,7 @@ def model_navigation(
     franchise: str | None = Query(default=None, max_length=255),
     series: str | None = Query(default=None, max_length=255),
     collection: str | None = Query(default=None, max_length=255),
+    variant: str | None = Query(default=None, max_length=255),
     tag_id: int | None = None,
     source_id: int | None = None,
     model_status: str | None = Query(default=None, alias="status", max_length=30),
@@ -266,6 +270,7 @@ def model_navigation(
         franchise=franchise,
         series=series,
         collection=collection,
+        variant=variant,
         tag_id=tag_id,
         source_id=source_id,
         model_status=model_status,
@@ -326,6 +331,7 @@ def catalogue_filters(
     franchise: str | None = Query(default=None, max_length=255),
     series: str | None = Query(default=None, max_length=255),
     collection: str | None = Query(default=None, max_length=255),
+    variant: str | None = Query(default=None, max_length=255),
     tag_id: int | None = None,
     source_id: int | None = None,
     model_status: str | None = Query(default=None, alias="status", max_length=30),
@@ -344,6 +350,7 @@ def catalogue_filters(
         "franchise": franchise,
         "series": series,
         "collection": collection,
+        "variant": variant,
         "tag_id": tag_id,
         "source_id": source_id,
         "model_status": model_status,
@@ -412,6 +419,22 @@ def catalogue_filters(
         collections=_text_filter_options(
             session, LibraryModel.collection, facet_filters("collection")
         ),
+        variants=[
+            FilterOption(value=value, count=count)
+            for value, count in session.execute(
+                select(
+                    func.min(ModelVariant.value).label("value"),
+                    func.count(func.distinct(ModelVariant.model_id)).label("count"),
+                )
+                .join(LibraryModel, LibraryModel.id == ModelVariant.model_id)
+                .where(*facet_filters("variant"))
+                .group_by(ModelVariant.normalized_value)
+                .order_by(
+                    func.min(ModelVariant.value).collate("NOCASE"),
+                    ModelVariant.normalized_value,
+                )
+            )
+        ],
         statuses=statuses if CATALOGUE_VIEW_MAINTENANCE in access.permission_keys else [],
         tags=[
             TagRead(id=tag.id, name=tag.name, color=tag.color, description=tag.description)
@@ -1246,6 +1269,7 @@ def _model_filters(
     franchise: str | None,
     series: str | None,
     collection: str | None,
+    variant: str | None,
     tag_id: int | None,
     source_id: int | None,
     model_status: str | None,
@@ -1281,6 +1305,15 @@ def _model_filters(
         filters.append(LibraryModel.series == series)
     if collection:
         filters.append(LibraryModel.collection == collection)
+    normalized_variant = normalize_variant(variant) if variant else None
+    if normalized_variant is not None:
+        filters.append(
+            LibraryModel.id.in_(
+                select(ModelVariant.model_id).where(
+                    ModelVariant.normalized_value == normalized_variant[1]
+                )
+            )
+        )
     if tag_id is not None:
         filters.append(
             LibraryModel.id.in_(

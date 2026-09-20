@@ -23,6 +23,7 @@ class SavedViewState(BaseModel):
     franchise: str = Field(default="", max_length=255)
     series: str = Field(default="", max_length=255)
     collection: str = Field(default="", max_length=255)
+    variant: str = Field(default="", max_length=255)
     source_id: str = Field(default="")
     tag_id: str = Field(default="")
     status: str = Field(default="", max_length=30)

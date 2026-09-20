@@ -146,6 +146,7 @@ class CatalogueFilters(BaseModel):
     franchises: list[FilterOption]
     series: list[FilterOption]
     collections: list[FilterOption]
+    variants: list[FilterOption]
     sources: list[SourceFilterOption]
     statuses: list[FilterOption]
     tags: list[TagRead]
