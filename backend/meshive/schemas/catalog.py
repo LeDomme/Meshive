@@ -45,13 +45,6 @@ class ModelNavigation(BaseModel):
     next: ModelNavigationItem | None
 
 
-class ModelVariantsWrite(BaseModel):
-    variants: list[str] = Field(default_factory=list, max_length=64)
-
-
-class ModelVariantsRead(BaseModel):
-    variants: list[str]
-
 
 class ModelImageRead(BaseModel):
     id: int
