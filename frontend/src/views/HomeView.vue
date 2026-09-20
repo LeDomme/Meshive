@@ -934,40 +934,6 @@ function selectSavedView(value: string) {
   applySavedView()
 }
 
-async function renameSavedView() {
-  const view = selectedSavedView()
-  if (!view) return
-  const name = window.prompt("Rename saved view", view.name)?.trim()
-  if (!name || name === view.name) return
-  errorMessage.value = ""
-  try {
-    const renamed = await apiRequest<SavedView>(`/api/saved-views/${view.id}`, {
-      method: "PUT",
-      body: JSON.stringify({ name }),
-    })
-    savedViews.value = savedViews.value.map((item) => item.id === renamed.id ? renamed : item)
-  } catch (error) {
-    errorMessage.value = error instanceof ApiError
-      ? error.message
-      : "Unable to rename this saved view"
-  }
-}
-
-async function deleteSavedView() {
-  const view = selectedSavedView()
-  if (!view || !window.confirm(`Delete saved view "${view.name}"?`)) return
-  errorMessage.value = ""
-  try {
-    await apiRequest<void>(`/api/saved-views/${view.id}`, { method: "DELETE" })
-    savedViews.value = savedViews.value.filter((item) => item.id !== view.id)
-    selectedSavedViewId.value = ""
-  } catch (error) {
-    errorMessage.value = error instanceof ApiError
-      ? error.message
-      : "Unable to delete this saved view"
-  }
-}
-
 async function toggleCatalogueSearch() {
   catalogueSearchOpen.value = !catalogueSearchOpen.value
   if (catalogueSearchOpen.value) {
@@ -1569,12 +1535,6 @@ onBeforeUnmount(() => {
           />
           <button class="secondary-button compact-button" type="button" @click="createSavedView">
             Save view
-          </button>
-          <button v-if="selectedSavedViewId" class="text-button" type="button" @click="renameSavedView">
-            Rename
-          </button>
-          <button v-if="selectedSavedViewId" class="text-button" type="button" @click="deleteSavedView">
-            Delete
           </button>
         </div>
         <button

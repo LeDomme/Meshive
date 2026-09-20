@@ -1736,6 +1736,35 @@ summary {
   gap: 0.75rem;
 }
 
+.account-preference-actions,
+.saved-view-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.saved-view-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.saved-view-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--meshive-border);
+  border-radius: 0.6rem;
+  background: rgb(15 23 42 / 35%);
+}
+
+.saved-view-item h3 {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
 .email-verified,
 .email-unverified {
   display: inline-block;
