@@ -1071,8 +1071,8 @@ def test_model_navigation_follows_catalogue_filters_and_sorting() -> None:
 
         assert response.status_code == 200
         assert response.json() == {
-            "previous": {"id": models[2].id, "name": "Gamma", "variants": []},
-            "next": {"id": models[0].id, "name": "Alpha", "variants": []},
+            "previous": {"id": models[2].id, "name": "Gamma", "variants": [], "variant": None},
+            "next": {"id": models[0].id, "name": "Alpha", "variants": [], "variant": None},
         }
 
         boundary = client.get(
@@ -1155,10 +1155,10 @@ def test_model_navigation_matches_every_catalogue_sort_order() -> None:
                 assert navigation.status_code == 200
                 assert navigation.json() == {
                     "previous": {
-                key: ordered[index - 1][key] for key in ("id", "name", "variants")
+                key: ordered[index - 1][key] for key in ("id", "name", "variants", "variant")
                     },
                     "next": {
-                key: ordered[index + 1][key] for key in ("id", "name", "variants")
+                key: ordered[index + 1][key] for key in ("id", "name", "variants", "variant")
                     },
                 }
 
@@ -1211,7 +1211,12 @@ def test_model_navigation_supports_combined_fts_and_tag_filters() -> None:
         ]
         navigation = client.get(f"/api/models/{models[1].id}/navigation", params=params)
         assert navigation.json() == {
-            "previous": {"id": models[0].id, "name": models[0].name, "variants": []},
+            "previous": {
+                "id": models[0].id,
+                "name": models[0].name,
+                "variants": [],
+                "variant": None,
+            },
             "next": None,
         }
         assert client.get(f"/api/models/{models[2].id}/navigation", params=params).status_code == 404
