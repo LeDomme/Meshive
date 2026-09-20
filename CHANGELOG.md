@@ -5,6 +5,31 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-09-20
+
+### Added
+
+- Source-derived model variants support comma-separated values, normalization,
+  de-duplication, stable ordering, and deterministic replacement on rescan.
+- Catalogue variant filtering includes source-scoped facet counts and remains
+  part of URLs, navigation restoration, Saved Views, pagination, and infinite
+  scrolling.
+
+### Changed
+
+- Model variants now use a relational multi-value representation with a
+  lossless migration from the former single value. APIs expose canonical
+  `variants[]` while retaining the legacy read-only `variant` alias.
+- Catalogue controls support persistent ordering, grip-only drag and drop,
+  reorder previews, per-filter resets, and compact default labels.
+- Account settings can reset the catalogue layout and manage Saved View names
+  and deletion; the catalogue remains focused on loading and saving views.
+
+### Fixed
+
+- Validation failures for roles, favorites, and metadata artwork consistently
+  return HTTP 422 with the supported runtime dependency versions.
+
 ## [1.8.0] - 2026-09-19
 
 ### Added
@@ -300,7 +325,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
-[Unreleased]: ../../compare/v1.8.0...HEAD
+[Unreleased]: ../../compare/v1.9.0...HEAD
+[1.9.0]: ../../compare/v1.8.0...v1.9.0
 [1.8.0]: ../../compare/v1.7.0...v1.8.0
 [1.7.0]: ../../compare/v1.6.3...v1.7.0
 [1.6.3]: ../../compare/v1.6.2...v1.6.3

@@ -293,7 +293,7 @@ def _canonical_value(
 def _prepare_artwork(raw: bytes) -> tuple[bytes, int, int]:
     if not raw:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="The uploaded image is empty",
         )
     try:
@@ -316,7 +316,7 @@ def _prepare_artwork(raw: bytes) -> tuple[bytes, int, int]:
             return output.getvalue(), prepared.width, prepared.height
     except (UnidentifiedImageError, OSError) as error:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="The uploaded file is not a supported image",
         ) from error
 

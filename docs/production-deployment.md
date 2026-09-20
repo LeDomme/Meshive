@@ -1,6 +1,6 @@
 # Production deployment
 
-Meshive 1.8.0 is distributed as one container image. It expects a local writable
+Meshive 1.9.0 is distributed as one container image. It expects a local writable
 SQLite data volume, a disposable thumbnail cache, a separate backup target,
 and one or more read-only model-library mounts. The supported runtime topology
 uses exactly one Meshive application process. It can publish a host port
@@ -145,7 +145,7 @@ address reports the running release.
 Expected response for this release:
 
 ```json
-{"status":"ok","version":"1.8.0"}
+{"status":"ok","version":"1.9.0"}
 ```
 
 Also verify login, source scanning, thumbnails, archive trees, individual and
