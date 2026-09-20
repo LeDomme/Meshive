@@ -25,18 +25,22 @@ const props = withDefaults(
     searchPlaceholder?: string
     align?: "start" | "end"
     showAllOption?: boolean
+    reorderable?: boolean
   }>(),
   {
     searchPlaceholder: "Search options",
     align: "start",
     showAllOption: true,
     clearOptionLabel: undefined,
+    reorderable: false,
   },
 )
 
 const emit = defineEmits<{
   "update:modelValue": [value: string]
   change: [value: string]
+  "reorder-dragstart": [event: DragEvent]
+  "reorder-dragend": [event: DragEvent]
 }>()
 
 const root = ref<HTMLElement | null>(null)
@@ -99,6 +103,10 @@ function selectOption(value: string) {
   trigger.value?.focus()
 }
 
+function reset() {
+  selectOption("")
+}
+
 function closeAndFocus() {
   close()
   trigger.value?.focus()
@@ -149,15 +157,19 @@ onBeforeUnmount(() => {
       @click="toggle"
     >
       <span
-        v-if="$attrs.draggable === 'true'"
+        v-if="reorderable"
         class="searchable-filter-drag-grip"
         aria-hidden="true"
+        draggable="true"
+        @dragstart.stop="emit('reorder-dragstart', $event)"
+        @dragend.stop="emit('reorder-dragend', $event)"
       ></span>
       <span class="searchable-filter-trigger-label">{{ selectedLabel }}</span>
       <span class="searchable-filter-chevron" aria-hidden="true">⌄</span>
     </button>
 
     <div v-if="isOpen" class="searchable-filter-panel">
+      <div class="searchable-filter-search-row">
       <label class="searchable-filter-search">
         <span class="sr-only">Search {{ label.toLocaleLowerCase() }}</span>
         <input
@@ -169,6 +181,15 @@ onBeforeUnmount(() => {
           @keydown.down.prevent="focusFirstOption"
         >
       </label>
+      <button
+        class="searchable-filter-reset"
+        type="button"
+        :aria-label="`Reset ${label}`"
+        :title="`Reset ${label}`"
+        :disabled="!modelValue"
+        @click="reset"
+      >⟲</button>
+      </div>
 
       <div
         :id="listboxId"

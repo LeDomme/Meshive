@@ -101,9 +101,79 @@ test("catalogue action groups can be reordered and the order persists", async ({
 
   const selection = page.locator("[data-action-key='selection']")
   const savedViews = page.locator("[data-action-key='saved_views']")
-  await selection.getByRole("button", { name: "Select models" }).dragTo(savedViews)
+  await selection.locator(".searchable-filter-drag-grip").dragTo(savedViews)
   await expect.poll(() => preferences.action_order).toEqual(["saved_views", "selection", "navigation"])
   await expect(savedViews).toHaveCSS("order", "0")
   await page.reload()
   await expect(savedViews).toHaveCSS("order", "0")
+})
+
+test("filter reset stays fixed beside search and only resets that filter", async ({ page }) => {
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
+  await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
+  await page.route("**/api/saved-views", route => route.fulfill({ json: [] }))
+  await page.route("**/api/models/filters**", route => route.fulfill({ json: filters }))
+  await page.route("**/api/models?**", route => route.fulfill({ json: { items: [model], total: 1, page: 1, page_size: 48 } }))
+  await page.goto("/?creator=Ada")
+
+  await page.getByRole("button", { name: "Creator" }).click()
+  const reset = page.getByRole("button", { name: "Reset Creator" })
+  await expect(reset).toBeVisible()
+  await expect(reset).toBeEnabled()
+  await expect(reset).toHaveAttribute("title", "Reset Creator")
+  await expect(reset).toHaveText("⟲")
+  await reset.click()
+  await expect(page).toHaveURL(/\/?sort=name_asc$/)
+  await expect(page.locator("[data-filter-key='creator'] .searchable-filter-trigger-label")).toHaveText("Creators")
+
+  await page.getByRole("button", { name: "Creator" }).click()
+  await expect(reset).toBeVisible()
+  await expect(reset).toBeDisabled()
+})
+
+test("filter triggers use category labels while clear options remain explicit", async ({ page }) => {
+  const filterOptions = {
+    ...filters,
+    models: [{ value: "Anakin Skywalker", count: 1 }],
+  }
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
+  await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
+  await page.route("**/api/saved-views", route => route.fulfill({ json: [] }))
+  await page.route("**/api/models/filters**", route => route.fulfill({ json: filterOptions }))
+  await page.route("**/api/models?**", route => route.fulfill({ json: { items: [model], total: 1, page: 1, page_size: 48 } }))
+  await page.goto("/")
+
+  const modelFilter = page.locator("[data-filter-key='model']")
+  const creatorFilter = page.locator("[data-filter-key='creator']")
+  await expect(modelFilter.locator(".searchable-filter-trigger-label")).toHaveText("Models")
+  await expect(creatorFilter.locator(".searchable-filter-trigger-label")).toHaveText("Creators")
+  await expect(page.locator("[data-filter-key='sort'] .searchable-filter-trigger-label")).toHaveText("Name: A–Z")
+
+  await modelFilter.getByRole("button", { name: "Model" }).click()
+  await expect(page.getByRole("option", { name: "All models" })).toBeVisible()
+  await page.getByRole("option", { name: "Anakin Skywalker" }).click()
+  await expect(modelFilter.locator(".searchable-filter-trigger-label")).toHaveText("Anakin Skywalker")
+
+  await modelFilter.getByRole("button", { name: "Model" }).click()
+  await page.getByRole("button", { name: "Reset Model" }).click()
+  await expect(modelFilter.locator(".searchable-filter-trigger-label")).toHaveText("Models")
+
+  await creatorFilter.getByRole("button", { name: "Creator" }).click()
+  await expect(page.getByRole("option", { name: "All creators" })).toBeVisible()
+})
+
+test("only catalogue grips are drag sources", async ({ page }) => {
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
+  await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
+  await page.route("**/api/saved-views", route => route.fulfill({ json: [] }))
+  await page.route("**/api/models/filters**", route => route.fulfill({ json: filters }))
+  await page.route("**/api/models?**", route => route.fulfill({ json: { items: [model], total: 1, page: 1, page_size: 48 } }))
+  await page.goto("/")
+
+  const modelFilter = page.locator("[data-filter-key='model']")
+  await expect(modelFilter).not.toHaveAttribute("draggable")
+  await expect(modelFilter.locator(".searchable-filter-drag-grip")).toHaveAttribute("draggable", "true")
 })

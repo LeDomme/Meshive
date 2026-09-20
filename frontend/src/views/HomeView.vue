@@ -354,6 +354,12 @@ const draggedFilter = ref<CatalogueFilterKey | null>(null)
 const draggedAction = ref<CatalogueActionKey | null>(null)
 const dragPreviewTarget = ref<CatalogueFilterKey | null>(null)
 const filterOrderChanged = ref(false)
+const actionPreviewTarget = ref<CatalogueActionKey | null>(null)
+const actionOrderChanged = ref(false)
+let filterOrderBeforeDrag: CatalogueFilterKey[] | null = null
+let actionOrderBeforeDrag: CatalogueActionKey[] | null = null
+let filterDropCompleted = false
+let actionDropCompleted = false
 
 function normalizeFilterOrder(value: unknown): CatalogueFilterKey[] {
   const received = Array.isArray(value) ? value : []
@@ -412,6 +418,10 @@ async function saveFilterOrder() {
 
 function startActionDrag(key: CatalogueActionKey, event: DragEvent) {
   draggedAction.value = key
+  actionPreviewTarget.value = null
+  actionOrderChanged.value = false
+  actionOrderBeforeDrag = [...actionOrder.value]
+  actionDropCompleted = false
   event.dataTransfer?.setData("text/plain", key)
   if (event.dataTransfer) event.dataTransfer.effectAllowed = "move"
 }
@@ -427,10 +437,57 @@ function moveAction(source: CatalogueActionKey, target: CatalogueActionKey): boo
   return true
 }
 
-function dropAction(target: CatalogueActionKey, event: DragEvent) {
+function animateControlReorder(selector: string, previousPositions: Map<string | undefined, DOMRect>) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+  for (const element of document.querySelectorAll<HTMLElement>(selector)) {
+    const previous = previousPositions.get(element.dataset.filterKey ?? element.dataset.actionKey)
+    if (!previous) continue
+    const current = element.getBoundingClientRect()
+    const x = previous.left - current.left
+    const y = previous.top - current.top
+    if (x || y) {
+      element.animate(
+        [
+          { transform: `translate(${x}px, ${y}px)` },
+          { transform: "translate(0, 0)" },
+        ],
+        { duration: 180, easing: "cubic-bezier(0.2, 0.75, 0.25, 1)" },
+      )
+    }
+  }
+}
+
+async function previewActionDrop(target: CatalogueActionKey) {
+  const source = draggedAction.value
+  if (!source || source === target || actionPreviewTarget.value === target) return
+  const previousPositions = new Map(
+    [...document.querySelectorAll<HTMLElement>(".catalogue-meta-actions .catalogue-action-group[data-action-key]")]
+      .map((element) => [element.dataset.actionKey, element.getBoundingClientRect()]),
+  )
+  if (!moveAction(source, target)) return
+  actionOrderChanged.value = true
+  actionPreviewTarget.value = target
+  await nextTick()
+  animateControlReorder(".catalogue-meta-actions .catalogue-action-group[data-action-key]", previousPositions)
+}
+
+async function dropAction(target: CatalogueActionKey, event: DragEvent) {
   event.preventDefault()
-  if (draggedAction.value && moveAction(draggedAction.value, target)) void saveFilterOrder()
+  await previewActionDrop(target)
+  if (actionOrderChanged.value) void saveFilterOrder()
+  actionDropCompleted = true
   draggedAction.value = null
+  actionPreviewTarget.value = null
+  actionOrderChanged.value = false
+}
+
+function endActionDrag() {
+  if (!actionDropCompleted && actionOrderBeforeDrag) actionOrder.value = actionOrderBeforeDrag
+  draggedAction.value = null
+  actionPreviewTarget.value = null
+  actionOrderChanged.value = false
+  actionOrderBeforeDrag = null
+  actionDropCompleted = false
 }
 
 const savedViewOptions = computed(() => savedViews.value.map((view) => ({
@@ -441,6 +498,8 @@ function startFilterDrag(key: CatalogueFilterKey, event: DragEvent) {
   draggedFilter.value = key
   dragPreviewTarget.value = null
   filterOrderChanged.value = false
+  filterOrderBeforeDrag = [...filterOrder.value]
+  filterDropCompleted = false
   event.dataTransfer?.setData("text/plain", key)
   if (event.dataTransfer) event.dataTransfer.effectAllowed = "move"
 }
@@ -470,42 +529,28 @@ async function previewFilterDrop(target: CatalogueFilterKey) {
   filterOrderChanged.value = true
   dragPreviewTarget.value = target
   await nextTick()
-  for (const element of document.querySelectorAll<HTMLElement>(
-    ".catalogue-filters [data-filter-key]",
-  )) {
-    const previous = previousPositions.get(element.dataset.filterKey)
-    if (!previous) continue
-    const current = element.getBoundingClientRect()
-    const x = previous.left - current.left
-    const y = previous.top - current.top
-    if (x || y) {
-      element.animate(
-        [
-          { transform: `translate(${x}px, ${y}px)` },
-          { transform: "translate(0, 0)" },
-        ],
-        { duration: 180, easing: "cubic-bezier(0.2, 0.75, 0.25, 1)" },
-      )
-    }
-  }
+  animateControlReorder(".catalogue-filters [data-filter-key]", previousPositions)
 }
 
-function dropFilter(target: CatalogueFilterKey, event: DragEvent) {
+async function dropFilter(target: CatalogueFilterKey, event: DragEvent) {
   event.preventDefault()
-  void previewFilterDrop(target)
+  await previewFilterDrop(target)
   if (filterOrderChanged.value) {
     void saveFilterOrder()
-    filterOrderChanged.value = false
   }
+  filterDropCompleted = true
   dragPreviewTarget.value = null
   draggedFilter.value = null
+  filterOrderChanged.value = false
 }
 
 function endFilterDrag() {
-  if (filterOrderChanged.value) void saveFilterOrder()
+  if (!filterDropCompleted && filterOrderBeforeDrag) filterOrder.value = filterOrderBeforeDrag
   draggedFilter.value = null
   dragPreviewTarget.value = null
   filterOrderChanged.value = false
+  filterOrderBeforeDrag = null
+  filterDropCompleted = false
 }
 
 function modelFallbackUrl(modelId: number): string {
@@ -1276,15 +1321,16 @@ onBeforeUnmount(() => {
       <SearchableFilter
         data-filter-key="model"
         :style="{ order: filterPosition('model') }"
-        draggable="true"
+        reorderable
         title="Drag to reorder filter"
-        @dragstart="startFilterDrag('model', $event)"
+        @reorder-dragstart="startFilterDrag('model', $event)"
         @dragover.prevent="previewFilterDrop('model')"
         @drop="dropFilter('model', $event)"
-        @dragend="endFilterDrag"
+        @reorder-dragend="endFilterDrag"
         v-model="query.model"
         label="Model"
-        all-label="All models"
+        all-label="Models"
+        clear-option-label="All models"
         search-placeholder="Search models"
         :options="filters.models"
         @change="facetChanged('model')"
@@ -1293,15 +1339,16 @@ onBeforeUnmount(() => {
       <SearchableFilter
         data-filter-key="variant"
         :style="{ order: filterPosition('variant') }"
-        draggable="true"
+        reorderable
         title="Drag to reorder filter"
-        @dragstart="startFilterDrag('variant', $event)"
+        @reorder-dragstart="startFilterDrag('variant', $event)"
         @dragover.prevent="previewFilterDrop('variant')"
         @drop="dropFilter('variant', $event)"
-        @dragend="endFilterDrag"
+        @reorder-dragend="endFilterDrag"
         v-model="query.variant"
         label="Variant"
-        all-label="All variants"
+        all-label="Variants"
+        clear-option-label="All variants"
         search-placeholder="Search variants"
         :options="filters.variants ?? []"
         @change="facetChanged('variant')"
@@ -1310,15 +1357,16 @@ onBeforeUnmount(() => {
       <SearchableFilter
         data-filter-key="creator"
         :style="{ order: filterPosition('creator') }"
-        draggable="true"
+        reorderable
         title="Drag to reorder filter"
-        @dragstart="startFilterDrag('creator', $event)"
+        @reorder-dragstart="startFilterDrag('creator', $event)"
         @dragover.prevent="previewFilterDrop('creator')"
         @drop="dropFilter('creator', $event)"
-        @dragend="endFilterDrag"
+        @reorder-dragend="endFilterDrag"
         :model-value="creatorFilterValue"
         label="Creator"
-        all-label="All creators"
+        all-label="Creators"
+        clear-option-label="All creators"
         search-placeholder="Search creators"
         :options="creatorFilterOptions"
         @update:model-value="setCreatorFilter"
@@ -1327,15 +1375,16 @@ onBeforeUnmount(() => {
       <SearchableFilter
         data-filter-key="franchise"
         :style="{ order: filterPosition('franchise') }"
-        draggable="true"
+        reorderable
         title="Drag to reorder filter"
-        @dragstart="startFilterDrag('franchise', $event)"
+        @reorder-dragstart="startFilterDrag('franchise', $event)"
         @dragover.prevent="previewFilterDrop('franchise')"
         @drop="dropFilter('franchise', $event)"
-        @dragend="endFilterDrag"
+        @reorder-dragend="endFilterDrag"
         v-model="query.franchise"
         label="Franchise"
-        all-label="All franchises"
+        all-label="Franchises"
+        clear-option-label="All franchises"
         search-placeholder="Search franchises"
         :options="filters.franchises"
         @change="facetChanged('franchise')"
@@ -1344,15 +1393,16 @@ onBeforeUnmount(() => {
       <SearchableFilter
         data-filter-key="series"
         :style="{ order: filterPosition('series') }"
-        draggable="true"
+        reorderable
         title="Drag to reorder filter"
-        @dragstart="startFilterDrag('series', $event)"
+        @reorder-dragstart="startFilterDrag('series', $event)"
         @dragover.prevent="previewFilterDrop('series')"
         @drop="dropFilter('series', $event)"
-        @dragend="endFilterDrag"
+        @reorder-dragend="endFilterDrag"
         v-model="query.series"
         label="Series"
-        all-label="All series"
+        all-label="Series"
+        clear-option-label="All series"
         search-placeholder="Search series"
         :options="filters.series"
         @change="facetChanged('series')"
@@ -1361,15 +1411,16 @@ onBeforeUnmount(() => {
       <SearchableFilter
         data-filter-key="source"
         :style="{ order: filterPosition('source') }"
-        draggable="true"
+        reorderable
         title="Drag to reorder filter"
-        @dragstart="startFilterDrag('source', $event)"
+        @reorder-dragstart="startFilterDrag('source', $event)"
         @dragover.prevent="previewFilterDrop('source')"
         @drop="dropFilter('source', $event)"
-        @dragend="endFilterDrag"
+        @reorder-dragend="endFilterDrag"
         v-model="query.source_id"
         label="Library source"
-        all-label="All sources"
+        all-label="Sources"
+        clear-option-label="All sources"
         search-placeholder="Search sources"
         align="end"
         :options="sourceOptions"
@@ -1379,15 +1430,16 @@ onBeforeUnmount(() => {
       <SearchableFilter
         data-filter-key="tag"
         :style="{ order: filterPosition('tag') }"
-        draggable="true"
+        reorderable
         title="Drag to reorder filter"
-        @dragstart="startFilterDrag('tag', $event)"
+        @reorder-dragstart="startFilterDrag('tag', $event)"
         @dragover.prevent="previewFilterDrop('tag')"
         @drop="dropFilter('tag', $event)"
-        @dragend="endFilterDrag"
+        @reorder-dragend="endFilterDrag"
         v-model="query.tag_id"
         label="Tag"
-        all-label="All tags"
+        all-label="Tags"
+        clear-option-label="All tags"
         search-placeholder="Search tags"
         align="end"
         :options="tagOptions"
@@ -1398,15 +1450,16 @@ onBeforeUnmount(() => {
         v-if="auth.can('catalogue.view_maintenance')"
         data-filter-key="status"
         :style="{ order: filterPosition('status') }"
-        draggable="true"
+        reorderable
         title="Drag to reorder filter"
-        @dragstart="startFilterDrag('status', $event)"
+        @reorder-dragstart="startFilterDrag('status', $event)"
         @dragover.prevent="previewFilterDrop('status')"
         @drop="dropFilter('status', $event)"
-        @dragend="endFilterDrag"
+        @reorder-dragend="endFilterDrag"
         v-model="query.status"
         label="Status"
-        all-label="All statuses"
+        all-label="Status"
+        clear-option-label="All statuses"
         search-placeholder="Search statuses"
         align="end"
         :options="statusOptions"
@@ -1416,12 +1469,12 @@ onBeforeUnmount(() => {
       <SearchableFilter
         data-filter-key="sort"
         :style="{ order: filterPosition('sort') }"
-        draggable="true"
+        reorderable
         title="Drag to reorder filter"
-        @dragstart="startFilterDrag('sort', $event)"
+        @reorder-dragstart="startFilterDrag('sort', $event)"
         @dragover.prevent="previewFilterDrop('sort')"
         @drop="dropFilter('sort', $event)"
-        @dragend="endFilterDrag"
+        @reorder-dragend="endFilterDrag"
         v-model="query.sort"
         label="Sort models"
         all-label="Default sorting"
@@ -1448,10 +1501,10 @@ onBeforeUnmount(() => {
           data-action-key="navigation"
           :style="{ order: actionPosition('navigation') }"
           class="catalogue-navigation-mode catalogue-action-group"
-          @dragover.prevent
+          @dragover.prevent="previewActionDrop('navigation')"
           @drop="dropAction('navigation', $event)"
         >
-          <span class="searchable-filter-drag-grip" draggable="true" aria-hidden="true" @dragstart="startActionDrag('navigation', $event)"></span>
+          <span class="searchable-filter-drag-grip" draggable="true" aria-hidden="true" @dragstart.stop="startActionDrag('navigation', $event)" @dragend.stop="endActionDrag"></span>
           <span>Infinite scroll</span>
           <button
             class="catalogue-navigation-switch"
@@ -1479,18 +1532,16 @@ onBeforeUnmount(() => {
           data-action-key="selection"
           :style="{ order: actionPosition('selection') }"
           class="catalogue-action-group"
-          @dragover.prevent
+          @dragover.prevent="previewActionDrop('selection')"
           @drop="dropAction('selection', $event)"
         >
           <button
             class="secondary-button compact-button catalogue-action-button"
             type="button"
-            draggable="true"
             :class="{ active: batchSelectionMode }"
-            @dragstart="startActionDrag('selection', $event)"
             @click="toggleBatchSelectionMode"
           >
-            <span class="searchable-filter-drag-grip" aria-hidden="true"></span>
+            <span class="searchable-filter-drag-grip" draggable="true" aria-hidden="true" @dragstart.stop="startActionDrag('selection', $event)" @dragend.stop="endActionDrag"></span>
             {{ batchSelectionMode ? "Done selecting" : "Select models" }}
           </button>
         </div>
@@ -1499,12 +1550,12 @@ onBeforeUnmount(() => {
           data-action-key="saved_views"
           :style="{ order: actionPosition('saved_views') }"
           class="saved-view-controls catalogue-action-group"
-          @dragover.prevent
+          @dragover.prevent="previewActionDrop('saved_views')"
           @drop="dropAction('saved_views', $event)"
         >
           <SearchableFilter
             data-action-key="saved_views-trigger"
-            draggable="true"
+            reorderable
             :model-value="selectedSavedViewId"
             label="Saved views"
             all-label="Saved views"
@@ -1512,7 +1563,8 @@ onBeforeUnmount(() => {
             search-placeholder="Search saved views"
             align="end"
             :options="savedViewOptions"
-            @dragstart="startActionDrag('saved_views', $event)"
+            @reorder-dragstart="startActionDrag('saved_views', $event)"
+            @reorder-dragend="endActionDrag"
             @update:model-value="selectSavedView"
           />
           <button class="secondary-button compact-button" type="button" @click="createSavedView">

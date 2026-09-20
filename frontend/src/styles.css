@@ -2035,7 +2035,36 @@ summary {
 
 .searchable-filter-search {
   display: block;
+  flex: 1 1 auto;
+  min-width: 0;
   margin-bottom: 0.55rem;
+}
+
+.searchable-filter-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.searchable-filter-reset {
+  flex: 0 0 auto;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-bottom: 0.55rem;
+  padding: 0;
+  border: 1px solid #334155;
+  border-radius: 0.45rem;
+  color: #bfdbfe;
+  background: #0b1220;
+  font: inherit;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.searchable-filter-reset:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .searchable-filter-search input {
@@ -3957,10 +3986,6 @@ code {
   font-size: 0.9em;
 }
 
-.catalogue-filters > .searchable-filter[draggable="true"] {
-  cursor: grab;
-}
-
 .searchable-filter-drag-grip {
   flex: 0 0 0.7rem;
   width: 0.7rem;
@@ -3973,9 +3998,10 @@ code {
   );
   background-size: 4px 4px;
   background-position: center;
+  cursor: grab;
 }
 
-.catalogue-filters > .searchable-filter[draggable="true"]:active {
+.searchable-filter-drag-grip:active {
   cursor: grabbing;
 }
 
