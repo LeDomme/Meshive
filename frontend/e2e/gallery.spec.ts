@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test"
 
 const user = { id: 1, username: "Admin", email: null, email_verified: false, role: "admin", is_active: true, must_change_password: false, permissions: ["catalogue.view"], source_access: { all_sources: true, source_ids: [] } }
 const images = [1, 2, 3].map(id => ({ id, filename: `picture-${id}.jpg`, format: "jpg", size_bytes: 1, is_primary: id === 1, url: `/images/${id}.jpg` }))
-const model = { id: 1, name: "Gallery model", variant: null, creator: null, creator_links: [], franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", relative_path: "Gallery", images, archives: [], archive_bundle_download_url: null, recent_scan_issues: [], archive_statistics: null, tags: [] }
+const model = { id: 1, name: "Gallery model", variants: [], variant: null, creator: null, creator_links: [], franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", relative_path: "Gallery", images, archives: [], archive_bundle_download_url: null, recent_scan_issues: [], archive_statistics: null, tags: [] }
 
 test("gallery buttons and a horizontal swipe select exactly one adjacent image", async ({ page }) => {
   await page.route("**/api/auth/me", route => route.fulfill({ json: user }))

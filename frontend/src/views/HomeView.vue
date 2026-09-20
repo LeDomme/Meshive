@@ -24,7 +24,7 @@ import { useAuthStore } from "../stores/auth"
 interface ModelSummary {
   id: number
   name: string
-  variant: string | null
+  variants: string[]
   creator: string | null
   franchise: string | null
   series: string | null
@@ -1565,8 +1565,8 @@ onBeforeUnmount(() => {
               {{ model.name }}
             </RouterLink>
           </h2>
-          <p v-if="model.variant" class="model-variant">
-            Variant · {{ model.variant }}
+          <p v-if="model.variants.length" class="model-variant">
+            Variants · {{ model.variants.join(" · ") }}
           </p>
           <p class="model-creator">{{ model.creator || "Unknown creator" }}</p>
           <div v-if="model.tags.length" class="tag-list">

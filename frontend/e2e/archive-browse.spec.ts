@@ -6,7 +6,7 @@ const user = {
   source_access: { all_sources: true, source_ids: [] },
 }
 const model = {
-  id: 1, name: "Browse model", variant: null, creator: null, creator_links: [], franchise: null,
+  id: 1, name: "Browse model", variants: [], variant: null, creator: null, creator_links: [], franchise: null,
   series: null, collection: null, status: "available", source_id: 1, source_name: "Library",
   relative_path: "Browse", images: [], archive_bundle_download_url: null, recent_scan_issues: [],
   archive_statistics: null, tags: [], archives: [{ id: 8, filename: "browse.7z", format: "7z", size_bytes: 42,

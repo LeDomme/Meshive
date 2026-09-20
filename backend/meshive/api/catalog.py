@@ -85,6 +85,8 @@ router = APIRouter(
     tags=["catalogue"],
     dependencies=[Depends(get_current_user)],
 )
+
+
 admin_router = APIRouter(
     prefix="/admin/models",
     tags=["catalogue administration"],

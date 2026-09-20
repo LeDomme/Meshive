@@ -45,6 +45,7 @@ class ModelNavigation(BaseModel):
     next: ModelNavigationItem | None
 
 
+
 class ModelImageRead(BaseModel):
     id: int
     filename: str

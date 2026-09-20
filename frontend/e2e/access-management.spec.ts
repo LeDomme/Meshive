@@ -240,7 +240,7 @@ test("users without favorite access do not see favorite UI or trigger membership
   await page.route("**/api/models?**", (route) =>
     route.fulfill({
       json: {
-        items: [{ id: 1, name: "Visible model", variant: null, creator: null, franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Source A", archive_format: null, archive_size_bytes: null, archive_count: 0, thumbnail_url: null, tags: [] }],
+        items: [{ id: 1, name: "Visible model", variants: [], variant: null, creator: null, franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Source A", archive_format: null, archive_size_bytes: null, archive_count: 0, thumbnail_url: null, tags: [] }],
         total: 1,
         page: 1,
         page_size: 24,

@@ -715,6 +715,8 @@ def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:
         assert detail.json()["variants"] == ["Chibi version"]
 
 
+
+
 def test_admin_can_only_delete_missing_models() -> None:
     with catalog_client() as (client, sessions):
         with sessions() as session:

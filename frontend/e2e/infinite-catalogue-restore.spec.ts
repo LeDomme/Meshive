@@ -5,11 +5,11 @@ const filters = { models: [], creators: [{ value: "Ada", count: 240 }, { value: 
 
 function model(pageNumber: number, itemNumber: number, creator = "Ada") {
   const id = (pageNumber - 1) * 48 + itemNumber
-  return { id, name: `${creator} page ${pageNumber} model ${itemNumber}`, variant: null, creator, franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", archive_format: "7z", archive_size_bytes: 1, archive_count: 1, thumbnail_url: null, tags: [] }
+  return { id, name: `${creator} page ${pageNumber} model ${itemNumber}`, variants: [], variant: null, creator, franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", archive_format: "7z", archive_size_bytes: 1, archive_count: 1, thumbnail_url: null, tags: [] }
 }
 
 function detail(id: number) {
-  return { id, name: `Detail ${id}`, variant: null, creator: "Ada", creator_links: [], franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", relative_path: `Model ${id}`, images: [], archives: [], archive_bundle_download_url: null, recent_scan_issues: [], archive_statistics: null, tags: [] }
+  return { id, name: `Detail ${id}`, variants: [], variant: null, creator: "Ada", creator_links: [], franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", relative_path: `Model ${id}`, images: [], archives: [], archive_bundle_download_url: null, recent_scan_issues: [], archive_statistics: null, tags: [] }
 }
 
 async function mockInfiniteCatalogue(

@@ -24,7 +24,7 @@ export interface FavoriteListItem {
   model_id: number | null
   thumbnail_url: string | null
   artwork_url: string | null
-  variant: string | null
+  variants: string[]
   creator: string | null
   franchise: string | null
   series: string | null
@@ -59,7 +59,7 @@ export interface FavoriteModelMembership {
 interface FavoriteModelContext {
   id: number
   name: string
-  variant: string | null
+  variants: string[]
   creator: string | null
   franchise: string | null
   series: string | null
@@ -71,7 +71,7 @@ export function favoriteTargetsForModel(model: FavoriteModelContext): FavoriteTa
   const targets: FavoriteTarget[] = [
     {
       key: `model:${model.id}`,
-      label: `Model: ${model.name}${model.variant ? ` - ${model.variant}` : ""}`,
+      label: `Model: ${model.name}${model.variants.length ? ` - ${model.variants.join(" · ")}` : ""}`,
       entity_type: "model",
       model_id: model.id,
     },

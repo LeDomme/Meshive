@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test"
 
 const user = { id: 1, username: "Curator", email: null, email_verified: false, role: "curator", is_active: true, must_change_password: false, permissions: ["catalogue.view", "models.rescan", "models.rebuild_images", "models.reset_images"], source_access: { all_sources: true, source_ids: [] } }
 const filters = { models: [], creators: [{ value: "Ada", count: 1 }], franchises: [], series: [], collections: [], sources: [{ id: 1, name: "Library", count: 1 }], statuses: [], tags: [] }
-const model = { id: 1, name: "Selectable model", variant: null, creator: "Ada", franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", archive_format: "7z", archive_size_bytes: 1, archive_count: 1, thumbnail_url: null, tags: [] }
+const model = { id: 1, name: "Selectable model", variants: [], variant: null, creator: "Ada", franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", archive_format: "7z", archive_size_bytes: 1, archive_count: 1, thumbnail_url: null, tags: [] }
 
 async function documentY(page: Page, selector: string) {
   return page.locator(selector).evaluate((element) => element.getBoundingClientRect().top + window.scrollY)

@@ -19,7 +19,7 @@ test("creator card wraps safely and navigates to the stable profile catalogue fi
     primary_link: { id: 1, label: "A very long external creator link label that also wraps safely", url: "https://example.test" },
   } }))
   await page.route("**/api/models/7", route => route.fulfill({ json: {
-    id: 7, name: "Visible model", variant: null, creator: "Long creator", creator_profile_id: 42, creator_links: [{ id: 1, label: "Legacy link", url: "https://example.test" }], franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", relative_path: "Visible model", images: [], archives: [], archive_bundle_download_url: null, recent_scan_issues: [], archive_statistics: null, tags: [],
+    id: 7, name: "Visible model", variants: [], variant: null, creator: "Long creator", creator_profile_id: 42, creator_links: [{ id: 1, label: "Legacy link", url: "https://example.test" }], franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", relative_path: "Visible model", images: [], archives: [], archive_bundle_download_url: null, recent_scan_issues: [], archive_statistics: null, tags: [],
   } }))
   await page.goto("/models/7")
   const card = page.getByLabel("Creator")
@@ -61,7 +61,7 @@ test("profile-ID catalogue filters show the profile name and can be cleared", as
     franchises: [], series: [], collections: [], sources: [], statuses: [], tags: [],
   } }))
   await page.route("**/api/models?**", route => route.fulfill({ json: {
-    items: [{ id: 7, name: "Alias model", variant: null, creator: "Legacy Alias", creator_profile_id: 42, franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", archive_format: null, archive_size_bytes: null, archive_count: 0, thumbnail_url: null, tags: [] }], total: 1, page: 1, page_size: 48,
+    items: [{ id: 7, name: "Alias model", variants: [], variant: null, creator: "Legacy Alias", creator_profile_id: 42, franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", archive_format: null, archive_size_bytes: null, archive_count: 0, thumbnail_url: null, tags: [] }], total: 1, page: 1, page_size: 48,
   } }))
   await page.goto("/?creator_profile_id=42&sort=name_asc")
   const creatorFilter = page.getByRole("button", { name: "Creator" })

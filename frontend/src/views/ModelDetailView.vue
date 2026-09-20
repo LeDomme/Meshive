@@ -66,7 +66,7 @@ interface ModelArchiveStatistics {
 interface ModelDetail {
   id: number
   name: string
-  variant: string | null
+  variants: string[]
   creator: string | null
   creator_profile_id: number | null
   creator_links: Array<{
@@ -93,7 +93,7 @@ interface ModelDetail {
 interface ModelNavigationItem {
   id: number
   name: string
-  variant: string | null
+  variants: string[]
 }
 
 interface ModelNavigation {
@@ -844,8 +844,8 @@ onBeforeUnmount(() => {
         <div>
           <p class="eyebrow">{{ model.source_name }}</p>
           <h1>{{ model.name }}</h1>
-          <p v-if="model.variant" class="detail-variant">
-            Variant · {{ model.variant }}
+          <p v-if="model.variants.length" class="detail-variant">
+            Variants · {{ model.variants.join(" · ") }}
           </p>
           <p class="detail-taxonomy">
             {{ [model.franchise, model.series, model.collection]
@@ -1015,9 +1015,9 @@ onBeforeUnmount(() => {
                 {{ model.name }}
               </RouterLink>
             </dd>
-            <template v-if="model.variant">
-              <dt>Variant</dt>
-              <dd>{{ model.variant }}</dd>
+            <template v-if="model.variants.length">
+              <dt>Variants</dt>
+              <dd>{{ model.variants.join(" · ") }}</dd>
             </template>
             <template v-if="model.creator">
               <dt>Creator</dt>
