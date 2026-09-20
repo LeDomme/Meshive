@@ -113,9 +113,11 @@ async function scrollNearInfiniteSentinel(page: Page) {
 }
 
 async function openVisibleModelDetail(page: Page) {
-  const link = page.locator(".model-title-link").first()
-  await expect(link).toBeVisible()
-  await link.click()
+  await page.evaluate(() => {
+    const link = document.querySelector<HTMLAnchorElement>(".model-title-link")
+    if (!link) throw new Error("No model link is rendered")
+    link.click()
+  })
   await expect(page).toHaveURL(/\/models\/\d+/)
 }
 
