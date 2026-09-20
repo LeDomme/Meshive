@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test"
 const model = {
   id: 1,
   name: "Action model",
-  variant: null,
+  variants: [], variant: null,
   creator: null,
   creator_links: [],
   franchise: null,

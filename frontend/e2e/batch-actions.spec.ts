@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 const filters = { models: [], creators: [], franchises: [], series: [], collections: [], sources: [], statuses: [{ value: "missing", count: 1 }], tags: [] }
-const models = [1, 2].map(id => ({ id, name: `Model ${id}`, variant: null, creator: null, franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", archive_format: "7z", archive_size_bytes: 1, archive_count: 1, thumbnail_url: null, tags: [] }))
+const models = [1, 2].map(id => ({ id, name: `Model ${id}`, variants: [], variant: null, creator: null, franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", archive_format: "7z", archive_size_bytes: 1, archive_count: 1, thumbnail_url: null, tags: [] }))
 const missingModel = { ...models[0], id: 3, name: "Missing model", status: "missing" }
 
 function userWith(permissions: string[]) {

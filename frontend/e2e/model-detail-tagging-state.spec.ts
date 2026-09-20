@@ -22,7 +22,7 @@ async function mockDetail(page: Page) {
   await page.route("**/api/favorite-lists/model-memberships**", (route) => route.fulfill({ json: [] }))
   await page.route("**/api/models/1/navigation", (route) => route.fulfill({ json: { previous: null, next: null } }))
   await page.route("**/api/models/1", (route) => route.fulfill({ json: {
-    id: 1, name: "Tagged gallery model", variant: null, creator: null, creator_links: [],
+    id: 1, name: "Tagged gallery model", variants: [], variant: null, creator: null, creator_links: [],
     franchise: null, series: null, collection: null, status: "available", source_id: 1,
     source_name: "Library", relative_path: "Tagged gallery", images, archives: [],
     archive_bundle_download_url: null, recent_scan_issues: [], archive_statistics: null,

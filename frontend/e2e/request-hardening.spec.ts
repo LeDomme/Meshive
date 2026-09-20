@@ -26,7 +26,7 @@ const filters = (creator: string) => ({
 const model = (id: number, name: string) => ({
   id,
   name,
-  variant: null,
+  variants: [], variant: null,
   creator: null,
   franchise: null,
   series: null,
