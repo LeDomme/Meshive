@@ -289,7 +289,16 @@ def update_catalogue_preferences(
     session: Session = Depends(get_session),
 ) -> CatalogueFilterPreferences:
     allowed_keys = {
-        "model", "creator", "franchise", "series", "collection", "source", "tag", "status", "sort"
+        "model",
+        "variant",
+        "creator",
+        "franchise",
+        "series",
+        "collection",
+        "source",
+        "tag",
+        "status",
+        "sort",
     }
     if len(payload.filter_order) != len(set(payload.filter_order)):
         raise HTTPException(

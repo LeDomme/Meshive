@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 
 const admin = { id: 1, username: "Admin", email: null, email_verified: false, role: "admin", is_active: true, must_change_password: false, permissions: ["catalogue.view"], source_access: { all_sources: true, source_ids: [] } }
-const filters = { models: [], creators: [{ value: "Ada", count: 1 }], franchises: [], series: [], collections: [], sources: [], statuses: [], tags: [] }
+const filters = { models: [], variants: [{ value: "Neon", count: 1 }], creators: [{ value: "Ada", count: 1 }], franchises: [], series: [], collections: [], sources: [], statuses: [], tags: [] }
 const model = { id: 7, name: "Ada Model", variants: [], variant: null, creator: "Ada", franchise: null, series: null, collection: null, status: "available", source_id: 1, source_name: "Library", archive_format: "7z", archive_size_bytes: 1, archive_count: 1, thumbnail_url: null, tags: [] }
 
 async function mockCatalogue(page: Page, requests: string[]) {
@@ -77,6 +77,17 @@ test("clearing catalogue filters removes stale request parameters", async ({ pag
   await page.getByRole("button", { name: "Clear" }).click()
   await expect.poll(() => requests.some((url) => !url.includes("creator=") && url.includes("sort=name_asc"))).toBe(true)
   await expect(page).toHaveURL(/\?sort=name_asc$/)
+})
+
+test("variant filter is restored from the URL and sent to the catalogue API", async ({ page }) => {
+  const requests: string[] = []
+  await mockCatalogue(page, requests)
+  await page.goto("/?variant=Neon")
+  await expect.poll(() => requests.some((url) => url.includes("variant=Neon"))).toBe(true)
+  await expect(page).toHaveURL(/\?variant=Neon&sort=name_asc$/)
+
+  await page.getByRole("button", { name: "Clear" }).click()
+  await expect.poll(() => requests.some((url) => !url.includes("variant=") && url.includes("sort=name_asc"))).toBe(true)
 })
 
 test("catalogue pagination returns to the top after loading a new page", async ({ page }) => {

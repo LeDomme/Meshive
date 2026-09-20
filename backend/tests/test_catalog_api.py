@@ -717,6 +717,114 @@ def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:
 
 
 
+def test_catalogue_variant_filter_and_facets_are_normalized_and_distinct() -> None:
+    with catalog_client() as (client, sessions):
+        with sessions() as session:
+            source = LibrarySource(
+                name="Variants",
+                root_path="/models/variants",
+                directory_pattern="{model}",
+                archive_formats=["7z"],
+                image_formats=["jpg"],
+                is_active=True,
+                scan_enabled=True,
+            )
+            session.add(source)
+            session.flush()
+            models = [
+                LibraryModel(
+                    library_source_id=source.id,
+                    relative_path="alpha",
+                    name="Alpha",
+                    creator="Aoae3D",
+                    franchise="Moikaloop",
+                    status="available",
+                    variants=[
+                        ModelVariant(value="Neon", normalized_value="neon", position=0),
+                        ModelVariant(value="sexy", normalized_value="sexy", position=1),
+                    ],
+                ),
+                LibraryModel(
+                    library_source_id=source.id,
+                    relative_path="beta",
+                    name="Beta",
+                    creator="Other",
+                    franchise="Moikaloop",
+                    status="available",
+                    variants=[
+                        ModelVariant(value="neon", normalized_value="neon", position=0),
+                        ModelVariant(value="CHIBI", normalized_value="chibi", position=1),
+                    ],
+                ),
+                LibraryModel(
+                    library_source_id=source.id,
+                    relative_path="gamma",
+                    name="Gamma",
+                    creator="Other",
+                    franchise="Other",
+                    status="available",
+                    variants=[
+                        ModelVariant(value="chibi", normalized_value="chibi", position=0),
+                    ],
+                ),
+                LibraryModel(
+                    library_source_id=source.id,
+                    relative_path="without-variant",
+                    name="Without variant",
+                    status="available",
+                ),
+            ]
+            session.add_all(models)
+            session.commit()
+
+            filtered = client.get("/api/models", params={"variant": " nEoN "})
+            assert filtered.status_code == 200
+            assert filtered.json()["total"] == 2
+            assert [item["name"] for item in filtered.json()["items"]] == [
+                "Alpha",
+                "Beta",
+            ]
+
+            first_page = client.get(
+                "/api/models", params={"variant": "Neon", "page_size": 1}
+            ).json()
+            second_page = client.get(
+                "/api/models", params={"variant": "Neon", "page": 2, "page_size": 1}
+            ).json()
+            assert first_page["total"] == 2
+            assert {first_page["items"][0]["id"], second_page["items"][0]["id"]} == {
+                models[0].id,
+                models[1].id,
+            }
+
+            facets = client.get("/api/models/filters").json()
+            assert facets["variants"] == [
+                {"value": "CHIBI", "count": 2},
+                {"value": "Neon", "count": 2},
+                {"value": "sexy", "count": 1},
+            ]
+
+            combined_facets = client.get(
+                "/api/models/filters",
+                params={"variant": "Neon", "creator": "Aoae3D"},
+            ).json()
+            assert combined_facets["variants"] == [
+                {"value": "Neon", "count": 1},
+                {"value": "sexy", "count": 1},
+            ]
+            assert combined_facets["creators"] == [
+                {"value": "Aoae3D", "count": 1},
+                {"value": "Other", "count": 1},
+            ]
+
+            navigation = client.get(
+                f"/api/models/{models[0].id}/navigation", params={"variant": "Neon"}
+            )
+            assert navigation.status_code == 200
+            assert navigation.json()["previous"] is None
+            assert navigation.json()["next"]["id"] == models[1].id
+
+
 def test_admin_can_only_delete_missing_models() -> None:
     with catalog_client() as (client, sessions):
         with sessions() as session:

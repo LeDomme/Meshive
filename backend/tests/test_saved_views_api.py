@@ -77,6 +77,7 @@ def saved_state(**overrides: str) -> dict[str, str]:
         "franchise": "",
         "series": "",
         "collection": "",
+        "variant": "",
         "source_id": "",
         "tag_id": "",
         "status": "",
@@ -143,6 +144,19 @@ def test_saved_views_are_isolated_by_user() -> None:
             client.put(f"/api/saved-views/{view_id}", json={"name": "Changed"}).status_code == 404
         )
         assert client.delete(f"/api/saved-views/{view_id}").status_code == 404
+
+
+def test_saved_views_without_a_variant_remain_compatible() -> None:
+    with saved_views_client() as (client, _sessions):
+        state = saved_state()
+        state.pop("variant")
+        response = client.post(
+            "/api/saved-views",
+            json={"name": "Legacy view", "state": state},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["state"]["variant"] == ""
 
 
 def test_saved_views_require_catalogue_permission() -> None:
