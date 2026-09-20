@@ -101,9 +101,44 @@ test("catalogue action groups can be reordered and the order persists", async ({
 
   const selection = page.locator("[data-action-key='selection']")
   const savedViews = page.locator("[data-action-key='saved_views']")
-  await selection.getByRole("button", { name: "Select models" }).dragTo(savedViews)
+  await selection.locator(".searchable-filter-drag-grip").dragTo(savedViews)
   await expect.poll(() => preferences.action_order).toEqual(["saved_views", "selection", "navigation"])
   await expect(savedViews).toHaveCSS("order", "0")
   await page.reload()
   await expect(savedViews).toHaveCSS("order", "0")
+})
+
+test("filter reset stays fixed beside search and only resets that filter", async ({ page }) => {
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
+  await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
+  await page.route("**/api/saved-views", route => route.fulfill({ json: [] }))
+  await page.route("**/api/models/filters**", route => route.fulfill({ json: filters }))
+  await page.route("**/api/models?**", route => route.fulfill({ json: { items: [model], total: 1, page: 1, page_size: 48 } }))
+  await page.goto("/?creator=Ada")
+
+  await page.getByRole("button", { name: "Creator" }).click()
+  const reset = page.getByRole("button", { name: "Reset Creator" })
+  await expect(reset).toBeVisible()
+  await expect(reset).toBeEnabled()
+  await reset.click()
+  await expect(page).toHaveURL(/\/?sort=name_asc$/)
+
+  await page.getByRole("button", { name: "Creator" }).click()
+  await expect(reset).toBeVisible()
+  await expect(reset).toBeDisabled()
+})
+
+test("only catalogue grips are drag sources", async ({ page }) => {
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
+  await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
+  await page.route("**/api/saved-views", route => route.fulfill({ json: [] }))
+  await page.route("**/api/models/filters**", route => route.fulfill({ json: filters }))
+  await page.route("**/api/models?**", route => route.fulfill({ json: { items: [model], total: 1, page: 1, page_size: 48 } }))
+  await page.goto("/")
+
+  const modelFilter = page.locator("[data-filter-key='model']")
+  await expect(modelFilter).not.toHaveAttribute("draggable")
+  await expect(modelFilter.locator(".searchable-filter-drag-grip")).toHaveAttribute("draggable", "true")
 })
