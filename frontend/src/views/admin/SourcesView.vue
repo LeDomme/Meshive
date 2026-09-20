@@ -23,7 +23,7 @@ interface LibrarySource {
 
 interface PreviewResponse {
   normalized_path: string
-  values: Record<string, string>
+  values: Record<string, string | string[]>
   warnings: string[]
 }
 
@@ -574,7 +574,7 @@ onBeforeUnmount(() => {
           <dl>
             <template v-for="(value, key) in preview.values" :key="key">
               <dt>{{ key }}</dt>
-              <dd>{{ value }}</dd>
+              <dd>{{ Array.isArray(value) ? value.join(", ") : value }}</dd>
             </template>
           </dl>
         </div>

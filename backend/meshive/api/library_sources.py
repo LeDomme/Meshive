@@ -30,6 +30,7 @@ from meshive.services.library_paths import (
     validate_library_root,
 )
 from meshive.services.thumbnails import remove_cached_file
+from meshive.services.variants import parse_source_variants
 
 router = APIRouter(
     prefix="/admin/library-sources",
@@ -182,9 +183,15 @@ def preview_library_path(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
         ) from error
+    preview_values: dict[str, str | list[str]] = dict(values)
+    if "variant" in preview_values:
+        preview_values["variants"] = parse_source_variants(
+            preview_values.pop("variant")
+        )
+
     return PathPreviewResponse(
         normalized_path=normalized_path,
-        values=values,
+        values=preview_values,
         warnings=model_pattern_warnings(payload.model_pattern),
     )
 

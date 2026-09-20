@@ -102,7 +102,7 @@ class PathPreviewRequest(BaseModel):
 
 class PathPreviewResponse(BaseModel):
     normalized_path: str
-    values: dict[str, str]
+    values: dict[str, str | list[str]]
     warnings: list[str] = Field(default_factory=list)
 
 

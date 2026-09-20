@@ -1628,8 +1628,13 @@ def test_model_candidate_requires_supported_file(tmp_path) -> None:
     assert scanner._is_model_candidate(organisation, source) is True
 
 
-def test_rescan_splits_variant_without_creating_duplicate(tmp_path, monkeypatch) -> None:
-    folder_name = "Marvel - X-Men - Psylocke - Version Chibi - by E.S Monster"
+def test_rescan_replaces_source_derived_variants_without_creating_duplicate(
+    tmp_path, monkeypatch
+) -> None:
+    folder_name = (
+        "Marvel - X-Men - Psylocke - "
+        "Version Neon, sexy, chibi - by E.S Monster"
+    )
     model_directory = tmp_path / "Marvel" / folder_name
     model_directory.mkdir(parents=True)
     (model_directory / "psylocke.7z").write_bytes(b"archive")
@@ -1682,10 +1687,87 @@ def test_rescan_splits_variant_without_creating_duplicate(tmp_path, monkeypatch)
         assert len(models) == 1
         assert models[0].id == model_id
         assert models[0].name == "Psylocke"
-        assert [variant.value for variant in models[0].variants] == ["Chibi"]
-        assert models[0].creator == "E.S Monster"
-        assert models[0].franchise == "Marvel"
-        assert models[0].series == "X-Men"
+    assert [variant.value for variant in models[0].variants] == ["Neon", "sexy", "chibi"]
+    assert models[0].creator == "E.S Monster"
+    assert models[0].franchise == "Marvel"
+    assert models[0].series == "X-Men"
+
+    scanner._scan_model(
+        session,
+        second_scan,
+        source,
+        tmp_path,
+        model_directory,
+        model_directory.relative_to(tmp_path).as_posix(),
+        {
+            "franchise": "Marvel",
+            "series": "X-Men",
+            "model": "Psylocke",
+            "variant_identifier": "Version",
+            "variant": "Neon, chibi",
+            "creator": "E.S Monster",
+        },
+    )
+    session.flush()
+    refreshed_model = session.scalar(select(LibraryModel))
+    assert refreshed_model is not None
+
+    assert [variant.value for variant in refreshed_model.variants] == ["Neon", "chibi"]
+
+    engine.dispose()
+
+
+@pytest.mark.parametrize("mode", ["full", "incremental", "smart"])
+def test_scan_modes_create_the_same_source_derived_variants(
+    tmp_path, monkeypatch, mode: str
+) -> None:
+    folder_name = (
+        "Moikaloop - Moika - "
+        "variant Neon, sexy, chibi - by Aoae3D"
+    )
+    model_directory = tmp_path / "Moikaloop" / folder_name
+    model_directory.mkdir(parents=True)
+    (model_directory / "moika.7z").write_bytes(b"archive")
+    (model_directory / "moika.jpg").write_bytes(b"image")
+    engine = create_engine(f"sqlite:///{tmp_path / f'{mode}.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(
+        scanner, "get_settings", lambda: Settings(allowed_library_root=tmp_path)
+    )
+    monkeypatch.setattr(scanner, "list_archive", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        scanner, "generate_thumbnail", lambda *_args, **_kwargs: "thumbnails/variant.webp"
+    )
+
+    with Session(engine, expire_on_commit=False) as session:
+        source = LibrarySource(
+            name="Variants",
+            root_path=tmp_path.as_posix(),
+            directory_pattern="{franchise}/{model_folder}",
+            model_pattern=(
+                "{franchise} - {model} - "
+                "{variant_identifier} {variant} - by {creator}"
+            ),
+            archive_formats=["7z"],
+            image_formats=["jpg"],
+            is_active=True,
+            scan_enabled=True,
+        )
+        session.add(source)
+        session.commit()
+        scan = make_scan(session, source.id)
+        scan.mode = mode
+        session.commit()
+
+        scanner._execute_scan(session, source.id, scan.id)
+
+        model = session.scalar(select(LibraryModel))
+        assert model is not None
+        assert [variant.value for variant in model.variants] == [
+            "Neon",
+            "sexy",
+            "chibi",
+        ]
 
     engine.dispose()
 
