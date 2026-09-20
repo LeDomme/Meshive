@@ -9,7 +9,7 @@ from meshive.schemas.tag import TagRead
 class ModelSummary(BaseModel):
     id: int
     name: str
-    variant: str | None
+    variants: list[str]
     creator: str | None
     creator_profile_id: int | None = None
     franchise: str | None
@@ -35,7 +35,7 @@ class ModelPage(BaseModel):
 class ModelNavigationItem(BaseModel):
     id: int
     name: str
-    variant: str | None
+    variants: list[str]
 
 
 class ModelNavigation(BaseModel):
@@ -97,7 +97,7 @@ class ModelArchiveStatisticsRead(BaseModel):
 class ModelDetail(BaseModel):
     id: int
     name: str
-    variant: str | None
+    variants: list[str]
     creator: str | None
     creator_profile_id: int | None = None
     creator_url: str | None

@@ -33,6 +33,7 @@ from meshive.models.catalog import (
     ArchiveEntry,
     LibraryModel,
     ModelImage,
+    ModelVariant,
     ScanIssue,
     ScanRun,
 )
@@ -657,7 +658,11 @@ def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:
                     library_source_id=source.id,
                     relative_path=f"Marvel/Psylocke {variant}",
                     name="Psylocke",
-                    variant=variant,
+                    variants=[
+                        ModelVariant(
+                            value=variant, normalized_value=variant.casefold(), position=0
+                        )
+                    ],
                     creator="E.S Monster",
                     franchise="Marvel",
                     series="X-Men",
@@ -678,7 +683,7 @@ def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:
                     {
                         "id": model.id,
                         "name": model.name,
-                        "variant": model.variant,
+                        "variant": model.variants[0].value,
                         "creator": model.creator,
                         "franchise": model.franchise,
                         "series": model.series,
@@ -694,20 +699,20 @@ def test_canonical_model_filter_groups_variants_and_searches_variant() -> None:
         filtered = client.get("/api/models", params={"model": "Psylocke"})
         assert filtered.status_code == 200
         assert filtered.json()["total"] == 2
-        assert [item["variant"] for item in filtered.json()["items"]] == [
-            "06",
-            "Chibi version",
+        assert [item["variants"] for item in filtered.json()["items"]] == [
+            ["06"],
+            ["Chibi version"],
         ]
 
         searched = client.get("/api/models", params={"search": "chibi"})
         assert searched.status_code == 200
         assert searched.json()["total"] == 1
         assert searched.json()["items"][0]["name"] == "Psylocke"
-        assert searched.json()["items"][0]["variant"] == "Chibi version"
+        assert searched.json()["items"][0]["variants"] == ["Chibi version"]
 
         detail = client.get(f"/api/models/{chibi_id}")
         assert detail.status_code == 200
-        assert detail.json()["variant"] == "Chibi version"
+        assert detail.json()["variants"] == ["Chibi version"]
 
 
 def test_admin_can_only_delete_missing_models() -> None:
@@ -1090,7 +1095,9 @@ def test_model_navigation_matches_every_catalogue_sort_order() -> None:
                     library_source_id=source.id,
                     relative_path=f"model-{index}",
                     name=name,
-                    variant=variant,
+                variants=[
+                    ModelVariant(value=variant, normalized_value=variant.casefold(), position=0)
+                ],
                     creator=creator,
                     status="available",
                     first_seen_at=datetime(2025, 1, index + 1, tzinfo=UTC),
@@ -1146,10 +1153,10 @@ def test_model_navigation_matches_every_catalogue_sort_order() -> None:
                 assert navigation.status_code == 200
                 assert navigation.json() == {
                     "previous": {
-                        key: ordered[index - 1][key] for key in ("id", "name", "variant")
+                key: ordered[index - 1][key] for key in ("id", "name", "variants")
                     },
                     "next": {
-                        key: ordered[index + 1][key] for key in ("id", "name", "variant")
+                key: ordered[index + 1][key] for key in ("id", "name", "variants")
                     },
                 }
 

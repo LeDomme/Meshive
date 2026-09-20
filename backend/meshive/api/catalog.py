@@ -8,7 +8,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import and_, case, column, delete, false, func, or_, select, table, text, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from starlette.background import BackgroundTask
 
 from meshive.auth.access import (
@@ -37,6 +37,7 @@ from meshive.models.catalog import (
     ArchiveEntry,
     LibraryModel,
     ModelImage,
+    ModelVariant,
     ScanIssue,
 )
 from meshive.models.creator import CreatorAlias, CreatorLink, CreatorProfile
@@ -167,7 +168,8 @@ def list_models(
         ModelImage.id.label("thumbnail_image_id"),
         ModelImage.thumbnail_key.label("thumbnail_key"),
         )
-        .join(LibrarySource, LibrarySource.id == LibraryModel.library_source_id)
+    .options(selectinload(LibraryModel.variants))
+    .join(LibrarySource, LibrarySource.id == LibraryModel.library_source_id)
         .outerjoin(
             ModelImage,
             and_(
@@ -189,7 +191,7 @@ def list_models(
         ModelSummary(
             id=model.id,
             name=model.name,
-            variant=model.variant,
+            variants=[variant.value for variant in model.variants],
             creator=model.creator,
             creator_profile_id=model.creator_profile_id,
             franchise=model.franchise,
@@ -274,12 +276,8 @@ def model_navigation(
             LibraryModel.id,
             func.lag(LibraryModel.id).over(order_by=order).label("previous_id"),
             func.lag(LibraryModel.name).over(order_by=order).label("previous_name"),
-            func.lag(LibraryModel.variant)
-            .over(order_by=order)
-            .label("previous_variant"),
             func.lead(LibraryModel.id).over(order_by=order).label("next_id"),
             func.lead(LibraryModel.name).over(order_by=order).label("next_name"),
-            func.lead(LibraryModel.variant).over(order_by=order).label("next_variant"),
         )
         .where(*filters)
         .subquery("ranked_models")
@@ -289,18 +287,23 @@ def model_navigation(
     ).one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
+    variants_by_model = _variants_by_model(
+        session, [item for item in (row.previous_id, row.next_id) if item is not None]
+    )
     return ModelNavigation(
         previous=(
             ModelNavigationItem(
                 id=row.previous_id,
                 name=row.previous_name,
-                variant=row.previous_variant,
+            variants=variants_by_model.get(row.previous_id, []),
             )
             if row.previous_id is not None
             else None
         ),
         next=(
-            ModelNavigationItem(id=row.next_id, name=row.next_name, variant=row.next_variant)
+        ModelNavigationItem(
+            id=row.next_id, name=row.next_name, variants=variants_by_model.get(row.next_id, [])
+        )
             if row.next_id is not None
             else None
         ),
@@ -559,7 +562,7 @@ def model_detail(
     access = get_access_context(session, current_user)
     scope = visible_model_scope(access)
     row = session.execute(
-        select(LibraryModel, LibrarySource.name)
+        select(LibraryModel, LibrarySource.name).options(selectinload(LibraryModel.variants))
         .join(LibrarySource, LibrarySource.id == LibraryModel.library_source_id)
         .where(
             LibraryModel.id == model_id,
@@ -662,7 +665,7 @@ def model_detail(
     return ModelDetail(
         id=model.id,
         name=model.name,
-        variant=model.variant,
+        variants=[variant.value for variant in model.variants],
         creator=model.creator,
         creator_profile_id=model.creator_profile_id,
         creator_url=creator_url,
@@ -1419,8 +1422,15 @@ def _archive_images_mismatch_clause():
 
 def _model_order(sort: str) -> tuple:
     name = LibraryModel.name.collate("NOCASE")
-    variant = LibraryModel.variant.collate("NOCASE")
-    variant_order = (LibraryModel.variant.is_not(None), variant)
+    variant = (
+        select(ModelVariant.value)
+        .where(ModelVariant.model_id == LibraryModel.id)
+        .order_by(ModelVariant.position)
+        .limit(1)
+        .scalar_subquery()
+        .collate("NOCASE")
+    )
+    variant_order = (variant.is_not(None), variant)
     creator = LibraryModel.creator.collate("NOCASE")
     if sort == "meshive_newest":
         return (LibraryModel.first_seen_at.desc(), LibraryModel.id.desc())
@@ -1521,6 +1531,19 @@ def _model_tags_for_models(
             )
         )
     return tags_by_model
+
+
+def _variants_by_model(session: Session, model_ids: list[int]) -> dict[int, list[str]]:
+    variants_by_model = {model_id: [] for model_id in model_ids}
+    if not model_ids:
+        return variants_by_model
+    for model_id, value in session.execute(
+        select(ModelVariant.model_id, ModelVariant.value)
+        .where(ModelVariant.model_id.in_(model_ids))
+        .order_by(ModelVariant.model_id, ModelVariant.position)
+    ):
+        variants_by_model[model_id].append(value)
+    return variants_by_model
 
 
 def _safe_source_file(root_path: str, relative_path: str) -> Path | None:

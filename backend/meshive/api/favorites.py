@@ -534,7 +534,7 @@ def _item_reads(
                     and artwork.get((item.entity_type, item.entity_key)) is not None
                     else None
                 ),
-                variant=model.variant if model else None,
+        variants=[variant.value for variant in model.variants] if model else [],
                 creator=model.creator if model else None,
                 franchise=model.franchise if model else None,
                 series=model.series if model else None,
@@ -583,7 +583,8 @@ def _summary(favorite: FavoriteList, item_count: int) -> FavoriteListSummary:
 
 
 def _model_label(model: LibraryModel) -> str:
-    return f"{model.name} — {model.variant}" if model.variant else model.name
+    variants = ", ".join(variant.value for variant in model.variants)
+    return f"{model.name} — {variants}" if variants else model.name
 
 
 def _normalize(value: str) -> str:

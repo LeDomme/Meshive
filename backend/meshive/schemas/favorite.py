@@ -80,7 +80,7 @@ class FavoriteListItemRead(BaseModel):
     creator_profile_id: int | None = None
     thumbnail_url: str | None = None
     artwork_url: str | None = None
-    variant: str | None = None
+    variants: list[str] = []
     creator: str | None = None
     franchise: str | None = None
     series: str | None = None
