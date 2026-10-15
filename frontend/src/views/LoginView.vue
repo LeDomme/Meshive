@@ -52,7 +52,7 @@ async function submit() {
       <BrandLogo class="login-brand-icon" />
       <p class="eyebrow">Private archive</p>
       <h1 class="login-title">Sign in to Meshive</h1>
-      <form class="login-form" @submit.prevent="submit">
+      <form class="login-form login-credentials-form" @submit.prevent="submit">
         <label>
           <span>Username</span>
           <input
