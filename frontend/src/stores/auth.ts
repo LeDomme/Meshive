@@ -10,6 +10,7 @@ export interface CurrentUser {
   role: "admin" | "user"
   is_active: boolean
   must_change_password: boolean
+  animated_background: boolean
   role_definition: RoleDefinition | null
   permissions: string[]
   source_access: SourceAccess

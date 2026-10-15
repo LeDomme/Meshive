@@ -17,6 +17,7 @@ def build_current_user_response(user: User, session: Session) -> CurrentUserRead
         role=user.role,
         is_active=user.is_active,
         must_change_password=user.must_change_password,
+        animated_background=user.animated_background,
         created_at=user.created_at,
         updated_at=user.updated_at,
         last_login_at=user.last_login_at,

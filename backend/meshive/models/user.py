@@ -30,6 +30,7 @@ class User(Base):
     catalogue_filter_order: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     catalogue_action_order: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     catalogue_navigation_mode: Mapped[str] = mapped_column(String(20), default="pagination")
+    animated_background: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
