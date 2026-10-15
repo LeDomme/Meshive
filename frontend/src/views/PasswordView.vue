@@ -24,7 +24,12 @@ const emailPassword = ref("")
 const emailError = ref("")
 const emailMessage = ref("")
 const emailSubmitting = ref(false)
-const cataloguePreferences = ref<CataloguePreferences>({ filter_order: [], action_order: [], navigation_mode: "pagination" })
+const cataloguePreferences = ref<CataloguePreferences>({
+  filter_order: [],
+  action_order: [],
+  navigation_mode: "pagination",
+  animated_background: true,
+})
 const cataloguePreferencesLoading = ref(true)
 const cataloguePreferencesSubmitting = ref(false)
 const cataloguePreferencesError = ref("")
@@ -56,6 +61,7 @@ interface CataloguePreferences {
   filter_order: string[]
   action_order: string[]
   navigation_mode: "pagination" | "infinite"
+  animated_background: boolean
 }
 
 interface SavedView {
@@ -104,7 +110,11 @@ async function loadCataloguePreferences() {
   cataloguePreferencesLoading.value = true
   cataloguePreferencesError.value = ""
   try {
-    cataloguePreferences.value = await apiRequest<CataloguePreferences>("/api/auth/catalogue-preferences")
+    const preferences = await apiRequest<CataloguePreferences>("/api/auth/catalogue-preferences")
+    cataloguePreferences.value = {
+      ...preferences,
+      animated_background: preferences.animated_background ?? true,
+    }
   } catch (error) {
     cataloguePreferencesError.value = error instanceof ApiError ? error.message : "Unable to load catalogue preferences"
   } finally {
@@ -121,6 +131,7 @@ async function saveCataloguePreferences(preferences: CataloguePreferences, messa
       method: "PUT",
       body: JSON.stringify(preferences),
     })
+    if (auth.user) auth.user.animated_background = cataloguePreferences.value.animated_background
     cataloguePreferencesMessage.value = message
   } catch (error) {
     cataloguePreferencesError.value = error instanceof ApiError ? error.message : "Unable to save catalogue preferences"
@@ -134,7 +145,15 @@ function resetCatalogueLayout() {
     filter_order: [...defaultFilterOrder],
     action_order: [...defaultActionOrder],
     navigation_mode: cataloguePreferences.value.navigation_mode,
+    animated_background: cataloguePreferences.value.animated_background,
   }, "Catalogue layout reset.")
+}
+
+function setAnimatedBackground(enabled: boolean) {
+  void saveCataloguePreferences({
+    ...cataloguePreferences.value,
+    animated_background: enabled,
+  }, `Animated background ${enabled ? "enabled" : "disabled"}.`)
 }
 
 async function loadSavedViews() {
@@ -307,7 +326,7 @@ onMounted(() => {
         <AccountMenu />
       </nav>
     </header>
-    <p class="account-intro">Manage your profile, recovery email, password, catalogue preferences and signed-in devices.</p>
+    <p class="account-intro">Manage your profile, recovery email, password, preferences and signed-in devices.</p>
 
     <section class="account-layout">
       <aside class="panel account-profile" aria-labelledby="profile-heading">
@@ -360,10 +379,25 @@ onMounted(() => {
           </form>
         </section>
 
-        <section class="panel account-catalogue-preferences" aria-labelledby="catalogue-preferences-heading">
-          <div class="panel-heading"><div><h2 id="catalogue-preferences-heading">Catalogue preferences</h2><p class="panel-copy">Restore your default catalogue control layout.</p></div></div>
-          <p v-if="cataloguePreferencesLoading" class="panel-copy account-panel-content">Loading catalogue preferences…</p>
+        <section class="panel account-catalogue-preferences" aria-labelledby="preferences-heading">
+          <div class="panel-heading"><div><h2 id="preferences-heading">Preferences</h2><p class="panel-copy">Customize Meshive for your account.</p></div></div>
+          <p v-if="cataloguePreferencesLoading" class="panel-copy account-panel-content">Loading preferences…</p>
           <template v-else>
+            <div class="catalogue-layout-setting account-panel-content">
+              <div>
+                <h3>Animated background</h3>
+                <p>Show the animated particle network in the background.</p>
+              </div>
+              <button
+                class="catalogue-navigation-switch"
+                type="button"
+                role="switch"
+                :aria-checked="cataloguePreferences.animated_background"
+                aria-label="Animated background"
+                :disabled="cataloguePreferencesSubmitting"
+                @click="setAnimatedBackground(!cataloguePreferences.animated_background)"
+              ><span></span></button>
+            </div>
             <div class="catalogue-layout-setting account-panel-content">
               <div>
                 <h3>Catalogue layout</h3>

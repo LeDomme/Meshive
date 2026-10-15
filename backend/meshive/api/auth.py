@@ -279,6 +279,7 @@ def get_catalogue_preferences(
         filter_order=user.catalogue_filter_order or [],
         action_order=user.catalogue_action_order or [],
         navigation_mode=user.catalogue_navigation_mode or "pagination",
+        animated_background=user.animated_background,
     )
 
 
@@ -324,9 +325,12 @@ def update_catalogue_preferences(
     user.catalogue_filter_order = payload.filter_order
     user.catalogue_action_order = payload.action_order
     user.catalogue_navigation_mode = payload.navigation_mode
+    if "animated_background" in payload.model_fields_set:
+        user.animated_background = payload.animated_background
     session.commit()
     return CatalogueFilterPreferences(
         filter_order=user.catalogue_filter_order,
         action_order=user.catalogue_action_order,
         navigation_mode=user.catalogue_navigation_mode,
+        animated_background=user.animated_background,
     )

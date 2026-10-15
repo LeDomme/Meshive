@@ -8,6 +8,7 @@ const user = {
   role: "curator",
   is_active: true,
   must_change_password: false,
+  animated_background: true,
   permissions: ["catalogue.view"],
   source_access: { all_sources: true, source_ids: [] },
 }
@@ -15,9 +16,11 @@ const user = {
 const defaultFilterOrder = ["model", "variant", "creator", "franchise", "series", "source", "tag", "status", "sort"]
 const defaultActionOrder = ["selection", "saved_views", "navigation"]
 
-async function mockAccount(page: Page) {
+async function mockAccount(page: Page, animatedBackground = true) {
   await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
-  await page.route("**/api/auth/me", route => route.fulfill({ json: user }))
+  await page.route("**/api/auth/me", route => route.fulfill({
+    json: { ...user, animated_background: animatedBackground },
+  }))
   await page.route("**/api/auth/sessions", route => route.fulfill({ json: [] }))
 }
 
@@ -35,7 +38,7 @@ test("account resets catalogue layout while preserving navigation mode", async (
   await page.route("**/api/saved-views**", route => route.fulfill({ json: [{ id: 3, name: "Ada view" }] }))
 
   await page.goto("/account")
-  await expect(page.getByRole("heading", { name: "Catalogue preferences" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Preferences" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Saved views" })).toBeVisible()
   await expect(page.getByText("Ada view", { exact: true })).toBeVisible()
 
@@ -45,8 +48,36 @@ test("account resets catalogue layout while preserving navigation mode", async (
     filter_order: defaultFilterOrder,
     action_order: defaultActionOrder,
     navigation_mode: "infinite",
+    animated_background: true,
   })
   await expect(page.getByText("Ada view", { exact: true })).toBeVisible()
+})
+
+test("account toggles the animated background without reloading", async ({ page }) => {
+  let preferences = {
+    filter_order: [],
+    action_order: [],
+    navigation_mode: "pagination" as const,
+    animated_background: false,
+  }
+  await mockAccount(page, false)
+  await page.route("**/api/auth/catalogue-preferences", async route => {
+    if (route.request().method() === "PUT") preferences = route.request().postDataJSON()
+    await route.fulfill({ json: preferences })
+  })
+  await page.route("**/api/saved-views**", route => route.fulfill({ json: [] }))
+
+  await page.goto("/account")
+  const toggle = page.getByRole("switch", { name: "Animated background" })
+  await expect(toggle).toHaveAttribute("aria-checked", "false")
+
+  await toggle.click()
+  await expect(toggle).toHaveAttribute("aria-checked", "true")
+  await expect(page.getByTestId("particle-network-background")).toHaveAttribute("data-motion-state", "active")
+
+  await toggle.click()
+  await expect(toggle).toHaveAttribute("aria-checked", "false")
+  await expect(page.getByTestId("particle-network-background")).toHaveCount(0)
 })
 
 test("account manages saved views without reloading", async ({ page }) => {

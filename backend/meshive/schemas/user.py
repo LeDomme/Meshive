@@ -148,12 +148,14 @@ class CurrentUserRead(UserRead):
     role_definition: RoleDefinitionRead | None
     permissions: list[str]
     source_access: SourceAccessRead
+    animated_background: bool
 
 
 class CatalogueFilterPreferences(BaseModel):
     filter_order: list[str] = Field(default_factory=list, max_length=9)
     action_order: list[str] = Field(default_factory=list, max_length=3)
     navigation_mode: Literal["pagination", "infinite"] = "pagination"
+    animated_background: bool = True
 
 
 class PasswordChange(BaseModel):

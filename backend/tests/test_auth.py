@@ -703,21 +703,44 @@ def test_catalogue_filter_preferences_are_saved_per_user() -> None:
         ).status_code == 200
 
         assert client.get("/api/auth/catalogue-preferences").json() == {
-            "filter_order": [], "action_order": [], "navigation_mode": "pagination"
+            "filter_order": [],
+            "action_order": [],
+            "navigation_mode": "pagination",
+            "animated_background": True,
         }
 
         saved = client.put(
             "/api/auth/catalogue-preferences",
-            json={"filter_order": ["creator", "variant", "model", "sort"], "action_order": ["saved_views", "selection"], "navigation_mode": "infinite"},
+            json={
+                "filter_order": ["creator", "variant", "model", "sort"],
+                "action_order": ["saved_views", "selection"],
+                "navigation_mode": "infinite",
+                "animated_background": False,
+            },
         )
         assert saved.status_code == 200
         assert saved.json() == {
-            "filter_order": ["creator", "variant", "model", "sort"], "action_order": ["saved_views", "selection"], "navigation_mode": "infinite"
+            "filter_order": ["creator", "variant", "model", "sort"],
+            "action_order": ["saved_views", "selection"],
+            "navigation_mode": "infinite",
+            "animated_background": False,
         }
 
         assert client.get("/api/auth/catalogue-preferences").json() == {
-            "filter_order": ["creator", "variant", "model", "sort"], "action_order": ["saved_views", "selection"], "navigation_mode": "infinite"
+            "filter_order": ["creator", "variant", "model", "sort"],
+            "action_order": ["saved_views", "selection"],
+            "navigation_mode": "infinite",
+            "animated_background": False,
         }
+
+        assert client.get("/api/auth/me").json()["animated_background"] is False
+
+        legacy_update = client.put(
+            "/api/auth/catalogue-preferences",
+            json={"filter_order": [], "action_order": [], "navigation_mode": "pagination"},
+        )
+        assert legacy_update.status_code == 200
+        assert legacy_update.json()["animated_background"] is False
 
         duplicate = client.put(
             "/api/auth/catalogue-preferences",
