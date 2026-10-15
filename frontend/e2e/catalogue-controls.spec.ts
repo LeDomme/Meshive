@@ -177,3 +177,37 @@ test("only catalogue grips are drag sources", async ({ page }) => {
   await expect(modelFilter).not.toHaveAttribute("draggable")
   await expect(modelFilter.locator(".searchable-filter-drag-grip")).toHaveAttribute("draggable", "true")
 })
+
+test("expanded catalogue search keeps desktop controls together and preserves responsive wrapping", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/auth/me", route => route.fulfill({
+    json: { ...user, permissions: [...user.permissions, "catalogue.view_maintenance"] },
+  }))
+  await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [] } }))
+  await page.route("**/api/saved-views", route => route.fulfill({ json: [] }))
+  await page.route("**/api/models/filters**", route => route.fulfill({ json: filters }))
+  await page.route("**/api/models?**", route => route.fulfill({ json: { items: [model], total: 1, page: 1, page_size: 48 } }))
+  await page.goto("/")
+
+  await page.getByRole("button", { name: "Open catalogue search" }).click()
+  const search = page.getByRole("searchbox", { name: "Search catalogue" })
+  await search.fill("Millennium Falcon cockpit")
+  await expect(search).toHaveValue("Millennium Falcon cockpit")
+
+  const filterControls = page.locator(
+    ".catalogue-filters > .catalogue-search, .catalogue-filters > .searchable-filter, .catalogue-filters > .secondary-button",
+  )
+  const desktopRows = await filterControls.evaluateAll(elements =>
+    new Set(elements.map(element => Math.round(element.getBoundingClientRect().top))).size,
+  )
+  expect(desktopRows).toBe(1)
+
+  await page.setViewportSize({ width: 600, height: 900 })
+  const compactRows = await filterControls.evaluateAll(elements =>
+    new Set(elements.map(element => Math.round(element.getBoundingClientRect().top))).size,
+  )
+  expect(compactRows).toBeGreaterThan(1)
+  await expect(page.getByRole("button", { name: "Clear", exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+})
