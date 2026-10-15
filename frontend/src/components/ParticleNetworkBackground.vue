@@ -9,11 +9,16 @@ type Particle = {
   vx: number
   vy: number
   size: number
+  scrollInfluence: number
 }
 
 const CONNECTION_DISTANCE = 190
 const CURSOR_RADIUS = 220
 const MAX_PARTICLES = 72
+const MAX_SCROLL_VELOCITY = 150
+const SCROLL_DAMPING = 4.6
+const SCROLL_DELTA_LIMIT = 120
+const SCROLL_IMPULSE_SCALE = 0.8
 const canvas = ref<HTMLCanvasElement | null>(null)
 const motionState = ref<"active" | "paused" | "reduced">("paused")
 
@@ -27,6 +32,8 @@ let viewportHeight = 0
 let particleColor = "#36e7ff"
 let networkColor = "#087cff"
 let motionQuery: MediaQueryList | null = null
+let lastScrollY = 0
+let scrollVelocity = 0
 
 function targetParticleCount(width: number, height: number) {
   const area = width * height
@@ -45,6 +52,7 @@ function createParticle(): Particle {
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
     size: 2.5 + Math.random() * 1.5,
+    scrollInfluence: 0.8 + Math.random() * 0.4,
   }
 }
 
@@ -106,13 +114,16 @@ function updateParticles(deltaSeconds: number) {
     }
 
     particle.x += particle.vx * deltaSeconds
-    particle.y += particle.vy * deltaSeconds
+    particle.y += (particle.vy + scrollVelocity * particle.scrollInfluence) * deltaSeconds
 
     if (particle.x < -particle.size) particle.x = viewportWidth + particle.size
     else if (particle.x > viewportWidth + particle.size) particle.x = -particle.size
     if (particle.y < -particle.size) particle.y = viewportHeight + particle.size
     else if (particle.y > viewportHeight + particle.size) particle.y = -particle.size
   }
+
+  scrollVelocity *= Math.exp(-SCROLL_DAMPING * deltaSeconds)
+  if (Math.abs(scrollVelocity) < 0.01) scrollVelocity = 0
 }
 
 function drawNetwork() {
@@ -171,6 +182,7 @@ function stopAnimation(state: "paused" | "reduced") {
   if (animationFrame) cancelAnimationFrame(animationFrame)
   animationFrame = 0
   lastFrameTime = 0
+  scrollVelocity = 0
   motionState.value = state
   context?.clearRect(0, 0, viewportWidth, viewportHeight)
 }
@@ -205,10 +217,27 @@ function clearPointer() {
   pointer.active = false
 }
 
+function handleScroll() {
+  const currentScrollY = window.scrollY
+  const scrollDelta = Math.max(
+    -SCROLL_DELTA_LIMIT,
+    Math.min(SCROLL_DELTA_LIMIT, currentScrollY - lastScrollY),
+  )
+  lastScrollY = currentScrollY
+  if (document.hidden || motionQuery?.matches) return
+
+  scrollVelocity = Math.max(
+    -MAX_SCROLL_VELOCITY,
+    Math.min(MAX_SCROLL_VELOCITY, scrollVelocity + scrollDelta * SCROLL_IMPULSE_SCALE),
+  )
+}
+
 onMounted(() => {
   motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
+  lastScrollY = window.scrollY
   motionQuery.addEventListener("change", handleMotionPreference)
   window.addEventListener("resize", resizeCanvas)
+  window.addEventListener("scroll", handleScroll, { passive: true })
   window.addEventListener("pointermove", handlePointerMove, { passive: true })
   window.addEventListener("pointerout", handlePointerOut)
   window.addEventListener("blur", clearPointer)
@@ -221,6 +250,7 @@ onBeforeUnmount(() => {
   stopAnimation("paused")
   motionQuery?.removeEventListener("change", handleMotionPreference)
   window.removeEventListener("resize", resizeCanvas)
+  window.removeEventListener("scroll", handleScroll)
   window.removeEventListener("pointermove", handlePointerMove)
   window.removeEventListener("pointerout", handlePointerOut)
   window.removeEventListener("blur", clearPointer)
