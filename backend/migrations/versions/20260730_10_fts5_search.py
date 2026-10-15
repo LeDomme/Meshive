@@ -4,6 +4,7 @@ Revision ID: 20260730_10
 Revises: 20260730_09
 """
 from collections.abc import Sequence
+
 from alembic import op
 
 revision: str = "20260730_10"

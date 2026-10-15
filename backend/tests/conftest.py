@@ -2,7 +2,6 @@
 
 import os
 
-
 # The production Settings defaults deliberately point at the image's stable
 # mount contract.  Application-lifespan tests do not use those mounts, so give
 # background schedulers a writable disposable SQLite location instead.

@@ -36,6 +36,10 @@ jobs:
       - name: Install backend
         run: pip install -e "./backend[dev]"
 
+      - name: Lint backend
+        working-directory: backend
+        run: ruff check .
+
       - name: Run entrypoint permission tests
         run: sh docker/test-permissions.sh
       - name: Run backend tests

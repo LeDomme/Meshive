@@ -6,10 +6,10 @@ import sqlite3
 import tempfile
 import time
 import zipfile
+from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
 
 from meshive.config import get_settings
 
@@ -231,7 +231,7 @@ def _backup_database(source: Path) -> Iterator[Path]:
                 if manifest_info.file_size > _MANIFEST_MAX_BYTES:
                     raise RuntimeError("Backup manifest exceeds the size limit")
                 manifest = json.loads(archive.read(manifest_info))
-                if not isinstance(manifest, dict):
+                if type(manifest) is not dict:
                     raise RuntimeError("Backup archive has an invalid manifest")
                 if (
                     manifest.get("format") != "meshive-backup-v1"
@@ -239,7 +239,7 @@ def _backup_database(source: Path) -> Iterator[Path]:
                 ):
                     raise RuntimeError("Backup archive has an invalid manifest")
                 declared_size = manifest.get("size_bytes")
-                if isinstance(declared_size, bool) or not isinstance(declared_size, int):
+                if type(declared_size) is not int:
                     raise RuntimeError("Backup manifest has an invalid database size")
                 _validate_backup_size(declared_size)
                 database_info = archive.getinfo("meshive.sqlite3")
@@ -311,7 +311,7 @@ def _read_json_file(path: Path) -> dict:
         value = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise RuntimeError("Backup manifest is invalid") from error
-    if not isinstance(value, dict):
+    if type(value) is not dict:
         raise RuntimeError("Backup manifest is invalid")
     return value
 

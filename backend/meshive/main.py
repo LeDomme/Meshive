@@ -8,14 +8,14 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
 
 from meshive import __version__
-from meshive.api.auth import router as auth_router
 from meshive.api.audit import router as audit_router
+from meshive.api.auth import router as auth_router
 from meshive.api.backups import router as backups_router
 from meshive.api.catalog import admin_router as catalog_admin_router
 from meshive.api.catalog import router as catalog_router
 from meshive.api.creator_links import router as creator_links_router
-from meshive.api.creators import router as creators_router
 from meshive.api.creator_profiles import router as creator_profiles_router
+from meshive.api.creators import router as creators_router
 from meshive.api.diagnostics import router as diagnostics_router
 from meshive.api.favorites import router as favorites_router
 from meshive.api.library_sources import router as library_sources_router
@@ -24,8 +24,8 @@ from meshive.api.metadata import router as metadata_router
 from meshive.api.recovery import router as recovery_router
 from meshive.api.roles import permissions_router
 from meshive.api.roles import router as roles_router
-from meshive.api.scans import router as scans_router
 from meshive.api.saved_views import router as saved_views_router
+from meshive.api.scans import router as scans_router
 from meshive.api.setup import router as setup_router
 from meshive.api.system import router as system_router
 from meshive.api.tags import admin_router as tags_admin_router

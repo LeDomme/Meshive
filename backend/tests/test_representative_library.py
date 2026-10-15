@@ -90,13 +90,11 @@ def test_scans_representative_mixed_library(tmp_path, monkeypatch) -> None:
             name="Representative library",
             root_path=tmp_path.as_posix(),
             directory_pattern="{franchise}/{model_folder}",
-            model_pattern="\n".join(
-                (
-                    "{franchise} {series} - {model} - by {creator}",
-                    "{series} - {model} - by {creator}",
-                    "{franchise} - {model} - by {creator}",
-                    "{model} - by {creator}",
-                )
+            model_pattern=(
+                "{franchise} {series} - {model} - by {creator}\n"
+                "{series} - {model} - by {creator}\n"
+                "{franchise} - {model} - by {creator}\n"
+                "{model} - by {creator}"
             ),
             archive_formats=["7z", "zip", "rar"],
             image_formats=["jpg", "jpeg", "png", "webp"],

@@ -25,21 +25,20 @@ def stream_archive_bundle(
 
     def produce() -> None:
         try:
-            with os.fdopen(write_fd, "wb") as output:
-                with tarfile.open(
-                    fileobj=output,
-                    mode="w|",
-                    format=tarfile.PAX_FORMAT,
-                ) as bundle:
-                    used_names: set[str] = set()
-                    for archive in archives:
-                        name = _unique_name(archive.filename, used_names)
-                        info = tarfile.TarInfo(name=name)
-                        info.size = archive.size_bytes
-                        info.mtime = archive.modified_at
-                        info.mode = 0o644
-                        with archive.path.open("rb") as source:
-                            bundle.addfile(info, source)
+            with os.fdopen(write_fd, "wb") as output, tarfile.open(
+                fileobj=output,
+                mode="w|",
+                format=tarfile.PAX_FORMAT,
+            ) as bundle:
+                used_names: set[str] = set()
+                for archive in archives:
+                    name = _unique_name(archive.filename, used_names)
+                    info = tarfile.TarInfo(name=name)
+                    info.size = archive.size_bytes
+                    info.mtime = archive.modified_at
+                    info.mode = 0o644
+                    with archive.path.open("rb") as source:
+                        bundle.addfile(info, source)
         except BrokenPipeError:
             # Expected when a browser cancels a large download.
             return

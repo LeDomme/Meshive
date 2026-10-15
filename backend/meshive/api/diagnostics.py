@@ -52,7 +52,7 @@ def _storage_status(path: Path) -> dict[str, object]:
 
 
 @router.get("")
-def diagnostics(session: Session = Depends(get_session)) -> dict[str, object]:  # noqa: B008
+def diagnostics(session: Session = Depends(get_session)) -> dict[str, object]:
     settings = get_settings()
     database: dict[str, object] = {"backend": "sqlite", "reachable": True}
     try:

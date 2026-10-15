@@ -7,10 +7,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import delete, select
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from meshive.auth.action_tokens import delete_user_action_tokens
 from meshive.auth.passwords import hash_password
@@ -142,7 +142,7 @@ def _restore_pending() -> None:
             "safety_backup": str(safety) if safety else None,
         }
         print(f"Restore completed from {backup_path}.")
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - CLI boundary reports restore failures
         if is_audited_request:
             _try_record_restore_audit(
                 actor_user_id,
