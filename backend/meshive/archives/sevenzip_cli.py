@@ -182,7 +182,7 @@ def _run_bounded_command(
         try:
             while chunk := process.stdout.read(64 * 1024):
                 deliver(chunk)
-        except BaseException as error:  # pragma: no cover - OS-level pipe failure
+        except BaseException as error:  # noqa: BLE001  # pragma: no cover - OS-level pipe failure
             deliver(error)
         finally:
             deliver(None)
@@ -273,7 +273,7 @@ def _run_bounded_extraction(
         try:
             while chunk := stream.read(64 * 1024):
                 deliver(stream_name, chunk)
-        except BaseException as error:  # pragma: no cover - OS-level pipe failure
+        except BaseException as error:  # noqa: BLE001  # pragma: no cover - OS-level pipe failure
             deliver(stream_name, error)
         finally:
             deliver(stream_name, None)

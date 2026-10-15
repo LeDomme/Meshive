@@ -139,9 +139,10 @@ class Settings(BaseSettings):
             or parsed_public_url.fragment
         ):
             return False
-        if self.environment == "production":
-            if parsed_public_url.scheme != "https" or self.smtp_security == "none":
-                return False
+        if self.environment == "production" and (
+            parsed_public_url.scheme != "https" or self.smtp_security == "none"
+        ):
+            return False
         if any("\r" in value or "\n" in value for value in values if value):
             return False
         if self.smtp_password is None:
