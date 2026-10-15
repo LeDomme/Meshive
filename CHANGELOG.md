@@ -5,6 +5,29 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-10-16
+
+### Added
+
+- Added an animated particle network background with pointer and scroll
+  interaction, responsive density, theme-aware colors, and reduced-motion
+  support.
+- Added a per-user preference to enable or disable the animated background.
+
+### Changed
+
+- Updated frontend, backend, and GitHub Actions dependencies.
+- Backend CI now runs Ruff linting.
+
+### Fixed
+
+- Catalogue controls no longer wrap unnecessarily when expanded search is used
+  on wider desktop viewports, while retaining responsive wrapping on smaller
+  screens.
+- Removed the obsolete public-registration notice from the login screen and
+  corrected its spacing.
+- Resolved the `source-map-js` security audit finding.
+
 ## [1.9.0] - 2026-09-20
 
 ### Added
@@ -325,7 +348,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
-[Unreleased]: ../../compare/v1.9.0...HEAD
+[Unreleased]: ../../compare/v1.9.1...HEAD
+[1.9.1]: ../../compare/v1.9.0...v1.9.1
 [1.9.0]: ../../compare/v1.8.0...v1.9.0
 [1.8.0]: ../../compare/v1.7.0...v1.8.0
 [1.7.0]: ../../compare/v1.6.3...v1.7.0
