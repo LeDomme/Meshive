@@ -13,7 +13,7 @@ type Particle = {
 
 const CONNECTION_DISTANCE = 190
 const CURSOR_RADIUS = 220
-const MAX_PARTICLES = 55
+const MAX_PARTICLES = 72
 const canvas = ref<HTMLCanvasElement | null>(null)
 const motionState = ref<"active" | "paused" | "reduced">("paused")
 
@@ -31,7 +31,7 @@ let motionQuery: MediaQueryList | null = null
 function targetParticleCount(width: number, height: number) {
   const area = width * height
   if (width < 640) return Math.min(12, Math.max(6, Math.round(area / 55_000)))
-  return Math.min(MAX_PARTICLES, Math.max(28, Math.round(area / 65_000)))
+  return Math.min(MAX_PARTICLES, Math.max(37, Math.round(area / 49_000)))
 }
 
 function createParticle(): Particle {
@@ -44,7 +44,7 @@ function createParticle(): Particle {
     baseVy: Math.sin(angle) * speed,
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
-    size: 2 + Math.random() * 1.5,
+    size: 2.5 + Math.random() * 1.5,
   }
 }
 
@@ -118,7 +118,7 @@ function updateParticles(deltaSeconds: number) {
 function drawNetwork() {
   if (!context) return
   context.clearRect(0, 0, viewportWidth, viewportHeight)
-  context.lineWidth = 0.9
+  context.lineWidth = 1
   context.strokeStyle = networkColor
 
   for (let firstIndex = 0; firstIndex < particles.length; firstIndex += 1) {
@@ -127,7 +127,7 @@ function drawNetwork() {
       const second = particles[secondIndex]
       const distance = Math.hypot(first.x - second.x, first.y - second.y)
       if (distance >= CONNECTION_DISTANCE) continue
-      context.globalAlpha = (1 - distance / CONNECTION_DISTANCE) * 0.3
+      context.globalAlpha = (1 - distance / CONNECTION_DISTANCE) * 0.34
       context.beginPath()
       context.moveTo(first.x, first.y)
       context.lineTo(second.x, second.y)
@@ -137,7 +137,7 @@ function drawNetwork() {
     if (pointer.active) {
       const pointerDistance = Math.hypot(first.x - pointer.x, first.y - pointer.y)
       if (pointerDistance < CURSOR_RADIUS) {
-        context.globalAlpha = (1 - pointerDistance / CURSOR_RADIUS) * 0.35
+        context.globalAlpha = (1 - pointerDistance / CURSOR_RADIUS) * 0.4
         context.beginPath()
         context.moveTo(first.x, first.y)
         context.lineTo(pointer.x, pointer.y)
@@ -147,7 +147,7 @@ function drawNetwork() {
   }
 
   context.fillStyle = particleColor
-  context.globalAlpha = 0.42
+  context.globalAlpha = 0.52
   for (const particle of particles) {
     context.fillRect(
       Math.round(particle.x - particle.size / 2),
