@@ -11,6 +11,7 @@ type Particle = {
 
 const CONNECTION_DISTANCE = 145
 const CURSOR_RADIUS = 180
+const FRAME_INTERVAL = 1000 / 30
 const MAX_PARTICLES = 48
 const canvas = ref<HTMLCanvasElement | null>(null)
 const motionState = ref<"active" | "paused" | "reduced">("paused")
@@ -151,10 +152,12 @@ function drawNetwork() {
 }
 
 function animate(timestamp: number) {
-  const deltaSeconds = lastFrameTime ? Math.min((timestamp - lastFrameTime) / 1000, 0.05) : 0
-  lastFrameTime = timestamp
-  updateParticles(deltaSeconds)
-  drawNetwork()
+  const elapsed = lastFrameTime ? timestamp - lastFrameTime : FRAME_INTERVAL
+  if (elapsed >= FRAME_INTERVAL) {
+    lastFrameTime = timestamp
+    updateParticles(Math.min(elapsed / 1000, 0.05))
+    drawNetwork()
+  }
   animationFrame = requestAnimationFrame(animate)
 }
 
