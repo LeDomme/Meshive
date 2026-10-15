@@ -133,6 +133,10 @@ h1 {
   gap: 1.25rem;
 }
 
+.login-credentials-form {
+  margin-top: 2rem;
+}
+
 .login-form label {
   display: grid;
   gap: 0.5rem;
