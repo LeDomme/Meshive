@@ -4,15 +4,16 @@ import { onBeforeUnmount, onMounted, ref } from "vue"
 type Particle = {
   x: number
   y: number
+  baseVx: number
+  baseVy: number
   vx: number
   vy: number
   size: number
 }
 
-const CONNECTION_DISTANCE = 145
-const CURSOR_RADIUS = 180
-const FRAME_INTERVAL = 1000 / 30
-const MAX_PARTICLES = 48
+const CONNECTION_DISTANCE = 190
+const CURSOR_RADIUS = 220
+const MAX_PARTICLES = 55
 const canvas = ref<HTMLCanvasElement | null>(null)
 const motionState = ref<"active" | "paused" | "reduced">("paused")
 
@@ -30,7 +31,7 @@ let motionQuery: MediaQueryList | null = null
 function targetParticleCount(width: number, height: number) {
   const area = width * height
   if (width < 640) return Math.min(12, Math.max(6, Math.round(area / 55_000)))
-  return Math.min(MAX_PARTICLES, Math.max(24, Math.round(area / 85_000)))
+  return Math.min(MAX_PARTICLES, Math.max(28, Math.round(area / 65_000)))
 }
 
 function createParticle(): Particle {
@@ -39,6 +40,8 @@ function createParticle(): Particle {
   return {
     x: Math.random() * viewportWidth,
     y: Math.random() * viewportHeight,
+    baseVx: Math.cos(angle) * speed,
+    baseVy: Math.sin(angle) * speed,
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
     size: 2 + Math.random() * 1.5,
@@ -80,21 +83,26 @@ function resizeCanvas() {
 
 function updateParticles(deltaSeconds: number) {
   for (const particle of particles) {
+    const recovery = 1 - Math.exp(-2.8 * deltaSeconds)
+    particle.vx += (particle.baseVx - particle.vx) * recovery
+    particle.vy += (particle.baseVy - particle.vy) * recovery
+
     if (pointer.active) {
       const dx = particle.x - pointer.x
       const dy = particle.y - pointer.y
       const distance = Math.hypot(dx, dy)
       if (distance > 0 && distance < CURSOR_RADIUS) {
         const influence = 1 - distance / CURSOR_RADIUS
-        particle.vx += dx / distance * influence * 12 * deltaSeconds
-        particle.vy += dy / distance * influence * 12 * deltaSeconds
+        const push = influence * influence * 75 * deltaSeconds
+        particle.vx += dx / distance * push
+        particle.vy += dy / distance * push
       }
     }
 
     const speed = Math.hypot(particle.vx, particle.vy)
-    if (speed > 22) {
-      particle.vx = particle.vx / speed * 22
-      particle.vy = particle.vy / speed * 22
+    if (speed > 34) {
+      particle.vx = particle.vx / speed * 34
+      particle.vy = particle.vy / speed * 34
     }
 
     particle.x += particle.vx * deltaSeconds
@@ -110,7 +118,7 @@ function updateParticles(deltaSeconds: number) {
 function drawNetwork() {
   if (!context) return
   context.clearRect(0, 0, viewportWidth, viewportHeight)
-  context.lineWidth = 0.55
+  context.lineWidth = 0.9
   context.strokeStyle = networkColor
 
   for (let firstIndex = 0; firstIndex < particles.length; firstIndex += 1) {
@@ -119,7 +127,7 @@ function drawNetwork() {
       const second = particles[secondIndex]
       const distance = Math.hypot(first.x - second.x, first.y - second.y)
       if (distance >= CONNECTION_DISTANCE) continue
-      context.globalAlpha = (1 - distance / CONNECTION_DISTANCE) * 0.16
+      context.globalAlpha = (1 - distance / CONNECTION_DISTANCE) * 0.3
       context.beginPath()
       context.moveTo(first.x, first.y)
       context.lineTo(second.x, second.y)
@@ -129,7 +137,7 @@ function drawNetwork() {
     if (pointer.active) {
       const pointerDistance = Math.hypot(first.x - pointer.x, first.y - pointer.y)
       if (pointerDistance < CURSOR_RADIUS) {
-        context.globalAlpha = (1 - pointerDistance / CURSOR_RADIUS) * 0.11
+        context.globalAlpha = (1 - pointerDistance / CURSOR_RADIUS) * 0.35
         context.beginPath()
         context.moveTo(first.x, first.y)
         context.lineTo(pointer.x, pointer.y)
@@ -152,12 +160,10 @@ function drawNetwork() {
 }
 
 function animate(timestamp: number) {
-  const elapsed = lastFrameTime ? timestamp - lastFrameTime : FRAME_INTERVAL
-  if (elapsed >= FRAME_INTERVAL) {
-    lastFrameTime = timestamp
-    updateParticles(Math.min(elapsed / 1000, 0.05))
-    drawNetwork()
-  }
+  const deltaSeconds = lastFrameTime ? Math.min((timestamp - lastFrameTime) / 1000, 0.05) : 0
+  lastFrameTime = timestamp
+  updateParticles(deltaSeconds)
+  drawNetwork()
   animationFrame = requestAnimationFrame(animate)
 }
 
