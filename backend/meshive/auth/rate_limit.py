@@ -44,9 +44,7 @@ class AttemptRateLimiter:
             self._attempts.clear()
 
     @staticmethod
-    def _discard_expired(
-        attempts: deque[float], now: float, window_seconds: int
-    ) -> None:
+    def _discard_expired(attempts: deque[float], now: float, window_seconds: int) -> None:
         cutoff = now - window_seconds
         while attempts and attempts[0] <= cutoff:
             attempts.popleft()
@@ -60,4 +58,18 @@ class AttemptRateLimiter:
 
 login_limiter = AttemptRateLimiter()
 setup_limiter = AttemptRateLimiter()
+
+
+class RequestRateLimiter(AttemptRateLimiter):
+    """Small in-process sliding-window limiter for successful capability requests."""
+
+    def check_and_record(self, key: str, *, limit: int, window_seconds: int) -> int | None:
+        retry_after = self.retry_after(key, limit=limit, window_seconds=window_seconds)
+        if retry_after is not None:
+            return retry_after
+        self.record_failure(key, window_seconds=window_seconds)
+        return None
+
+
+catalogue_share_link_limiter = RequestRateLimiter()
 recovery_limiter = AttemptRateLimiter()

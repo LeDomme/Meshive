@@ -14,6 +14,8 @@ from meshive.api.auth import router as auth_router
 from meshive.api.backups import router as backups_router
 from meshive.api.catalog import admin_router as catalog_admin_router
 from meshive.api.catalog import router as catalog_router
+from meshive.api.catalogue_share_links import router as catalogue_share_links_router
+from meshive.api.catalogue_share_links import share_router as catalogue_share_router
 from meshive.api.creator_links import router as creator_links_router
 from meshive.api.creator_profiles import router as creator_profiles_router
 from meshive.api.creators import router as creators_router
@@ -67,9 +69,7 @@ app = FastAPI(
 
 
 @app.middleware("http")
-async def security_headers(
-    _request: Request, call_next: RequestResponseEndpoint
-) -> Response:
+async def security_headers(_request: Request, call_next: RequestResponseEndpoint) -> Response:
     if is_cross_site_api_request(_request):
         response = JSONResponse(
             {"detail": "Cross-site state-changing requests are not allowed"},
@@ -95,6 +95,10 @@ async def security_headers(
     )
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
+    if _request.url.path.startswith("/api/share/catalogue/"):
+        response.headers["Cache-Control"] = "no-store, no-cache"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+        response.headers["Referrer-Policy"] = "no-referrer"
     if settings.environment == "production":
         response.headers["Strict-Transport-Security"] = "max-age=31536000"
     return response
@@ -103,6 +107,8 @@ async def security_headers(
 app.include_router(system_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(api_tokens_router, prefix="/api")
+app.include_router(catalogue_share_links_router, prefix="/api")
+app.include_router(catalogue_share_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
 app.include_router(catalog_admin_router, prefix="/api")

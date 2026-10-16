@@ -44,6 +44,12 @@ const definitions: PermissionPresentation[] = [
     "API tokens",
   ],
   [
+    "catalogue_share_links.manage_own",
+    "Manage own catalogue share links",
+    "Create and revoke temporary read-only catalogue links.",
+    "Catalogue sharing",
+  ],
+  [
     "models.primary_image",
     "Set primary image",
     "Choose a model's primary image.",
