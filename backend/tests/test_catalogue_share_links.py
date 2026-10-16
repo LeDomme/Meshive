@@ -1,6 +1,8 @@
+import logging
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import timedelta
+from io import StringIO
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -12,6 +14,7 @@ from meshive.auth.permissions import CATALOGUE_SHARE_LINKS_MANAGE_OWN, CATALOGUE
 from meshive.auth.rate_limit import catalogue_share_link_limiter, login_limiter, recovery_limiter
 from meshive.auth.sessions import utc_now
 from meshive.database import Base, get_session
+from meshive.logging_utils import CatalogueShareAccessLogRedactionFilter
 from meshive.main import app
 from meshive.models.audit import AuditEvent
 from meshive.models.authorization import Role, RolePermission
@@ -19,6 +22,33 @@ from meshive.models.catalogue_share_link import CatalogueShareLink
 from meshive.models.user import User
 
 PASSWORD = "correct horse battery staple"
+
+
+def test_catalogue_share_access_log_redacts_capability_secret() -> None:
+    from uvicorn.logging import AccessFormatter
+
+    secret = "msh_share_do-not-log-this-capability-secret"
+    stream = StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.addFilter(CatalogueShareAccessLogRedactionFilter())
+    handler.setFormatter(AccessFormatter('%(client_addr)s - "%(request_line)s" %(status_code)s'))
+    logger = logging.getLogger("test.catalogue-share-access-log")
+    logger.handlers = [handler]
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
+    try:
+        logger.info(
+            '%s - "%s %s HTTP/%s" %s',
+            "127.0.0.1",
+            "GET",
+            f"/api/share/catalogue/{secret}/models?search=Example",
+            "1.1",
+            "200",
+        )
+    finally:
+        logger.handlers = []
+    assert secret not in stream.getvalue()
+    assert "/api/share/catalogue/<redacted>/models?search=Example" in stream.getvalue()
 
 
 @contextmanager
@@ -140,6 +170,7 @@ def test_share_endpoint_inherits_owner_state_and_has_security_headers() -> None:
         response = client.get(f"/api/share/catalogue/{token}/models")
         assert response.status_code == 200
         assert response.headers["cache-control"] == "no-store, no-cache"
+        assert response.headers["pragma"] == "no-cache"
         assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
         assert response.headers["referrer-policy"] == "no-referrer"
         assert (
@@ -150,7 +181,11 @@ def test_share_endpoint_inherits_owner_state_and_has_security_headers() -> None:
             user = session.get(User, user.id)
             user.is_active = False
             session.commit()
-        assert client.get(f"/api/share/catalogue/{token}/models").status_code == 404
+        unavailable = client.get(f"/api/share/catalogue/{token}/models")
+        assert unavailable.status_code == 404
+        assert unavailable.headers["cache-control"] == "no-store, no-cache"
+        assert unavailable.headers["pragma"] == "no-cache"
+        assert unavailable.headers["referrer-policy"] == "no-referrer"
 
 
 def test_expired_and_revoked_links_are_unusable() -> None:
@@ -165,7 +200,11 @@ def test_expired_and_revoked_links_are_unusable() -> None:
             link = session.scalar(select(CatalogueShareLink))
             link.expires_at = utc_now() - timedelta(seconds=1)
             session.commit()
-        assert client.get(f"/api/share/catalogue/{token}/models").status_code == 404
+        unavailable = client.get(f"/api/share/catalogue/{token}/models")
+        assert unavailable.status_code == 404
+        assert unavailable.headers["cache-control"] == "no-store, no-cache"
+        assert unavailable.headers["pragma"] == "no-cache"
+        assert unavailable.headers["referrer-policy"] == "no-referrer"
         created = create_link(client)
         assert (
             client.delete(f"/api/account/catalogue-share-links/{created['id']}").status_code == 204

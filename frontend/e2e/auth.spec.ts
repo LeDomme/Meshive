@@ -69,6 +69,7 @@ test("account settings use the assigned custom role and account navigation", asy
   await expect(page.getByLabel("Profile").getByText("Library curator", { exact: true })).toBeVisible()
   await expect(page.getByText("Your Meshive account", { exact: true })).toBeVisible()
   await expect(page.locator(".account-menu")).toBeVisible()
+  await expect(page.getByRole("region", { name: "Temporary Catalogue Links" })).toHaveCount(0)
 })
 
 test("permitted users can create a short-lived API token from account settings", async ({ page }) => {
@@ -150,4 +151,69 @@ test("permitted users can create a short-lived API token from account settings",
   await expect.poll(() => page.evaluate(() => window.__apiTokenFallbackCount)).toBe(1)
   await section.getByRole("button", { name: "Done" }).click()
   await expect(section.getByText("msh_pat_example-secret", { exact: true })).toHaveCount(0)
+})
+
+test("temporary catalogue links are permission-controlled and shown only once", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__shareLinkCopied", { configurable: true, value: "", writable: true })
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (value: string) => { window.__shareLinkCopied = value } },
+    })
+  })
+  const shareUser = {
+    ...user,
+    permissions: ["catalogue_share_links.manage_own"],
+    role_definition: { id: 9, name: "Share reader", is_system: false, is_superuser: false },
+  }
+  await page.route("**/api/setup/status", route => route.fulfill({ json: { required: false, enabled: false } }))
+  await page.route("**/api/auth/me", route => route.fulfill({ json: shareUser }))
+  await page.route("**/api/auth/sessions", route => route.fulfill({ json: [] }))
+  await page.route("**/api/auth/catalogue-preferences", route => route.fulfill({ json: { filter_order: [], action_order: [], navigation_mode: "pagination", animated_background: true } }))
+  await page.route("**/api/saved-views", route => route.fulfill({ json: [] }))
+  let revoked = false
+  await page.route("**/api/account/catalogue-share-links**", async route => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({ name: "ChatGPT check", expires_in_seconds: 900, current_password: "secret" })
+      await route.fulfill({ status: 201, json: { id: 1, name: "ChatGPT check", token_prefix: "msh_share_example...", token: "msh_share_example-secret", created_at: "2026-10-16T12:00:00Z", expires_at: "2026-10-16T12:15:00Z", last_used_at: null, status: "active" } })
+      return
+    }
+    if (route.request().method() === "DELETE") {
+      expect(route.request().url()).toContain("/api/account/catalogue-share-links/2")
+      revoked = true
+      await route.fulfill({ status: 204 })
+      return
+    }
+    await route.fulfill({
+      json: revoked
+        ? []
+        : [{ id: 2, name: "Existing link", token_prefix: "msh_share_existing...", created_at: "2026-10-16T12:00:00Z", expires_at: "2026-10-16T12:15:00Z", last_used_at: null, status: "active" }],
+    })
+  })
+  await page.goto("/account")
+  const section = page.getByRole("region", { name: "Temporary Catalogue Links" })
+  await expect(section).toBeVisible()
+  await expect(section.getByLabel("Expiration")).toHaveText(/5 minutes.*15 minutes.*30 minutes.*60 minutes/s)
+  await section.getByLabel("Name").fill("ChatGPT check")
+  await section.getByLabel("Current password").fill("secret")
+  await section.getByRole("button", { name: "Create link" }).click()
+  const url = "http://127.0.0.1:5173/api/share/catalogue/msh_share_example-secret/models"
+  await expect(section.getByText(url, { exact: true })).toBeVisible()
+  await section.getByRole("button", { name: "Copy" }).click()
+  await expect(section.getByText("Copied.", { exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.__shareLinkCopied)).toBe(url)
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("Clipboard unavailable") } } })
+    window.__shareLinkFallbackCount = 0
+    document.execCommand = (command: string) => { if (command === "copy") window.__shareLinkFallbackCount += 1; return command === "copy" }
+  })
+  await section.getByRole("button", { name: "Copy" }).click()
+  await expect.poll(() => page.evaluate(() => window.__shareLinkFallbackCount)).toBe(1)
+  await section.getByRole("button", { name: "Done" }).click()
+  await expect(section.getByText(url, { exact: true })).toHaveCount(0)
+  await expect(section.getByText("msh_share_example-secret", { exact: true })).toHaveCount(0)
+  await expect(section.getByText("Existing link", { exact: true })).toBeVisible()
+  page.once("dialog", dialog => dialog.accept())
+  await section.getByRole("button", { name: "Revoke" }).click()
+  await expect(section.getByText("Existing link", { exact: true })).toHaveCount(0)
 })

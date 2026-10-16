@@ -36,6 +36,7 @@ from meshive.api.tags import model_tag_router
 from meshive.api.tags import router as tags_router
 from meshive.api.users import router as users_router
 from meshive.config import get_settings
+from meshive.logging_utils import install_catalogue_share_access_log_redaction
 from meshive.security import is_cross_site_api_request
 from meshive.services.backup_scheduler import start_scheduler, stop_scheduler
 from meshive.services.scan_scheduler import (
@@ -46,6 +47,7 @@ from meshive.services.scan_scheduler import (
 )
 
 settings = get_settings()
+install_catalogue_share_access_log_redaction()
 
 
 @asynccontextmanager
@@ -97,6 +99,7 @@ async def security_headers(_request: Request, call_next: RequestResponseEndpoint
     response.headers["X-Frame-Options"] = "DENY"
     if _request.url.path.startswith("/api/share/catalogue/"):
         response.headers["Cache-Control"] = "no-store, no-cache"
+        response.headers["Pragma"] = "no-cache"
         response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
         response.headers["Referrer-Policy"] = "no-referrer"
     if settings.environment == "production":
