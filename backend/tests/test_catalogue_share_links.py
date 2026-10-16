@@ -11,14 +11,21 @@ from sqlalchemy.pool import StaticPool
 
 from meshive.auth.passwords import hash_password
 from meshive.auth.permissions import CATALOGUE_SHARE_LINKS_MANAGE_OWN, CATALOGUE_VIEW
-from meshive.auth.rate_limit import catalogue_share_link_limiter, login_limiter, recovery_limiter
+from meshive.auth.rate_limit import (
+    RequestRateLimiter,
+    catalogue_share_link_limiter,
+    login_limiter,
+    recovery_limiter,
+)
 from meshive.auth.sessions import utc_now
 from meshive.database import Base, get_session
 from meshive.logging_utils import CatalogueShareAccessLogRedactionFilter
 from meshive.main import app
 from meshive.models.audit import AuditEvent
-from meshive.models.authorization import Role, RolePermission
+from meshive.models.authorization import Role, RolePermission, UserLibrarySource
+from meshive.models.catalog import LibraryModel
 from meshive.models.catalogue_share_link import CatalogueShareLink
+from meshive.models.library_source import LibrarySource
 from meshive.models.user import User
 
 PASSWORD = "correct horse battery staple"
@@ -81,16 +88,22 @@ def client_context() -> Generator[tuple[TestClient, sessionmaker], None, None]:
         engine.dispose()
 
 
-def add_user(session: Session, permissions: set[str]) -> User:
-    role = Role(name="Link role", normalized_name="link role")
+def add_user(
+    session: Session,
+    permissions: set[str],
+    *,
+    username: str = "Reader",
+    all_sources: bool = True,
+) -> User:
+    role = Role(name=f"{username} role", normalized_name=f"{username} role".casefold())
     role.permissions = [RolePermission(permission_key=key) for key in permissions]
     user = User(
-        username="Reader",
-        normalized_username="reader",
+        username=username,
+        normalized_username=username.casefold(),
         password_hash=hash_password(PASSWORD),
         role="user",
         role_definition=role,
-        all_sources=True,
+        all_sources=all_sources,
         is_active=True,
     )
     session.add_all([role, user])
@@ -98,10 +111,10 @@ def add_user(session: Session, permissions: set[str]) -> User:
     return user
 
 
-def login(client: TestClient) -> None:
+def login(client: TestClient, username: str = "Reader") -> None:
     assert (
         client.post(
-            "/api/auth/login", json={"username": "Reader", "password": PASSWORD}
+            "/api/auth/login", json={"username": username, "password": PASSWORD}
         ).status_code
         == 200
     )
@@ -114,6 +127,32 @@ def create_link(client: TestClient) -> dict[str, object]:
     )
     assert response.status_code == 201
     return response.json()
+
+
+def add_source_models(session: Session) -> tuple[LibrarySource, LibrarySource]:
+    source_a = LibrarySource(name="Source A", root_path="/models/a", directory_pattern="{model}")
+    source_b = LibrarySource(name="Source B", root_path="/models/b", directory_pattern="{model}")
+    session.add_all([source_a, source_b])
+    session.flush()
+    session.add_all(
+        [
+            LibraryModel(
+                library_source_id=source_a.id,
+                relative_path="Visible model",
+                name="Visible model",
+                franchise="Visible franchise",
+                status="available",
+            ),
+            LibraryModel(
+                library_source_id=source_b.id,
+                relative_path="Hidden model",
+                name="Hidden model",
+                franchise="Hidden franchise",
+                status="available",
+            ),
+        ]
+    )
+    return source_a, source_b
 
 
 def test_management_hashes_secret_and_audits_without_secret() -> None:
@@ -210,3 +249,116 @@ def test_expired_and_revoked_links_are_unusable() -> None:
             client.delete(f"/api/account/catalogue-share-links/{created['id']}").status_code == 204
         )
         assert client.get(f"/api/share/catalogue/{created['token']}/models").status_code == 404
+
+
+def test_share_link_uses_current_source_scope_for_models_and_filters() -> None:
+    with client_context() as (client, sessions):
+        with sessions() as session:
+            owner = add_user(
+                session,
+                {CATALOGUE_VIEW, CATALOGUE_SHARE_LINKS_MANAGE_OWN},
+                all_sources=False,
+            )
+            source_a, source_b = add_source_models(session)
+            session.add(UserLibrarySource(user_id=owner.id, library_source_id=source_a.id))
+            session.commit()
+            owner_id, source_a_id, source_b_id = owner.id, source_a.id, source_b.id
+
+        login(client)
+        token = str(create_link(client)["token"])
+        models = client.get(f"/api/share/catalogue/{token}/models")
+        filters = client.get(f"/api/share/catalogue/{token}/filters")
+        assert [item["name"] for item in models.json()["items"]] == ["Visible model"]
+        assert [item["name"] for item in filters.json()["sources"]] == ["Source A"]
+        assert "Hidden" not in str(filters.json())
+
+        with sessions() as session:
+            session.delete(session.get(UserLibrarySource, (owner_id, source_a_id)))
+            session.add(UserLibrarySource(user_id=owner_id, library_source_id=source_b_id))
+            session.commit()
+
+        updated = client.get(f"/api/share/catalogue/{token}/models")
+        assert [item["name"] for item in updated.json()["items"]] == ["Hidden model"]
+
+
+def test_share_link_uses_current_catalogue_permission_and_password_state() -> None:
+    with client_context() as (client, sessions):
+        with sessions() as session:
+            owner = add_user(session, {CATALOGUE_VIEW, CATALOGUE_SHARE_LINKS_MANAGE_OWN})
+            session.commit()
+            owner_id, role_id = owner.id, owner.role_id
+
+        login(client)
+        token = str(create_link(client)["token"])
+        assert client.get(f"/api/share/catalogue/{token}/models").status_code == 200
+
+        with sessions() as session:
+            session.delete(session.get(RolePermission, (role_id, CATALOGUE_VIEW)))
+            session.commit()
+        assert client.get(f"/api/share/catalogue/{token}/models").status_code == 403
+
+        with sessions() as session:
+            session.add(RolePermission(role_id=role_id, permission_key=CATALOGUE_VIEW))
+            session.commit()
+        assert client.get(f"/api/share/catalogue/{token}/models").status_code == 200
+
+        with sessions() as session:
+            session.get(User, owner_id).must_change_password = True
+            session.commit()
+        assert client.get(f"/api/share/catalogue/{token}/models").status_code == 404
+
+
+def test_share_link_cannot_be_revoked_by_another_user() -> None:
+    with client_context() as (client, sessions):
+        with sessions() as session:
+            add_user(session, {CATALOGUE_VIEW, CATALOGUE_SHARE_LINKS_MANAGE_OWN}, username="Alice")
+            add_user(session, {CATALOGUE_VIEW, CATALOGUE_SHARE_LINKS_MANAGE_OWN}, username="Bob")
+            session.commit()
+
+        login(client, "Bob")
+        bob_link = create_link(client)
+        assert client.post("/api/auth/logout").status_code == 204
+        login(client, "Alice")
+        assert (
+            client.delete(f"/api/account/catalogue-share-links/{bob_link['id']}").status_code == 404
+        )
+
+
+def test_share_link_rate_limit_and_last_used_tracking() -> None:
+    limiter = RequestRateLimiter()
+    assert limiter.check_and_record("link", limit=2, window_seconds=60) is None
+    assert limiter.check_and_record("link", limit=2, window_seconds=60) is None
+    assert limiter.check_and_record("link", limit=2, window_seconds=60) is not None
+
+    with client_context() as (client, sessions):
+        with sessions() as session:
+            add_user(session, {CATALOGUE_VIEW, CATALOGUE_SHARE_LINKS_MANAGE_OWN})
+            session.commit()
+        login(client)
+        created = create_link(client)
+        token, link_id = str(created["token"]), int(created["id"])
+        assert client.get(f"/api/share/catalogue/{token}/models").status_code == 200
+        with sessions() as session:
+            first_used_at = session.get(CatalogueShareLink, link_id).last_used_at
+        assert first_used_at is not None
+        assert client.get(f"/api/share/catalogue/{token}/models").status_code == 200
+        with sessions() as session:
+            assert session.get(CatalogueShareLink, link_id).last_used_at == first_used_at
+            session.get(CatalogueShareLink, link_id).last_used_at = utc_now() - timedelta(
+                minutes=16
+            )
+            session.commit()
+        assert client.get(f"/api/share/catalogue/{token}/models").status_code == 200
+        with sessions() as session:
+            assert session.get(CatalogueShareLink, link_id).last_used_at > first_used_at
+            catalogue_share_link_limiter.reset()
+            for _ in range(120):
+                assert (
+                    catalogue_share_link_limiter.check_and_record(
+                        str(link_id), limit=120, window_seconds=60
+                    )
+                    is None
+                )
+        limited = client.get(f"/api/share/catalogue/{token}/models")
+        assert limited.status_code == 429
+        assert int(limited.headers["retry-after"]) >= 1
