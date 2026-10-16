@@ -25,6 +25,7 @@ USERS_MANAGE = "users.manage"
 ROLES_MANAGE = "roles.manage"
 AUDIT_VIEW = "audit.view"
 API_TOKENS_MANAGE_OWN = "api_tokens.manage_own"
+CATALOGUE_SHARE_LINKS_MANAGE_OWN = "catalogue_share_links.manage_own"
 
 ALL_PERMISSION_KEYS = frozenset(
     {
@@ -52,6 +53,7 @@ ALL_PERMISSION_KEYS = frozenset(
         ROLES_MANAGE,
         AUDIT_VIEW,
         API_TOKENS_MANAGE_OWN,
+        CATALOGUE_SHARE_LINKS_MANAGE_OWN,
     }
 )
 
@@ -89,7 +91,9 @@ OPERATOR_PERMISSIONS = MEMBER_PERMISSIONS | frozenset(
 
 SYSTEM_ROLE_DEFINITIONS = (
     SystemRoleDefinition("Viewer", "View the catalogue without downloads.", VIEWER_PERMISSIONS),
-    SystemRoleDefinition("Member", "View and download accessible library content.", MEMBER_PERMISSIONS),
+    SystemRoleDefinition(
+        "Member", "View and download accessible library content.", MEMBER_PERMISSIONS
+    ),
     SystemRoleDefinition("Curator", "Maintain visible catalogue metadata.", CURATOR_PERMISSIONS),
     SystemRoleDefinition("Operator", "Operate scans and diagnostics.", OPERATOR_PERMISSIONS),
     SystemRoleDefinition(

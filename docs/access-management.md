@@ -1,5 +1,7 @@
 # Access management
 
+For short-lived browser-style catalogue access without Bearer headers, see [Temporary Catalogue Links](catalogue-share-links.md). API clients should continue to use Personal API Tokens.
+
 Meshive uses local accounts, roles, permission keys, and library-source scopes.
 There is no public registration. Administrators create users and assign either
 a system role or a custom role.

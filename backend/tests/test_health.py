@@ -8,7 +8,7 @@ def test_health() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["version"] == "1.10.0"
+    assert response.json()["version"] == "1.11.0"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
@@ -23,9 +23,7 @@ def test_cross_site_state_changing_api_request_is_rejected() -> None:
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == (
-        "Cross-site state-changing requests are not allowed"
-    )
+    assert response.json()["detail"] == ("Cross-site state-changing requests are not allowed")
     assert response.headers["x-content-type-options"] == "nosniff"
 
     fetch_metadata_response = client.post(

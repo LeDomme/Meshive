@@ -31,15 +31,11 @@ class User(Base):
     catalogue_action_order: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     catalogue_navigation_mode: Mapped[str] = mapped_column(String(20), default="pagination")
     animated_background: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
-    last_login_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     sessions: Mapped[list["UserSession"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"

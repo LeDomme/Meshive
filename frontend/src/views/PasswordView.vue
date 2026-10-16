@@ -51,6 +51,17 @@ const apiTokenSubmitting = ref(false)
 const createdApiToken = ref<ApiTokenCreated | null>(null)
 const apiTokenCopyMessage = ref("")
 const apiTokenCopyError = ref("")
+const catalogueShareLinks = ref<CatalogueShareLink[]>([])
+const catalogueShareLinksLoading = ref(false)
+const catalogueShareLinkActionId = ref<number | null>(null)
+const catalogueShareLinkError = ref("")
+const catalogueShareLinkName = ref("")
+const catalogueShareLinkPassword = ref("")
+const catalogueShareLinkTtl = ref("900")
+const catalogueShareLinkSubmitting = ref(false)
+const createdCatalogueShareLink = ref<CatalogueShareLinkCreated | null>(null)
+const catalogueShareLinkCopyMessage = ref("")
+const catalogueShareLinkCopyError = ref("")
 
 const defaultFilterOrder = ["model", "variant", "creator", "franchise", "series", "source", "tag", "status", "sort"]
 const defaultActionOrder = ["selection", "saved_views", "navigation"]
@@ -98,10 +109,32 @@ interface ApiTokenCreated extends ApiToken {
   token: string
 }
 
+interface CatalogueShareLink {
+  id: number
+  name: string
+  token_prefix: string
+  created_at: string
+  expires_at: string
+  last_used_at: string | null
+  status: "active" | "expired"
+}
+
+interface CatalogueShareLinkCreated extends CatalogueShareLink {
+  token: string
+}
+
 const hasOtherSessions = computed(() => sessions.value.some((item) => !item.is_current))
 const roleLabel = computed(() => auth.user?.role_definition?.name ?? auth.user?.role ?? "")
 const canManageApiTokens = computed(() =>
   auth.can("api_tokens.manage_own") && !auth.user?.must_change_password,
+)
+const canManageCatalogueShareLinks = computed(() =>
+  auth.can("catalogue_share_links.manage_own") && !auth.user?.must_change_password,
+)
+const createdCatalogueShareUrl = computed(() =>
+  createdCatalogueShareLink.value
+    ? `${window.location.origin}/api/share/catalogue/${createdCatalogueShareLink.value.token}/models`
+    : "",
 )
 const apiTokenExpiresInSeconds = computed<number | null>(() => {
   if (apiTokenTtl.value === "never") return null
@@ -343,6 +376,51 @@ function dismissCreatedApiToken() {
   apiTokenCopyError.value = ""
 }
 
+async function loadCatalogueShareLinks() {
+  if (!canManageCatalogueShareLinks.value) return
+  catalogueShareLinksLoading.value = true
+  catalogueShareLinkError.value = ""
+  try { catalogueShareLinks.value = await apiRequest<CatalogueShareLink[]>("/api/account/catalogue-share-links") }
+  catch (error) { catalogueShareLinkError.value = error instanceof ApiError ? error.message : "Unable to load catalogue share links" }
+  finally { catalogueShareLinksLoading.value = false }
+}
+
+async function createCatalogueShareLink() {
+  catalogueShareLinkError.value = ""; catalogueShareLinkCopyMessage.value = ""; catalogueShareLinkCopyError.value = ""; catalogueShareLinkSubmitting.value = true
+  try {
+    const created = await apiRequest<CatalogueShareLinkCreated>("/api/account/catalogue-share-links", { method: "POST", body: JSON.stringify({ name: catalogueShareLinkName.value, expires_in_seconds: Number(catalogueShareLinkTtl.value), current_password: catalogueShareLinkPassword.value }) })
+    catalogueShareLinkPassword.value = ""; catalogueShareLinkName.value = ""; createdCatalogueShareLink.value = created
+    await loadCatalogueShareLinks()
+  } catch (error) { catalogueShareLinkError.value = error instanceof ApiError ? error.message : "Unable to create catalogue share link" }
+  finally { catalogueShareLinkSubmitting.value = false }
+}
+
+async function revokeCatalogueShareLink(link: CatalogueShareLink) {
+  if (!window.confirm(`Revoke catalogue share link "${link.name}"?`)) return
+  catalogueShareLinkActionId.value = link.id; catalogueShareLinkError.value = ""
+  try { await apiRequest<void>(`/api/account/catalogue-share-links/${link.id}`, { method: "DELETE" }); catalogueShareLinks.value = catalogueShareLinks.value.filter((item) => item.id !== link.id) }
+  catch (error) { catalogueShareLinkError.value = error instanceof ApiError ? error.message : "Unable to revoke catalogue share link" }
+  finally { catalogueShareLinkActionId.value = null }
+}
+
+async function copyCatalogueShareLink() {
+  const url = createdCatalogueShareUrl.value
+  if (!url) return
+  catalogueShareLinkCopyMessage.value = ""; catalogueShareLinkCopyError.value = ""
+  try {
+    if (navigator.clipboard?.writeText) { try { await navigator.clipboard.writeText(url); catalogueShareLinkCopyMessage.value = "Copied."; return } catch { /* Fall back in non-secure contexts. */ } }
+    const textarea = document.createElement("textarea")
+    textarea.value = url; textarea.setAttribute("readonly", ""); textarea.setAttribute("aria-hidden", ""); textarea.style.position = "fixed"; textarea.style.opacity = "0"; textarea.style.pointerEvents = "none"
+    document.body.append(textarea); textarea.select(); textarea.setSelectionRange(0, url.length)
+    try { if (!document.execCommand("copy")) throw new Error("Copy command failed") } finally { textarea.remove() }
+    catalogueShareLinkCopyMessage.value = "Copied."
+  } catch { catalogueShareLinkCopyError.value = "Unable to copy the link. Select and copy it manually." }
+}
+
+function dismissCreatedCatalogueShareLink() {
+  createdCatalogueShareLink.value = null; catalogueShareLinkCopyMessage.value = ""; catalogueShareLinkCopyError.value = ""
+}
+
 async function revokeSession(item: UserSession) {
   const prompt = item.is_current
     ? "Sign out this session?"
@@ -452,12 +530,16 @@ onMounted(() => {
   void loadCataloguePreferences()
   void loadSavedViews()
   void loadApiTokens()
+  void loadCatalogueShareLinks()
 })
 
 onBeforeUnmount(() => {
   createdApiToken.value = null
   apiTokenCopyMessage.value = ""
   apiTokenCopyError.value = ""
+  createdCatalogueShareLink.value = null
+  catalogueShareLinkCopyMessage.value = ""
+  catalogueShareLinkCopyError.value = ""
 })
 </script>
 
@@ -574,6 +656,26 @@ onBeforeUnmount(() => {
             </article>
           </div>
           <p v-if="savedViewsError" class="form-error" role="alert">{{ savedViewsError }}</p>
+        </section>
+
+        <section v-if="canManageCatalogueShareLinks" class="panel account-api-tokens" aria-labelledby="catalogue-share-links-heading">
+          <div class="panel-heading"><div><h2 id="catalogue-share-links-heading">Temporary Catalogue Links</h2><p class="panel-copy">Create short-lived, read-only catalogue links for clients that cannot send a Bearer token.</p></div></div>
+          <form class="account-form api-token-form" @submit.prevent="createCatalogueShareLink">
+            <label><span>Name</span><input v-model="catalogueShareLinkName" maxlength="120" required></label>
+            <label><span>Expiration</span><select v-model="catalogueShareLinkTtl"><option value="300">5 minutes</option><option value="900">15 minutes</option><option value="1800">30 minutes</option><option value="3600">60 minutes</option></select></label>
+            <label><span>Current password</span><input v-model="catalogueShareLinkPassword" type="password" autocomplete="current-password" required></label>
+            <button class="primary-button" type="submit" :disabled="catalogueShareLinkSubmitting">{{ catalogueShareLinkSubmitting ? "Creating…" : "Create link" }}</button>
+          </form>
+          <div v-if="createdCatalogueShareLink" class="api-token-secret">
+            <h3>Your temporary catalogue link</h3><p>Anyone with this URL can read the shared catalogue until it expires or is revoked. It does not allow downloads, images, or changes. Meshive will not show it again.</p>
+            <code>{{ createdCatalogueShareUrl }}</code><p>Expires: {{ formatDate(createdCatalogueShareLink.expires_at) }}</p>
+            <div class="row-actions"><button class="secondary-button" type="button" @click="copyCatalogueShareLink">Copy</button><button class="text-button" type="button" @click="dismissCreatedCatalogueShareLink">Done</button></div>
+            <p v-if="catalogueShareLinkCopyMessage" class="success-message" role="status">{{ catalogueShareLinkCopyMessage }}</p><p v-if="catalogueShareLinkCopyError" class="form-error" role="alert">{{ catalogueShareLinkCopyError }}</p>
+          </div>
+          <p v-if="catalogueShareLinksLoading" class="panel-copy account-panel-content">Loading catalogue share links…</p>
+          <p v-else-if="catalogueShareLinks.length === 0 && !catalogueShareLinkError" class="panel-copy account-panel-content">No temporary catalogue links yet.</p>
+          <div v-else class="api-token-list account-panel-content"><article v-for="link in catalogueShareLinks" :key="link.id" class="api-token-item"><div><div class="session-title-row"><h3>{{ link.name }}</h3><span class="session-current" :class="{ expired: link.status === 'expired' }">{{ link.status === "active" ? "Active" : "Expired" }}</span></div><code>{{ link.token_prefix }}</code><dl><div><dt>Created</dt><dd>{{ formatDate(link.created_at) }}</dd></div><div><dt>Last used</dt><dd>{{ link.last_used_at ? formatDate(link.last_used_at) : "Never" }}</dd></div><div><dt>Expires</dt><dd>{{ formatDate(link.expires_at) }}</dd></div></dl></div><button class="danger-button" type="button" :disabled="catalogueShareLinkActionId === link.id" @click="revokeCatalogueShareLink(link)">{{ catalogueShareLinkActionId === link.id ? "Revoking…" : "Revoke" }}</button></article></div>
+          <p v-if="catalogueShareLinkError" class="form-error" role="alert">{{ catalogueShareLinkError }}</p>
         </section>
 
         <section v-if="canManageApiTokens" class="panel account-api-tokens" aria-labelledby="api-tokens-heading">

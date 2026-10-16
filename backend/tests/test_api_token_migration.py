@@ -55,16 +55,31 @@ def test_api_token_migration_preserves_auth_data_and_grants_administrator(
             ).scalars()
         )
         assert "api_tokens" in tables
+        assert "catalogue_share_links" in tables
         assert connection.execute(text("SELECT count(*) FROM users")).scalar_one() == 1
         assert connection.execute(text("SELECT count(*) FROM user_sessions")).scalar_one() == 1
-        assert connection.execute(
-            text(
-                "SELECT count(*) FROM role_permissions rp "
-                "JOIN roles r ON r.id = rp.role_id "
-                "WHERE r.normalized_name = 'administrator' "
-                "AND rp.permission_key = 'api_tokens.manage_own'"
-            )
-        ).scalar_one() == 1
+        assert (
+            connection.execute(
+                text(
+                    "SELECT count(*) FROM role_permissions rp "
+                    "JOIN roles r ON r.id = rp.role_id "
+                    "WHERE r.normalized_name = 'administrator' "
+                    "AND rp.permission_key = 'api_tokens.manage_own'"
+                )
+            ).scalar_one()
+            == 1
+        )
+        assert (
+            connection.execute(
+                text(
+                    "SELECT count(*) FROM role_permissions rp "
+                    "JOIN roles r ON r.id = rp.role_id "
+                    "WHERE r.normalized_name = 'administrator' "
+                    "AND rp.permission_key = 'catalogue_share_links.manage_own'"
+                )
+            ).scalar_one()
+            == 1
+        )
 
     engine.dispose()
     get_settings.cache_clear()

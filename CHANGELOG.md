@@ -5,6 +5,16 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-10-16
+
+### Added
+
+- Added short-lived, revocable Temporary Catalogue Links for read-only catalogue metadata access from clients that cannot send Bearer headers. Links inherit their owner's current permissions and source scopes on every request.
+
+### Security
+
+- Catalogue-link secrets are hash-only, shown once at creation, limited to 60 minutes, and accepted only by the dedicated share endpoints.
+
 ## [1.10.0] - 2026-10-16
 
 ### Added

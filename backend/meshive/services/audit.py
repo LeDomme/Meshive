@@ -9,6 +9,8 @@ from meshive.models.user import User
 class AuditAction:
     API_TOKEN_CREATED = "api_token.created"
     API_TOKEN_REVOKED = "api_token.revoked"
+    CATALOGUE_SHARE_LINK_CREATED = "catalogue_share_link.created"
+    CATALOGUE_SHARE_LINK_REVOKED = "catalogue_share_link.revoked"
     CREATOR_PROFILE_CREATED = "creator_profile.created"
     CREATOR_PROFILE_UPDATED = "creator_profile.updated"
     CREATOR_ALIAS_ADDED = "creator_alias.added"
