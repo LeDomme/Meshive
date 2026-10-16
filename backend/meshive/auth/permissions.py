@@ -24,6 +24,7 @@ BACKUPS_MANAGE = "backups.manage"
 USERS_MANAGE = "users.manage"
 ROLES_MANAGE = "roles.manage"
 AUDIT_VIEW = "audit.view"
+API_TOKENS_MANAGE_OWN = "api_tokens.manage_own"
 
 ALL_PERMISSION_KEYS = frozenset(
     {
@@ -50,6 +51,7 @@ ALL_PERMISSION_KEYS = frozenset(
         USERS_MANAGE,
         ROLES_MANAGE,
         AUDIT_VIEW,
+        API_TOKENS_MANAGE_OWN,
     }
 )
 

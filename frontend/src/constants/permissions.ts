@@ -38,6 +38,12 @@ const definitions: PermissionPresentation[] = [
     "Favourites",
   ],
   [
+    "api_tokens.manage_own",
+    "Manage own API tokens",
+    "Create and revoke personal API tokens.",
+    "API tokens",
+  ],
+  [
     "models.primary_image",
     "Set primary image",
     "Choose a model's primary image.",

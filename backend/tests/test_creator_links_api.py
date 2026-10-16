@@ -6,7 +6,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from meshive.auth.dependencies import get_current_user, require_admin
+from meshive.auth.dependencies import (
+    get_current_user,
+    get_current_user_or_api_token,
+    require_admin,
+)
 from meshive.database import Base, get_session
 from meshive.main import app
 from meshive.models.catalog import LibraryModel
@@ -32,6 +36,9 @@ def test_creator_links_are_managed_and_exposed_on_model_details() -> None:
         role_id=None,
         role_definition=SimpleNamespace(is_superuser=True),
         all_sources=True,
+    )
+    app.dependency_overrides[get_current_user_or_api_token] = (
+        lambda: app.dependency_overrides[get_current_user]()
     )
     app.dependency_overrides[require_admin] = lambda: None
     try:

@@ -5,6 +5,25 @@ All notable changes to Meshive are documented in this file. Releases follow
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-10-16
+
+### Added
+
+- Added permission-controlled personal API tokens with password-confirmed
+  self-service creation, configurable expiration from 1 minute through 365
+  days, explicit non-expiring tokens, one-time secret display, and revocation.
+- Added Bearer-token access to the existing catalogue APIs while preserving
+  current role permissions and library-source scopes on every request.
+- Added API-token creation and revocation audit events without storing or
+  recording plaintext credentials.
+
+### Security
+
+- API tokens are stored only as SHA-256 hashes and cannot authenticate account,
+  recovery, setup, browser-session, or token-management endpoints.
+- Deactivation, forced password changes, permission changes, role changes,
+  source-access changes, expiration, and revocation affect tokens immediately.
+
 ## [1.9.1] - 2026-10-16
 
 ### Added
@@ -348,7 +367,8 @@ All notable changes to Meshive are documented in this file. Releases follow
 - Health endpoint reports the running application version.
 - Stable release tags publish semantic container tags and a GitHub Release.
 
-[Unreleased]: ../../compare/v1.9.1...HEAD
+[Unreleased]: ../../compare/v1.10.0...HEAD
+[1.10.0]: ../../compare/v1.9.1...v1.10.0
 [1.9.1]: ../../compare/v1.9.0...v1.9.1
 [1.9.0]: ../../compare/v1.8.0...v1.9.0
 [1.8.0]: ../../compare/v1.7.0...v1.8.0

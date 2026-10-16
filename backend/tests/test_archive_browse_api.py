@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from fastapi import status
 from test_catalog_api import catalog_client
 
-from meshive.auth.dependencies import get_current_user
+from meshive.auth.dependencies import get_current_user, get_current_user_or_api_token
 from meshive.models.authorization import UserLibrarySource
 from meshive.models.catalog import Archive, ArchiveBrowseNode, ArchiveEntry, LibraryModel
 from meshive.models.library_source import LibrarySource
@@ -245,6 +245,9 @@ def test_archive_browse_enforces_visibility_archive_ownership_and_permission() -
         from meshive.main import app
 
         app.dependency_overrides[get_current_user] = lambda: app_user
+        app.dependency_overrides[get_current_user_or_api_token] = (
+            lambda: app.dependency_overrides[get_current_user]()
+        )
         visible_without_permission = client.get(
             f"/api/models/{model_a.id}/archives/{archive_a.id}/entries"
         )

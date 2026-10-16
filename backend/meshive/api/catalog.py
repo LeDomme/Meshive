@@ -17,7 +17,7 @@ from meshive.auth.access import (
     require_access_permission,
     visible_model_scope,
 )
-from meshive.auth.dependencies import get_current_user
+from meshive.auth.dependencies import get_current_user, get_current_user_or_api_token
 from meshive.auth.permissions import (
     ARCHIVES_DOWNLOAD,
     ARCHIVES_VIEW_ENTRIES,
@@ -84,7 +84,7 @@ from meshive.services.variants import normalize_variant
 router = APIRouter(
     prefix="/models",
     tags=["catalogue"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(get_current_user_or_api_token)],
 )
 
 
@@ -94,7 +94,7 @@ admin_router = APIRouter(
 )
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
-CurrentUserDependency = Depends(get_current_user)
+CatalogueUserDependency = Depends(get_current_user_or_api_token)
 
 
 @router.get("", response_model=ModelPage)
@@ -122,7 +122,7 @@ def list_models(
     ] = "name_asc",
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=48, ge=1, le=100),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user_or_api_token),
     session: Session = Depends(get_session),
 ) -> ModelPage:
     access = get_access_context(session, user)
@@ -253,7 +253,7 @@ def model_navigation(
         "creator_asc",
         "creator_desc",
     ] = "name_asc",
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user_or_api_token),
     session: Session = Depends(get_session),
 ) -> ModelNavigation:
     access = get_access_context(session, user)
@@ -335,7 +335,7 @@ def catalogue_filters(
     tag_id: int | None = None,
     source_id: int | None = None,
     model_status: str | None = Query(default=None, alias="status", max_length=30),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user_or_api_token),
     session: Session = Depends(get_session),
 ) -> CatalogueFilters:
     access = get_access_context(session, user)
@@ -478,7 +478,7 @@ def list_archive_entries(
     search: str | None = Query(default=None, max_length=200),
     cursor: str | None = Query(default=None, max_length=2048),
     page_size: int = Query(default=200, ge=1, le=500),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_api_token),
     session: Session = Depends(get_session),
 ) -> ArchiveBrowsePage:
     """Return one bounded page of derived archive browse nodes."""
@@ -587,7 +587,7 @@ def list_archive_entries(
 def model_detail(
     model_id: int,
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_api_token),
 ) -> ModelDetail:
     access = get_access_context(session, current_user)
     scope = visible_model_scope(access)
@@ -750,7 +750,7 @@ def model_detail(
 def download_all_archives(
     model_id: int,
     session: Session = Depends(get_session),
-    current_user: User = CurrentUserDependency,
+    current_user: User = CatalogueUserDependency,
 ) -> StreamingResponse:
     access = get_access_context(session, current_user)
     model = get_visible_model_or_404(session, access, model_id)
@@ -825,7 +825,7 @@ def download_archive(
     model_id: int,
     archive_id: int,
     session: Session = Depends(get_session),
-    current_user: User = CurrentUserDependency,
+    current_user: User = CatalogueUserDependency,
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
@@ -872,7 +872,7 @@ def model_image(
     model_id: int,
     image_id: int,
     session: Session = Depends(get_session),
-    current_user: User = CurrentUserDependency,
+    current_user: User = CatalogueUserDependency,
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)
@@ -926,7 +926,7 @@ def model_image(
 def model_thumbnail(
     model_id: int,
     session: Session = Depends(get_session),
-    current_user: User = CurrentUserDependency,
+    current_user: User = CatalogueUserDependency,
 ) -> FileResponse:
     access = get_access_context(session, current_user)
     get_visible_model_or_404(session, access, model_id)

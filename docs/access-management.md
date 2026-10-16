@@ -19,7 +19,22 @@ audit records, backups, metadata, tags, or canonical tag-assignment rules
 requires both its permission and effective all-sources access.
 
 Changing a user's role, active state, password requirement, or source grants
-takes effect for future authorization checks. Meshive has no administrator
+takes effect for future authorization checks.
+
+The stable `api_tokens.manage_own` permission allows a user to create, list,
+and revoke only their own personal API tokens from the account page. It is
+included in the Administrator system role and is not granted to Viewer,
+Member, Curator, or Operator by default. Administrators can grant it through a
+custom role; it does not require all-sources access.
+
+Personal API tokens never store separate permission or source snapshots. Each
+Bearer-authenticated request resolves the owning user's current active state,
+password-change state, role permissions, and source grants. Disabling the
+user, requiring a password change, changing the role, removing a permission,
+or removing source access therefore affects existing tokens immediately. See
+[Personal API tokens](api-tokens.md) for creation and usage details.
+
+Meshive has no administrator
 operation to revoke another user's existing sessions. Because that operation
 does not exist, there is no corresponding audit event.
 

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from meshive.auth.dependencies import get_current_user
+from meshive.auth.dependencies import get_current_user, get_current_user_or_api_token
 from meshive.database import Base, create_database_engine, get_session
 from meshive.main import app
 from meshive.models.authorization import Role, UserLibrarySource
@@ -59,6 +59,9 @@ def favorite_client(tmp_path):
         role_id=None,
         role_definition=SimpleNamespace(is_superuser=True),
         all_sources=True,
+    )
+    app.dependency_overrides[get_current_user_or_api_token] = (
+        lambda: app.dependency_overrides[get_current_user]()
     )
     try:
         with TestClient(app) as client:
