@@ -1,3 +1,4 @@
+from meshive.models.api_token import ApiToken
 from meshive.models.audit import AuditEvent
 from meshive.models.authorization import Role, RolePermission, UserLibrarySource
 from meshive.models.backup import BackupRun, BackupSchedule
@@ -31,6 +32,7 @@ from meshive.models.user import User
 from meshive.models.user_token import UserActionToken
 
 __all__ = [
+    "ApiToken",
     "Archive",
     "ArchiveBrowseNode",
     "ArchiveEntry",

@@ -44,6 +44,9 @@ class User(Base):
     sessions: Mapped[list["UserSession"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"
     )
+    api_tokens: Mapped[list["ApiToken"]] = relationship(  # noqa: F821
+        back_populates="user", cascade="all, delete-orphan"
+    )
     action_tokens: Mapped[list["UserActionToken"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"
     )

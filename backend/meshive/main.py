@@ -8,6 +8,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
 
 from meshive import __version__
+from meshive.api.api_tokens import router as api_tokens_router
 from meshive.api.audit import router as audit_router
 from meshive.api.auth import router as auth_router
 from meshive.api.backups import router as backups_router
@@ -101,6 +102,7 @@ async def security_headers(
 
 app.include_router(system_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
+app.include_router(api_tokens_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
 app.include_router(catalog_admin_router, prefix="/api")

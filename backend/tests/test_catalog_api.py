@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from meshive.auth.dependencies import get_current_user
+from meshive.auth.dependencies import get_current_user, get_current_user_or_api_token
 from meshive.auth.permissions import (
     ARCHIVES_DOWNLOAD,
     CATALOGUE_VIEW,
@@ -71,6 +71,9 @@ def catalog_client() -> Generator[tuple[TestClient, sessionmaker], None, None]:
         role_id=None,
         role_definition=SimpleNamespace(is_superuser=True),
         all_sources=True,
+    )
+    app.dependency_overrides[get_current_user_or_api_token] = (
+        lambda: app.dependency_overrides[get_current_user]()
     )
     try:
         with TestClient(app) as client:

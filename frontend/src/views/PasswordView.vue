@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { RouterLink, useRouter } from "vue-router"
 import { ApiError, apiRequest } from "../api"
 import AccountMenu from "../components/AccountMenu.vue"
@@ -38,6 +38,17 @@ const savedViews = ref<SavedView[]>([])
 const savedViewsLoading = ref(true)
 const savedViewsActionId = ref<number | null>(null)
 const savedViewsError = ref("")
+const apiTokens = ref<ApiToken[]>([])
+const apiTokensLoading = ref(false)
+const apiTokenActionId = ref<number | null>(null)
+const apiTokenError = ref("")
+const apiTokenName = ref("")
+const apiTokenPassword = ref("")
+const apiTokenTtl = ref("3600")
+const apiTokenCustomValue = ref(1)
+const apiTokenCustomUnit = ref<"minutes" | "hours" | "days">("hours")
+const apiTokenSubmitting = ref(false)
+const createdApiToken = ref<ApiTokenCreated | null>(null)
 
 const defaultFilterOrder = ["model", "variant", "creator", "franchise", "series", "source", "tag", "status", "sort"]
 const defaultActionOrder = ["selection", "saved_views", "navigation"]
@@ -71,8 +82,42 @@ interface SavedView {
   updated_at: string
 }
 
+interface ApiToken {
+  id: number
+  name: string
+  token_prefix: string
+  created_at: string
+  expires_at: string | null
+  last_used_at: string | null
+  status: "active" | "expired"
+}
+
+interface ApiTokenCreated extends ApiToken {
+  token: string
+}
+
 const hasOtherSessions = computed(() => sessions.value.some((item) => !item.is_current))
 const roleLabel = computed(() => auth.user?.role_definition?.name ?? auth.user?.role ?? "")
+const canManageApiTokens = computed(() =>
+  auth.can("api_tokens.manage_own") && !auth.user?.must_change_password,
+)
+const apiTokenExpiresInSeconds = computed<number | null>(() => {
+  if (apiTokenTtl.value === "never") return null
+  if (apiTokenTtl.value !== "custom") return Number(apiTokenTtl.value)
+  const multiplier = {
+    minutes: 60,
+    hours: 60 * 60,
+    days: 24 * 60 * 60,
+  }[apiTokenCustomUnit.value]
+  return apiTokenCustomValue.value * multiplier
+})
+const apiTokenExpirationPreview = computed(() => {
+  if (apiTokenExpiresInSeconds.value === null) return "Never"
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(Date.now() + apiTokenExpiresInSeconds.value * 1000))
+})
 
 function asDate(value: string): Date {
   const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/.test(value)
@@ -200,6 +245,64 @@ async function deleteSavedView(view: SavedView) {
   }
 }
 
+async function loadApiTokens() {
+  if (!canManageApiTokens.value) return
+  apiTokensLoading.value = true
+  apiTokenError.value = ""
+  try {
+    apiTokens.value = await apiRequest<ApiToken[]>("/api/account/tokens")
+  } catch (error) {
+    apiTokenError.value = error instanceof ApiError ? error.message : "Unable to load API tokens"
+  } finally {
+    apiTokensLoading.value = false
+  }
+}
+
+async function createApiToken() {
+  apiTokenError.value = ""
+  apiTokenSubmitting.value = true
+  try {
+    const created = await apiRequest<ApiTokenCreated>("/api/account/tokens", {
+      method: "POST",
+      body: JSON.stringify({
+        name: apiTokenName.value,
+        expires_in_seconds: apiTokenExpiresInSeconds.value,
+        current_password: apiTokenPassword.value,
+      }),
+    })
+    apiTokenPassword.value = ""
+    apiTokenName.value = ""
+    createdApiToken.value = created
+    await loadApiTokens()
+  } catch (error) {
+    apiTokenError.value = error instanceof ApiError ? error.message : "Unable to create API token"
+  } finally {
+    apiTokenSubmitting.value = false
+  }
+}
+
+async function revokeApiToken(token: ApiToken) {
+  if (!window.confirm(`Revoke API token "${token.name}"?`)) return
+  apiTokenActionId.value = token.id
+  apiTokenError.value = ""
+  try {
+    await apiRequest<void>(`/api/account/tokens/${token.id}`, { method: "DELETE" })
+    apiTokens.value = apiTokens.value.filter((item) => item.id !== token.id)
+  } catch (error) {
+    apiTokenError.value = error instanceof ApiError ? error.message : "Unable to revoke API token"
+  } finally {
+    apiTokenActionId.value = null
+  }
+}
+
+async function copyApiToken() {
+  if (createdApiToken.value) await navigator.clipboard.writeText(createdApiToken.value.token)
+}
+
+function dismissCreatedApiToken() {
+  createdApiToken.value = null
+}
+
 async function revokeSession(item: UserSession) {
   const prompt = item.is_current
     ? "Sign out this session?"
@@ -308,6 +411,11 @@ onMounted(() => {
   void loadSessions()
   void loadCataloguePreferences()
   void loadSavedViews()
+  void loadApiTokens()
+})
+
+onBeforeUnmount(() => {
+  createdApiToken.value = null
 })
 </script>
 
@@ -424,6 +532,84 @@ onMounted(() => {
             </article>
           </div>
           <p v-if="savedViewsError" class="form-error" role="alert">{{ savedViewsError }}</p>
+        </section>
+
+        <section v-if="canManageApiTokens" class="panel account-api-tokens" aria-labelledby="api-tokens-heading">
+          <div class="panel-heading">
+            <div>
+              <h2 id="api-tokens-heading">API Tokens</h2>
+              <p class="panel-copy">API tokens allow applications and scripts to access Meshive with your current permissions. Treat tokens like passwords.</p>
+            </div>
+          </div>
+
+          <form class="account-form api-token-form" @submit.prevent="createApiToken">
+            <label><span>Name</span><input v-model="apiTokenName" maxlength="120" required></label>
+            <label>
+              <span>Expiration</span>
+              <select v-model="apiTokenTtl">
+                <option value="300">5 minutes</option>
+                <option value="900">15 minutes</option>
+                <option value="1800">30 minutes</option>
+                <option value="3600">1 hour</option>
+                <option value="21600">6 hours</option>
+                <option value="86400">24 hours</option>
+                <option value="604800">7 days</option>
+                <option value="2592000">30 days</option>
+                <option value="never">Never</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <div v-if="apiTokenTtl === 'custom'" class="api-token-custom-ttl">
+              <label><span>Duration</span><input v-model.number="apiTokenCustomValue" type="number" min="1" required></label>
+              <label>
+                <span>Unit</span>
+                <select v-model="apiTokenCustomUnit">
+                  <option value="minutes">Minutes</option>
+                  <option value="hours">Hours</option>
+                  <option value="days">Days</option>
+                </select>
+              </label>
+            </div>
+            <p class="panel-copy">Expires: {{ apiTokenExpirationPreview }}</p>
+            <label><span>Current password</span><input v-model="apiTokenPassword" type="password" autocomplete="current-password" required></label>
+            <button class="primary-button" type="submit" :disabled="apiTokenSubmitting">
+              {{ apiTokenSubmitting ? "Creating…" : "Create token" }}
+            </button>
+          </form>
+
+          <div v-if="createdApiToken" class="api-token-secret" role="status">
+            <h3>Copy your API token</h3>
+            <p>Copy this token now. Meshive will not show it again.</p>
+            <code>{{ createdApiToken.token }}</code>
+            <p>Expires: {{ createdApiToken.expires_at ? formatDate(createdApiToken.expires_at) : "Never" }}</p>
+            <div class="row-actions">
+              <button class="secondary-button" type="button" @click="copyApiToken">Copy</button>
+              <button class="text-button" type="button" @click="dismissCreatedApiToken">Done</button>
+            </div>
+          </div>
+
+          <p v-if="apiTokensLoading" class="panel-copy account-panel-content">Loading API tokens…</p>
+          <p v-else-if="apiTokens.length === 0 && !apiTokenError" class="panel-copy account-panel-content">No API tokens yet.</p>
+          <div v-else class="api-token-list account-panel-content">
+            <article v-for="token in apiTokens" :key="token.id" class="api-token-item">
+              <div>
+                <div class="session-title-row">
+                  <h3>{{ token.name }}</h3>
+                  <span class="session-current" :class="{ expired: token.status === 'expired' }">{{ token.status === "active" ? "Active" : "Expired" }}</span>
+                </div>
+                <code>{{ token.token_prefix }}</code>
+                <dl>
+                  <div><dt>Created</dt><dd>{{ formatDate(token.created_at) }}</dd></div>
+                  <div><dt>Last used</dt><dd>{{ token.last_used_at ? formatDate(token.last_used_at) : "Never" }}</dd></div>
+                  <div><dt>Expires</dt><dd>{{ token.expires_at ? formatDate(token.expires_at) : "Never" }}</dd></div>
+                </dl>
+              </div>
+              <button class="danger-button" type="button" :disabled="apiTokenActionId !== null" @click="revokeApiToken(token)">
+                {{ apiTokenActionId === token.id ? "Revoking…" : "Revoke" }}
+              </button>
+            </article>
+          </div>
+          <p v-if="apiTokenError" class="form-error" role="alert">{{ apiTokenError }}</p>
         </section>
 
         <section class="panel account-sessions" aria-labelledby="sessions-heading">

@@ -15,7 +15,7 @@ HTTP range requests for large files and resumable transfers.
 
 ## Project status
 
-Meshive 1.9.1 is the current stable release series. The application is intended
+Meshive 1.10.0 is the current stable release series. The application is intended
 for a single self-hosted instance and is designed for multi-terabyte,
 read-only model libraries. Architecture and operating procedures live in the
 [`docs`](docs/) directory.
@@ -88,7 +88,7 @@ HTTPS and production mode whenever Meshive is exposed beyond that boundary.
 To build the image locally instead, run `docker build -t meshive:local .` and
 set `MESHIVE_IMAGE=meshive:local` in `.env` before starting Compose.
 
-Stable deployments should use a concrete semantic tag such as `1.9.1` or an
+Stable deployments should use a concrete semantic tag such as `1.10.0` or an
 immutable digest. `latest` is updated only by a stable version tag. The `edge`
 tag follows successful builds from `main` and is intended for testing upcoming
 changes rather than production deployments.
@@ -107,6 +107,9 @@ Roles, permissions, and source-scoped access are documented in
 [`docs/access-management.md`](docs/access-management.md). The administrator
 audit log and CSV export are documented in
 [`docs/audit-log.md`](docs/audit-log.md).
+
+Personal API token setup and Bearer usage are documented in
+[`docs/api-tokens.md`](docs/api-tokens.md).
 
 Private per-user favorite lists are documented in
 [`docs/favorite-lists.md`](docs/favorite-lists.md).

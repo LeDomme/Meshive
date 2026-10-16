@@ -7,6 +7,7 @@ interface Event { id:number; created_at:string; actor_username:string; action:st
 const events = ref<Event[]>([]), page = ref(1), total = ref(0), action = ref(""), actor = ref(""), fromAt = ref(""), toAt = ref("")
 const loading = ref(false), exporting = ref(false), errorMessage = ref("")
 const labels: Record<string,string> = {
+  "api_token.created":"API token created", "api_token.revoked":"API token revoked",
   "role.created":"Role created", "role.updated":"Role updated", "role.deleted":"Role deleted",
   "user.created":"User created", "user.updated":"User updated", "user.deleted":"User deleted", "user.role_changed":"User role changed", "user.source_access_changed":"User source access changed", "user.status_changed":"User status changed", "user.password_changed":"User password changed", "user.require_password_change_changed":"Password-change requirement changed",
   "source.created":"Source created", "source.updated":"Source updated", "source.deleted":"Source deleted",

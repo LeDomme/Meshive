@@ -6,7 +6,11 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from meshive.auth.dependencies import get_current_user, require_admin
+from meshive.auth.dependencies import (
+    get_current_user,
+    get_current_user_or_api_token,
+    require_admin,
+)
 from meshive.auth.permissions import CATALOGUE_VIEW, MODELS_TAGS
 from meshive.database import Base, get_session
 from meshive.main import app
@@ -31,6 +35,9 @@ def test_direct_and_recursive_tags_are_exposed_and_filterable() -> None:
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
         id=1, role_id=None, role_definition=SimpleNamespace(is_superuser=True), all_sources=True
+    )
+    app.dependency_overrides[get_current_user_or_api_token] = (
+        lambda: app.dependency_overrides[get_current_user]()
     )
     app.dependency_overrides[require_admin] = lambda: None
     try:
