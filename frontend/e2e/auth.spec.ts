@@ -72,6 +72,17 @@ test("account settings use the assigned custom role and account navigation", asy
 })
 
 test("permitted users can create a short-lived API token from account settings", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__apiTokenCopied", { configurable: true, value: "", writable: true })
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          window.__apiTokenCopied = value
+        },
+      },
+    })
+  })
   const tokenUser = {
     ...user,
     permissions: ["api_tokens.manage_own"],
@@ -110,12 +121,33 @@ test("permitted users can create a short-lived API token from account settings",
   await page.goto("/account")
   const section = page.getByRole("region", { name: "API Tokens" })
   await expect(section).toBeVisible()
+  await expect(section.getByLabel("Expiration")).toHaveCSS("background-color", "rgb(11, 18, 32)")
+  await expect(section.getByLabel("Expiration")).toHaveCSS("border-top-color", "rgb(51, 65, 85)")
   await section.getByLabel("Name").fill("Temporary reader")
+  await section.getByLabel("Expiration").selectOption("custom")
+  await expect(section.getByLabel("Unit")).toHaveCSS("background-color", "rgb(11, 18, 32)")
+  await expect(section.getByLabel("Unit")).toHaveCSS("border-top-color", "rgb(51, 65, 85)")
   await section.getByLabel("Expiration").selectOption("900")
   await section.getByLabel("Current password").fill("secret")
   await section.getByRole("button", { name: "Create token" }).click()
   await expect(section.getByText("msh_pat_example-secret", { exact: true })).toBeVisible()
   await expect(section.getByText("Copy this token now. Meshive will not show it again.")).toBeVisible()
+  await section.getByRole("button", { name: "Copy" }).click()
+  await expect(section.getByText("Copied.", { exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.__apiTokenCopied)).toBe("msh_pat_example-secret")
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async () => { throw new Error("Clipboard unavailable") } },
+    })
+    window.__apiTokenFallbackCount = 0
+    document.execCommand = (command: string) => {
+      if (command === "copy") window.__apiTokenFallbackCount += 1
+      return command === "copy"
+    }
+  })
+  await section.getByRole("button", { name: "Copy" }).click()
+  await expect.poll(() => page.evaluate(() => window.__apiTokenFallbackCount)).toBe(1)
   await section.getByRole("button", { name: "Done" }).click()
   await expect(section.getByText("msh_pat_example-secret", { exact: true })).toHaveCount(0)
 })

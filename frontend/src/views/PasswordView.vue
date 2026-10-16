@@ -49,6 +49,8 @@ const apiTokenCustomValue = ref(1)
 const apiTokenCustomUnit = ref<"minutes" | "hours" | "days">("hours")
 const apiTokenSubmitting = ref(false)
 const createdApiToken = ref<ApiTokenCreated | null>(null)
+const apiTokenCopyMessage = ref("")
+const apiTokenCopyError = ref("")
 
 const defaultFilterOrder = ["model", "variant", "creator", "franchise", "series", "source", "tag", "status", "sort"]
 const defaultActionOrder = ["selection", "saved_views", "navigation"]
@@ -260,6 +262,8 @@ async function loadApiTokens() {
 
 async function createApiToken() {
   apiTokenError.value = ""
+  apiTokenCopyMessage.value = ""
+  apiTokenCopyError.value = ""
   apiTokenSubmitting.value = true
   try {
     const created = await apiRequest<ApiTokenCreated>("/api/account/tokens", {
@@ -296,11 +300,47 @@ async function revokeApiToken(token: ApiToken) {
 }
 
 async function copyApiToken() {
-  if (createdApiToken.value) await navigator.clipboard.writeText(createdApiToken.value.token)
+  const token = createdApiToken.value?.token
+  if (!token) return
+
+  apiTokenCopyMessage.value = ""
+  apiTokenCopyError.value = ""
+  try {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(token)
+        apiTokenCopyMessage.value = "Copied."
+        return
+      } catch {
+        // Fall back to the legacy copy command in non-secure contexts.
+      }
+    }
+
+    const textarea = document.createElement("textarea")
+    textarea.value = token
+    textarea.setAttribute("readonly", "")
+    textarea.setAttribute("aria-hidden", "true")
+    textarea.style.position = "fixed"
+    textarea.style.opacity = "0"
+    textarea.style.pointerEvents = "none"
+    document.body.append(textarea)
+    textarea.select()
+    textarea.setSelectionRange(0, token.length)
+    try {
+      if (!document.execCommand("copy")) throw new Error("Copy command failed")
+    } finally {
+      textarea.remove()
+    }
+    apiTokenCopyMessage.value = "Copied."
+  } catch {
+    apiTokenCopyError.value = "Unable to copy the API token. Select and copy it manually."
+  }
 }
 
 function dismissCreatedApiToken() {
   createdApiToken.value = null
+  apiTokenCopyMessage.value = ""
+  apiTokenCopyError.value = ""
 }
 
 async function revokeSession(item: UserSession) {
@@ -416,6 +456,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   createdApiToken.value = null
+  apiTokenCopyMessage.value = ""
+  apiTokenCopyError.value = ""
 })
 </script>
 
@@ -586,6 +628,8 @@ onBeforeUnmount(() => {
               <button class="secondary-button" type="button" @click="copyApiToken">Copy</button>
               <button class="text-button" type="button" @click="dismissCreatedApiToken">Done</button>
             </div>
+            <p v-if="apiTokenCopyMessage" class="success-message" role="status">{{ apiTokenCopyMessage }}</p>
+            <p v-if="apiTokenCopyError" class="form-error" role="alert">{{ apiTokenCopyError }}</p>
           </div>
 
           <p v-if="apiTokensLoading" class="panel-copy account-panel-content">Loading API tokens…</p>
