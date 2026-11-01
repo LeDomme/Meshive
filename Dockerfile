@@ -7,7 +7,7 @@ COPY frontend/ ./
 COPY resources/ /build/resources/
 RUN npm run build
 
-FROM python:3.14-slim-trixie AS runtime
+FROM python:3.15-slim-trixie AS runtime
 
 LABEL org.opencontainers.image.source="https://github.com/ledomme/meshive" \
       org.opencontainers.image.licenses="AGPL-3.0-only"
